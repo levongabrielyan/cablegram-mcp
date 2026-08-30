@@ -22,7 +22,7 @@ from .urls import IDENTITY, id_recipe
 
 __all__ = ["archive_path", "connect", "SCHEMA_VERSION", "ArchiveMismatch"]
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class ArchiveMismatch(RuntimeError):
@@ -67,13 +67,26 @@ CREATE TABLE IF NOT EXISTS sighting (
 
 CREATE INDEX IF NOT EXISTS idx_sighting_source ON sighting(source, seen_at DESC);
 
+-- Keyed by URL, not by source. cls.cn exposes five endpoints and Telegram pages
+-- with ?before=, so one source can be several requests — and sharing a row
+-- meant one endpoint's validator was sent to another, whose 304 then read as
+-- "alive, nothing new" while it went mute.
+--
+-- The write columns matter as much as the fetch ones: source_state knew whether
+-- the download worked and nothing knew whether the writing did, so four hundred
+-- entries failing to archive looked exactly like four hundred already seen.
 CREATE TABLE IF NOT EXISTS source_state (
-    source      TEXT PRIMARY KEY,
-    last_ok     TEXT,
-    last_try    TEXT,
-    last_error  TEXT,
-    etag        TEXT,
-    last_mod    TEXT
+    source       TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    last_ok      TEXT,
+    last_try     TEXT,
+    last_error   TEXT,
+    etag         TEXT,
+    last_mod     TEXT,
+    last_write   TEXT,
+    wrote_new    INTEGER,
+    wrote_failed INTEGER,
+    PRIMARY KEY (source, url)
 );
 
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
@@ -145,9 +158,9 @@ def archive_path() -> Path:
     return Path(base) / "cablegram" / "archive.db"
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
+def connect(path: Path | str | None = None) -> sqlite3.Connection:
     """Open the archive, creating it on first run. No setup step for the user."""
-    path = path or archive_path()
+    path = Path(path) if path else archive_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
     db = sqlite3.connect(path, timeout=5.0)

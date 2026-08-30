@@ -14,7 +14,8 @@ from cablegram.archive import connect
 from cablegram.fetch import Fetched
 from cablegram.rss import Entry
 from cablegram.sources import by_id
-from cablegram.store import (conditional_headers, cross_count, record_attempt,
+from cablegram.store import (StoreReport, conditional_headers, cross_count,
+                             record_attempt,
                              store_entries)
 from cablegram.urls import item_id
 
@@ -83,7 +84,7 @@ def test_an_entry_without_a_url_is_skipped_not_fatal(db):
 def test_the_same_story_from_two_sources_is_one_item_seen_twice(db):
     """The point of the whole design: GLM-5 in six feeds is one story, six sightings.
 
-    With only item.source this is unrepresentable — the second source is dropped
+    With only item.first_source this is unrepresentable — the second source is dropped
     by the UNIQUE on url_norm and the count reads 1 forever, which looks like a
     story nobody else picked up rather than like a bug.
     """
@@ -209,13 +210,16 @@ def test_recovering_clears_the_error(db):
 
 
 def test_conditional_headers_are_handed_back_for_the_next_poll(db):
-    record_attempt(db, Fetched("qbitai", ok=True, body=b"x", status=200, etag='W/"abc"',
+    """Keyed by URL: that is what fetch_all looks them up by."""
+    url = "https://www.qbitai.com/feed"
+    record_attempt(db, Fetched("qbitai", url=url, ok=True, body=b"x", status=200,
+                               etag='W/"abc"',
                                last_modified="Sat, 30 Aug 2026 06:00:00 GMT", fetched_at=NOW))
-    assert conditional_headers(db)["qbitai"] == ('W/"abc"', "Sat, 30 Aug 2026 06:00:00 GMT")
+    assert conditional_headers(db)[url] == ('W/"abc"', "Sat, 30 Aug 2026 06:00:00 GMT")
 
 
-def test_an_unknown_source_asks_for_everything(db):
-    assert conditional_headers(db).get("openai") is None
+def test_an_unknown_url_asks_for_everything(db):
+    assert conditional_headers(db).get("https://openai.com/news/rss.xml") is None
 
 
 # ── third review, 2026-08-30: one bad entry must not cost the batch ──────────
@@ -305,20 +309,25 @@ def test_an_id_collision_is_reported_not_counted_as_seen(db):
     assert not sightings, "no sighting may be attached to somebody else's item"
 
 
-# ── third review: item.source only ever names the first one ─────────────────
+# ── third review: item.first_source only ever names the first one ─────────────────
 
 def test_asking_for_a_source_finds_what_that_source_carried(db):
-    """item names whoever got there first, because url_norm is UNIQUE. Reading
+    """the item row names whoever got there first, because url_norm is UNIQUE. Reading
     that column as "the source" makes the natural query wrong precisely when the
     design is working: a story several feeds carried would be listed under one
     of them and missing from the others.
     """
     store_entries(db, by_id("qbitai"), [entry()], fetched_at=NOW)
     store_entries(db, by_id("hn"), [entry(title="Zhipu releases GLM-5")], fetched_at=NOW)
+    # A story neither of them carried. Without it, an implementation ignoring
+    # the filter entirely passes: the fixture only ever had one item to return.
+    store_entries(db, by_id("habr"), [entry(url="https://habr.com/ru/post/7",
+                                            title="Другая новость")], fetched_at=NOW)
 
     from cablegram.store import items_of_source
     assert [r["id"] for r in items_of_source(db, "hn")] == [item_id(GLM)]
     assert [r["id"] for r in items_of_source(db, "qbitai")] == [item_id(GLM)]
+    assert [r["id"] for r in items_of_source(db, "habr")] == [item_id("https://habr.com/ru/post/7")]
 
 
 def test_a_source_shows_the_headline_it_used(db):
@@ -330,14 +339,25 @@ def test_a_source_shows_the_headline_it_used(db):
 
 
 def test_cross_counts_come_back_in_one_query(db):
-    """One query per item is 210 queries for a normal day's wire_latest."""
+    """One query per item is 210 queries for a normal day's wire_latest.
+
+    The assertion counts them. Checking only the returned dict would pass with a
+    loop of N queries, which is the thing this function exists to avoid."""
     store_entries(db, by_id("qbitai"), [entry(), entry(url="https://qbitai.com/b")],
                   fetched_at=NOW)
     store_entries(db, by_id("hn"), [entry()], fetched_at=NOW)
 
     from cablegram.store import cross_counts
-    counts = cross_counts(db, [item_id(GLM), item_id("https://qbitai.com/b")])
+
+    statements = []
+    db.set_trace_callback(statements.append)
+    try:
+        counts = cross_counts(db, [item_id(GLM), item_id("https://qbitai.com/b")])
+    finally:
+        db.set_trace_callback(None)
+
     assert counts == {item_id(GLM): 2, item_id("https://qbitai.com/b"): 1}
+    assert len(statements) == 1, f"one query, got {len(statements)}"
 
 
 def test_a_304_does_not_clear_the_validators(db):
@@ -380,3 +400,67 @@ def test_a_rolled_back_entry_is_not_counted_as_archived(db):
     assert report.failed == 1
     assert report.new == 0, "nothing was archived, so nothing may be reported as new"
     assert len(rows(db)) == 0
+
+
+# ── fourth review: fetch_all takes two windows per source, state did not ─────
+
+def test_two_windows_of_one_source_keep_separate_validators(db):
+    """fetch_all was fixed to allow this and the state was left keyed by source,
+    so the second endpoint's etag overwrote the first's. The next poll would
+    send 1556's validator to 1321 and read the 304 as "alive, nothing new" —
+    a source going mute with no error anywhere. Half a fix is worse than none:
+    the next person reads the comment and assumes it works."""
+    a = "https://www.cls.cn/api/subject/1321/article"
+    b = "https://www.cls.cn/api/subject/1556/article"
+    record_attempt(db, Fetched("cls", url=a, ok=True, body=b"x", status=200,
+                               etag='W/"1321"', fetched_at=NOW))
+    record_attempt(db, Fetched("cls", url=b, ok=True, body=b"x", status=200,
+                               etag='W/"1556"', fetched_at=NOW))
+
+    headers = conditional_headers(db)
+    assert headers[a] == ('W/"1321"', None)
+    assert headers[b] == ('W/"1556"', None)
+
+
+def test_a_source_is_alive_if_any_of_its_windows_answered(db):
+    """wire_sources asks about the source, not the endpoint."""
+    from cablegram.store import source_health
+
+    record_attempt(db, Fetched("cls", url="https://e.com/1", ok=True, body=b"x",
+                               status=200, fetched_at="2026-08-30T12:00:00Z"))
+    record_attempt(db, Fetched("cls", url="https://e.com/2", ok=False,
+                               error="HTTP 503", fetched_at="2026-08-30T12:00:00Z"))
+
+    health = source_health(db)["cls"]
+    assert health["last_ok"] == "2026-08-30T12:00:00Z"
+    assert health["last_error"] == "HTTP 503"
+
+
+# ── a poll that archives nothing must not look like a quiet day ──────────────
+
+def test_what_the_write_did_is_recorded_where_it_can_be_seen(db):
+    """`failed` lived and died inside the return value. source_state knew
+    whether the download worked and nothing knew whether the writing did, so
+    four hundred entries failing looked exactly like four hundred already seen.
+    That is how the v1 zombie stayed invisible."""
+    from cablegram.store import record_write
+
+    report = store_entries(db, by_id("qbitai"), [entry(), entry(url="https://[bad")],
+                           fetched_at=NOW)
+    record_write(db, report, url="https://www.qbitai.com/feed", at=NOW)
+
+    state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
+    assert state["wrote_new"] == 1
+    assert state["wrote_failed"] == 1
+    assert state["last_write"] == NOW
+
+
+def test_a_healthy_poll_clears_a_previous_write_failure(db):
+    from cablegram.store import record_write
+
+    url = "https://www.qbitai.com/feed"
+    record_write(db, StoreReport("qbitai", failed=9), url=url, at="2026-08-29T12:00:00Z")
+    record_write(db, StoreReport("qbitai", new=3), url=url, at=NOW)
+
+    state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
+    assert (state["wrote_new"], state["wrote_failed"]) == (3, 0)

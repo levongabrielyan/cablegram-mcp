@@ -25,7 +25,7 @@ from .urls import item_id, normalise
 
 __all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
            "conditional_headers", "cross_count", "cross_counts",
-           "items_of_source"]
+           "items_of_source", "record_write", "source_health"]
 
 
 class CollisionError(RuntimeError):
@@ -206,9 +206,9 @@ def items_of_source(db: sqlite3.Connection, source_id: str, limit: int = 200) ->
 
 
 def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
-    """Update what is known about a source's health.
+    """Update what is known about one request. Keyed by URL, not by source.
 
-    Three rules, each protecting something that fails quietly:
+    Four rules, each protecting something that fails quietly:
 
     * A 304 is a success. The source answered; it simply had nothing new.
       Counting it as failure turns a quiet week into a fake outage.
@@ -219,26 +219,30 @@ def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
       no new content, so the stored validators are still the right ones — and
       relying on the fetcher to echo them back would make a hand-written
       adapter that forgets able to null them on a success path.
+    * One row per URL. A source can be several requests, and sharing a row sent
+      one endpoint's validator to another.
     """
     ok = fetched.ok
     keep_validators = not ok or fetched.unchanged
     with db:
         db.execute(
-            "INSERT INTO source_state(source, last_ok, last_try, last_error, etag, last_mod)"
-            " VALUES (:source,"
+            "INSERT INTO source_state(source, url, last_ok, last_try, last_error,"
+            "                         etag, last_mod)"
+            " VALUES (:source, :url,"
             "         CASE WHEN :ok THEN :now END,"
             "         :now,"
             "         CASE WHEN :ok THEN NULL ELSE :error END,"
             "         CASE WHEN :keep THEN NULL ELSE :etag END,"
             "         CASE WHEN :keep THEN NULL ELSE :last_mod END)"
-            " ON CONFLICT(source) DO UPDATE SET"
-            "   last_ok    = CASE WHEN :ok THEN :now      ELSE last_ok  END,"
+            " ON CONFLICT(source, url) DO UPDATE SET"
+            "   last_ok    = CASE WHEN :ok   THEN :now      ELSE last_ok  END,"
             "   last_try   = :now,"
-            "   last_error = CASE WHEN :ok THEN NULL      ELSE :error   END,"
-            "   etag       = CASE WHEN :keep THEN etag     ELSE :etag     END,"
-            "   last_mod   = CASE WHEN :keep THEN last_mod ELSE :last_mod END",
+            "   last_error = CASE WHEN :ok   THEN NULL      ELSE :error   END,"
+            "   etag       = CASE WHEN :keep THEN etag      ELSE :etag    END,"
+            "   last_mod   = CASE WHEN :keep THEN last_mod  ELSE :last_mod END",
             {
                 "source": fetched.source_id,
+                "url": fetched.url,
                 "ok": 1 if ok else 0,
                 "keep": 1 if keep_validators else 0,
                 "now": fetched.fetched_at,
@@ -249,14 +253,56 @@ def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
         )
 
 
+def record_write(db: sqlite3.Connection, report: StoreReport, *, url: str, at: str) -> None:
+    """Record what archiving did, beside what fetching did.
+
+    Without this, `failed` lives and dies inside a return value: a poll where
+    every entry failed to archive looks exactly like a poll where every entry
+    was already known. That is precisely how an archive that could never be
+    written to stayed invisible.
+    """
+    with db:
+        db.execute(
+            "INSERT INTO source_state(source, url, last_write, wrote_new, wrote_failed)"
+            " VALUES (:source, :url, :at, :new, :failed)"
+            " ON CONFLICT(source, url) DO UPDATE SET"
+            "   last_write = :at, wrote_new = :new, wrote_failed = :failed",
+            {"source": report.source, "url": url, "at": at,
+             "new": report.new, "failed": report.failed},
+        )
+
+
+def source_health(db: sqlite3.Connection) -> dict[str, dict]:
+    """One row per source, folding together its endpoints.
+
+    wire_sources asks about the source; the state is kept per request. A source
+    with five endpoints is alive if any of them answered, and its most recent
+    error is worth showing even when another endpoint is fine.
+    """
+    return {
+        row["source"]: dict(row)
+        for row in db.execute(
+            "SELECT source,"
+            "       MAX(last_ok)    AS last_ok,"
+            "       MAX(last_try)   AS last_try,"
+            "       MAX(last_error) AS last_error,"
+            "       MAX(last_write) AS last_write,"
+            "       SUM(wrote_new)    AS wrote_new,"
+            "       SUM(wrote_failed) AS wrote_failed,"
+            "       COUNT(*) AS endpoints"
+            " FROM source_state GROUP BY source"
+        )
+    }
+
+
 def conditional_headers(db: sqlite3.Connection) -> dict[str, tuple[str | None, str | None]]:
-    """The validators to send on the next poll, keyed by source.
+    """The validators to send on the next poll, keyed by URL.
 
     Most feeds are unchanged between polls; sending these turns those into a 304
     with no body. Measured on the eleven live feeds: five answered 304 and 670 KB
     were never transferred.
     """
     return {
-        row["source"]: (row["etag"], row["last_mod"])
-        for row in db.execute("SELECT source, etag, last_mod FROM source_state")
+        row["url"]: (row["etag"], row["last_mod"])
+        for row in db.execute("SELECT url, etag, last_mod FROM source_state")
     }

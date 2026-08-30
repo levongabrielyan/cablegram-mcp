@@ -45,6 +45,7 @@ class Fetched:
 
     source_id: str
     ok: bool
+    url: str = ""  # which request this was: one source can be several
     body: bytes | None = None
     status: int | None = None
     error: str | None = None
@@ -98,12 +99,13 @@ async def fetch_one(
                 follow_redirects=True, timeout=PER_SOURCE_TIMEOUT,
             ) as response:
                 if response.status_code == 304:
-                    return Fetched(source_id, ok=True, status=304, unchanged=True,
+                    return Fetched(source_id, ok=True, url=url, status=304, unchanged=True,
                                    etag=etag, last_modified=last_modified)
                 if response.status_code != 200:
                     # 4xx is the source's answer, not a glitch: do not retry it.
                     if 400 <= response.status_code < 500:
-                        return Fetched(source_id, ok=False, status=response.status_code,
+                        return Fetched(source_id, ok=False, url=url,
+                                       status=response.status_code,
                                        error=f"HTTP {response.status_code}")
                     last_error = f"HTTP {response.status_code}"
                     if attempt < RETRIES:
@@ -114,24 +116,24 @@ async def fetch_one(
 
                 body = await _read_capped(response, MAX_BYTES)
                 return Fetched(
-                    source_id, ok=True, body=body, status=200,
+                    source_id, ok=True, url=url, body=body, status=200,
                     etag=response.headers.get("etag"),
                     last_modified=response.headers.get("last-modified"),
                 )
         except ValueError as exc:  # over the cap
-            return Fetched(source_id, ok=False, error=str(exc))
+            return Fetched(source_id, ok=False, url=url, error=str(exc))
         except Exception as exc:
             last_error = f"{type(exc).__name__}: {str(exc)[:80]}"
             if attempt < RETRIES:
                 await asyncio.sleep(0.5 * (attempt + 1))
 
-    return Fetched(source_id, ok=False, error=last_error)
+    return Fetched(source_id, ok=False, url=url, error=last_error)
 
 
 async def fetch_all(
     targets: list[tuple[str, str]],
     *,
-    conditional: dict[str, tuple[str | None, str | None]] | None = None,
+    conditional: dict[str, tuple[str | None, str | None]] | None = None,  # by URL
     deadline: float = TOTAL_DEADLINE,
 ) -> list[Fetched]:
     """Fetch every target concurrently, bounded by one global deadline.
@@ -155,7 +157,7 @@ async def fetch_all(
         # client that had already closed underneath it.
         tasks = []
         for source_id, url in targets:
-            etag, last_modified = conditional.get(source_id, (None, None))
+            etag, last_modified = conditional.get(url, (None, None))
             tasks.append(asyncio.create_task(
                 fetch_one(client, source_id, url, etag=etag, last_modified=last_modified)
             ))
@@ -168,13 +170,13 @@ async def fetch_all(
             await asyncio.gather(*pending, return_exceptions=True)
 
         results = []
-        for (source_id, _), task in zip(targets, tasks):
+        for (source_id, url), task in zip(targets, tasks, strict=True):
             if task.cancelled() or not task.done():
-                results.append(Fetched(source_id, ok=False,
+                results.append(Fetched(source_id, ok=False, url=url,
                                        error=f"deadline {deadline:g}s exceeded"))
                 continue
             if exc := task.exception():
-                results.append(Fetched(source_id, ok=False,
+                results.append(Fetched(source_id, ok=False, url=url,
                                        error=f"{type(exc).__name__}: {str(exc)[:80]}"))
                 continue
             results.append(task.result())
