@@ -7,9 +7,19 @@ A *cablegram* was the unedited message that arrived over the submarine cables,
 before an editor turned it into a story. This server is the cable: it brings the
 dispatches. Your model is the editor.
 
-Nineteen sources in English, Chinese and Russian. Headlines are never
-translated: each dispatch carries its language, and the model reading it has
-more context for that than any translation step would.
+**The point is the cable, not the news.** A launch discussed in Chinese or
+Russian today reaches English-language coverage days later, filtered through
+whoever decided it was worth translating — and often it never arrives at all.
+Nineteen sources in three languages, read directly, put a reader in California
+in the same week as a reader in Shanghai or Moscow.
+
+Headlines are never translated. Each dispatch carries its language, and the
+model reading it has more context for that than any translation step would.
+It also means the same story is kept in every language that carried it: OpenAI
+titles a post *"Pacing model development in an era of cyber-critical
+capabilities"* while a Russian channel titles the same URL *"OpenAI stopped RL
+for two weeks on its latest models"*. Both are stored against the same id, and
+either can be searched.
 
 A full day of all nineteen costs a few thousand tokens. Six hours of them,
 grouped by source with the cuts declared, is around 700.
