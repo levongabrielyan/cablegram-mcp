@@ -1,7 +1,7 @@
 [project]
 name = "cablegram-mcp"
 version = "0.1.0"
-description = "Raw dispatches from 15 tech, AI and Chinese/Russian sources. Date-filtered only, never ranked."
+description = "Raw dispatches from 19 tech, AI and Chinese/Russian sources. Date-filtered only, never ranked."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
