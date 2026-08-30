@@ -11,6 +11,9 @@ Nineteen sources in English, Chinese and Russian. Headlines are never
 translated: each dispatch carries its language, and the model reading it has
 more context for that than any translation step would.
 
+A full day of all nineteen costs a few thousand tokens. Six hours of them,
+grouped by source with the cuts declared, is around 700.
+
 ```
 CABLEGRAM v0.1 | 2026-08-29T09:00Z..2026-08-30T09:00Z | 210 items | 17/19 sources
 DOWN  deepmind=timeout8s
@@ -31,11 +34,19 @@ a3f9c2e18b04 07:12 智谱发布GLM-5，上下文窗口扩展至200万tokens
 
 ## Status
 
-Early development, and honest about it: **11 of the 19 sources have an adapter
-today** — the RSS feeds. Hacker News, the Chinese financial wire and the six
-Telegram channels are listed as `PENDING` in every reply and are never counted
-as answering. They hold nothing, and the output says so rather than letting an
-empty result look like quiet news.
+Early development. All nineteen sources have an adapter and were verified
+against the live endpoints: eleven RSS feeds, Hacker News through its search
+index, a signed Chinese financial API, and six public Telegram channels.
+
+Two of them are worth knowing about before you rely on them:
+
+* **cls.cn is reverse-engineered.** An undocumented internal API with a signed
+  request. It holds 3.34 days at most and cannot page backwards, so a gap in
+  polling is permanent. `wire_sources` marks it `fragile`.
+* **Telegram is HTML with no contract.** The public preview view can change
+  without a version number to notice it by.
+
+Both are declared in the output rather than explained afterwards.
 
 ## Install
 
