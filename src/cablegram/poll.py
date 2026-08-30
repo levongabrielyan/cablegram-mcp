@@ -16,9 +16,10 @@ import json
 import sqlite3
 import xml.etree.ElementTree as ET
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .cls import feed_url as cls_feed_url, parse_response as parse_cls
+from .hn import parse_search as parse_hn, search_url as hn_search_url
 from .fetch import fetch_all
 from .rss import parse_feed
 from .sources import SOURCES, Source
@@ -30,12 +31,22 @@ __all__ = ["poll_once"]
 # Kinds with an adapter. The rest are listed and never fetched: handing their
 # URLs to the RSS parser would file every one as a parse failure and bury the
 # real ones among them.
-POLLABLE = ("rss", "cls")
+POLLABLE = ("rss", "cls", "hn")
+
+
+def _request_url(source: Source, since: int) -> str:
+    if source.kind == "cls":
+        return cls_feed_url()
+    if source.kind == "hn":
+        return hn_search_url(since=since)
+    return source.url
 
 
 async def poll_once(
     db: sqlite3.Connection,
     sources: list[Source] | None = None,
+    *,
+    window_hours: int = 48,
 ) -> list[StoreReport]:
     """Fetch every source once and archive what came back.
 
@@ -51,7 +62,12 @@ async def poll_once(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     # cls.cn needs a signature computed per request, so its URL is built here
     # rather than stored in the catalogue.
-    requests = [(s.id, cls_feed_url() if s.kind == "cls" else s.url) for s in targets]
+    # Both signed and windowed URLs are built per request rather than stored in
+    # the catalogue: cls.cn needs a fresh signature, and Hacker News needs the
+    # window in the query, because filtering after the fact would be filtering
+    # whatever survived its 1,000-result ceiling.
+    since = int((datetime.now(timezone.utc) - timedelta(hours=window_hours)).timestamp())
+    requests = [(s.id, _request_url(s, since)) for s in targets]
     results = await fetch_all(requests, conditional=conditional_headers(db))
 
     reports: list[StoreReport] = []
@@ -72,8 +88,12 @@ async def poll_once(
             continue
 
         try:
-            entries = (parse_cls(json.loads(fetched.body))
-                       if source.kind == "cls" else parse_feed(fetched.body))
+            if source.kind == "cls":
+                entries = parse_cls(json.loads(fetched.body))
+            elif source.kind == "hn":
+                entries = parse_hn(json.loads(fetched.body))
+            else:
+                entries = parse_feed(fetched.body)
         except (ValueError, ET.ParseError, json.JSONDecodeError) as exc:
             # The download worked and the parse did not. Both facts matter, and
             # a source answering with broken XML is not a source with no news.

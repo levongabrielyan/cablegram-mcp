@@ -1,0 +1,55 @@
+{
+ "hits": [
+  {
+   "title": "70% of new drugs approved by FDA in 2024 were based on a single study",
+   "url": "https://www.cidrap.umn.edu/public-health/more-two-thirds-new-drugs-approved-fda-2024-were-based-single-study",
+   "created_at": "2026-08-30T09:51:04Z",
+   "created_at_i": 1788083464,
+   "objectID": "49497195",
+   "points": 1,
+   "num_comments": 0,
+   "author": "giuliomagnifico",
+   "_tags": [
+    "story",
+    "author_giuliomagnifico",
+    "story_49497195"
+   ]
+  },
+  {
+   "title": "Ask HN: Is .org now Trump-controlled?",
+   "created_at": "2026-08-30T07:11:57Z",
+   "created_at_i": 1788073917,
+   "objectID": "49496390",
+   "points": 10,
+   "num_comments": 3,
+   "author": "selfhoster1312",
+   "story_text": "At first i read about the sanctions, but didn&#x27;t realize autistici.org has been seized at the TLD level.<p>Does this mean Donald Trump can now disable any foreign .org domain they don&#x27;t like without any form of process or trial? I mean sure the US government <i>technically</i> always could by threatening the operators with guns, but i remember the balance of power was different for thepiratebay.org&#x2F;wikileaks.org.<p>Is there an ongoing savedotorg-like campaign i&#x27;m unaware of to have ICANN revoke the current delegation and setup a new non-profit to manage .org outside of US jurisdiction? I mean, given how the Trump administration literally banned words, i can definitely see wikipedia.org (among many others) being targeted next.",
+   "_tags": [
+    "story",
+    "author_selfhoster1312",
+    "story_49496390",
+    "ask_hn"
+   ]
+  },
+  {
+   "title": "Show HN: Practice where countries are in the world",
+   "created_at": "2026-08-30T04:10:23Z",
+   "created_at_i": 1788063023,
+   "objectID": "49495618",
+   "points": 2,
+   "num_comments": 0,
+   "author": "blackbrokkoli",
+   "story_text": "TLDR: Practice where countries are on the world map <a href=\"https:&#x2F;&#x2F;www.samlearns.org&#x2F;world-map\" rel=\"nofollow\">https:&#x2F;&#x2F;www.samlearns.org&#x2F;world-map</a><p>Hello HN,<p>...I keep making little web apps to practice geography, and since some people here enjoyed the previous version, I thought this one too.\nIt&#x27;s a simple game loop where you have to either tab or name countries, w&#x2F; some varying conditions like zoom levels.<p>Following feedback from last time, I reconsidered almost all of the game systems, fixing quite a few issues (too hard, too easy, too many boring islands, countries recurring often, confusing UX, ...).\nThe stack is ts&#x2F;vue and geojson, with some python for data crunching; learning algo built on top of FSRS.<p>It&#x27;s all free, no-ads, no-signup and open source, in case you were wondering.<p>Feedback and ideas welcome!<p>Hope you get something out of this, cheers :)",
+   "_tags": [
+    "story",
+    "author_blackbrokkoli",
+    "story_49495618",
+    "show_hn"
+   ]
+  }
+ ],
+ "nbHits": 4211,
+ "page": 0,
+ "nbPages": 50,
+ "exhaustiveNbHits": false
+}

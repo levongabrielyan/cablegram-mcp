@@ -110,12 +110,11 @@ def test_a_304_is_not_treated_as_an_empty_feed(db, network):
     assert state["last_ok"] and state["wrote_new"] == 2
 
 
-def test_only_rss_sources_are_polled_for_now(db, network):
-    """cls, Hacker News and Telegram have no adapter yet. Handing their URLs to
-    the RSS parser would file every one of them as a parse failure and bury the
-    real ones — so they are not attempted, and say so."""
+def test_a_source_with_no_adapter_is_never_attempted(db, network):
+    """Handing a Telegram channel to the RSS parser would file it as a parse
+    failure and bury the sources that really did fail among the noise."""
     network(lambda request: httpx2.Response(200, content=FEED))
-    reports = asyncio.run(poll_once(db, [by_id("ai_newz"), by_id("hn"), by_id("qbitai")]))
+    reports = asyncio.run(poll_once(db, [by_id("ai_newz"), by_id("qbitai")]))
 
     assert {r.source for r in reports} == {"qbitai"}
 
