@@ -196,3 +196,28 @@ def test_the_same_source_twice_gets_two_independent_results(fake_network):
                                      ("cls", "https://e.com/subject/1556")]))
     assert [r.body for r in results] == [b"https://e.com/subject/1321",
                                          b"https://e.com/subject/1556"]
+
+
+def test_an_exception_with_no_message_still_says_something():
+    """httpx raises ConnectError('') when the connection breaks underneath it —
+    seen on a real machine, where nine sources reported the bare string
+    "ConnectError: " and there was nothing to diagnose from.
+
+    source_state keeps this text, and it is the only account of why a source
+    went quiet. An error with no message is barely better than no error.
+    """
+    def handler(request):
+        raise httpx2.ConnectError("") from BrokenPipeError()
+
+    result = asyncio.run(_one(handler))
+    assert result.ok is False
+    assert result.error.startswith("ConnectError")
+    assert "BrokenPipeError" in result.error, "the cause is all there is here"
+
+
+def test_a_message_is_kept_when_there_is_one():
+    def handler(request):
+        raise httpx2.ConnectError("nodename nor servname provided")
+
+    result = asyncio.run(_one(handler))
+    assert "nodename" in result.error

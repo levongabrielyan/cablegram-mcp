@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 import httpx2
 
-__all__ = ["Fetched", "fetch_all", "fetch_one", "USER_AGENT"]
+__all__ = ["Fetched", "fetch_all", "fetch_one", "describe", "USER_AGENT"]
 
 # Several sources answer differently — or not at all — to curl's default agent.
 # Verified: qbitai and 36kr need this; cls.cn and t.me do not, but sending it
@@ -37,6 +37,21 @@ PER_SOURCE_TIMEOUT = 8.0
 TOTAL_DEADLINE = 25.0
 MAX_BYTES = 8 * 1024 * 1024  # cls.cn's largest observed response is 634 KB
 RETRIES = 1  # one retry: the source reports transient resets, not blocking
+
+
+def describe(exc: BaseException) -> str:
+    """A failure line that is worth storing.
+
+    httpx raises ConnectError('') when a connection breaks under it, which
+    reached source_state as the bare string "ConnectError: " — the only account
+    of why a source went quiet, and it accounted for nothing. Seen on a real
+    machine, across nine sources at once.
+    """
+    detail = str(exc).strip()
+    cause = exc.__cause__ or exc.__context__
+    if not detail and cause is not None:
+        detail = str(cause).strip() or type(cause).__name__
+    return f"{type(exc).__name__}: {detail[:80]}" if detail else type(exc).__name__
 
 
 @dataclass(slots=True)
@@ -123,7 +138,7 @@ async def fetch_one(
         except ValueError as exc:  # over the cap
             return Fetched(source_id, ok=False, url=url, error=str(exc))
         except Exception as exc:
-            last_error = f"{type(exc).__name__}: {str(exc)[:80]}"
+            last_error = describe(exc)
             if attempt < RETRIES:
                 await asyncio.sleep(0.5 * (attempt + 1))
 
@@ -176,8 +191,7 @@ async def fetch_all(
                                        error=f"deadline {deadline:g}s exceeded"))
                 continue
             if exc := task.exception():
-                results.append(Fetched(source_id, ok=False, url=url,
-                                       error=f"{type(exc).__name__}: {str(exc)[:80]}"))
+                results.append(Fetched(source_id, ok=False, url=url, error=describe(exc)))
                 continue
             results.append(task.result())
         return results
