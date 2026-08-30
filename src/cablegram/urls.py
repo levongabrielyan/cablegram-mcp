@@ -26,7 +26,8 @@ import hashlib
 import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-__all__ = ["normalise", "item_id", "ID_LENGTH", "IDENTITY", "NORMALISE_VERSION"]
+__all__ = ["normalise", "item_id", "ID_LENGTH", "IDENTITY", "IDENTITY_RECIPE",
+           "NORMALISE_VERSION", "id_recipe"]
 
 # 12 hex = 48 bits. A 50% chance of collision arrives at ~19.7 million items;
 # this archive grows by ~200k a year. At 8 hex that point was 77k items — five
@@ -41,8 +42,9 @@ ID_LENGTH = 12
 # than silently archiving everything it already holds a second time.
 NORMALISE_VERSION = 1
 
-# The recipe, as one string. Stamped into every archive on creation and checked
-# on every open; see archive.connect().
+# The algorithm, as one string. Stamped into every archive on creation and
+# checked on every open: a change here reassigns every id ever issued, so an
+# archive carrying a different value refuses to open. See archive.connect().
 IDENTITY = f"sha1[:{ID_LENGTH}]/v{NORMALISE_VERSION}"
 
 _HOST_PREFIXES = ("www.", "m.", "amp.", "mobile.")
@@ -144,3 +146,24 @@ def item_id(url: str, length: int = ID_LENGTH) -> str:
     """
     digest = hashlib.sha1(normalise(url).encode("utf-8")).hexdigest()
     return digest[:length]
+
+
+def id_recipe() -> str:
+    """A fingerprint of the lists that decide what survives normalisation.
+
+    NORMALISE_VERSION is remembered by hand, and the denylist is the one part of
+    this module designed to grow — new tracking parameters appear every month.
+    So the change most likely to happen was also the one the version number
+    would forget: adding a key changes the id of every URL carrying it, and
+    those re-archive as duplicates with nothing to say so.
+
+    This moves on its own. It is deliberately not part of IDENTITY: such a
+    change touches a handful of ids, not all of them, so it is recorded rather
+    than treated as a different archive.
+    """
+    recipe = repr((ID_LENGTH, sorted(_DROP_QUERY), _DROP_PREFIXES, _HOST_PREFIXES))
+    return hashlib.sha1(recipe.encode("utf-8")).hexdigest()[:6]
+
+
+#: Evaluated once at import; the lists are module constants.
+IDENTITY_RECIPE = id_recipe()

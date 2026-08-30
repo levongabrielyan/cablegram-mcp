@@ -141,23 +141,27 @@ async def fetch_all(
     # HTTP/1.1 on purpose: http2=True needs the `h2` package, and one extra
     # dependency is not worth a few milliseconds on eleven feeds.
     async with httpx2.AsyncClient() as client:
-        tasks = {}
+        # Keyed by position, never by source id. cls.cn exposes five endpoints
+        # and Telegram pages with ?before=, so two windows of one source is the
+        # normal case; a dict would have the second silently replace the first,
+        # report one result as the other's, and leave a task running against a
+        # client that had already closed underneath it.
+        tasks = []
         for source_id, url in targets:
             etag, last_modified = conditional.get(source_id, (None, None))
-            tasks[source_id] = asyncio.create_task(
+            tasks.append(asyncio.create_task(
                 fetch_one(client, source_id, url, etag=etag, last_modified=last_modified)
-            )
+            ))
 
         if tasks:
-            _, pending = await asyncio.wait(tasks.values(), timeout=deadline)
+            _, pending = await asyncio.wait(tasks, timeout=deadline)
             for task in pending:
                 task.cancel()
             # Settle the cancellations before the client closes underneath them.
             await asyncio.gather(*pending, return_exceptions=True)
 
         results = []
-        for source_id, _ in targets:
-            task = tasks[source_id]
+        for (source_id, _), task in zip(targets, tasks):
             if task.cancelled() or not task.done():
                 results.append(Fetched(source_id, ok=False,
                                        error=f"deadline {deadline:g}s exceeded"))

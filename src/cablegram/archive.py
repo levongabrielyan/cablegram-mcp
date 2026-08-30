@@ -18,7 +18,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .urls import IDENTITY
+from .urls import IDENTITY, id_recipe
 
 __all__ = ["archive_path", "connect", "SCHEMA_VERSION", "ArchiveMismatch"]
 
@@ -162,28 +162,54 @@ def _seal(db: sqlite3.Connection, path: Path) -> None:
     one holding items written by an unknown recipe is refused.
     """
     meta = dict(db.execute("SELECT k, v FROM meta").fetchall())
-    stored_schema = meta.get("schema_version")
-    stored_identity = meta.get("id_algo")
     has_items = db.execute("SELECT EXISTS(SELECT 1 FROM item)").fetchone()[0]
-
-    if stored_schema is not None and stored_schema != str(SCHEMA_VERSION):
-        _refuse(path,
-                f"archive schema is version {stored_schema}, this build speaks "
-                f"version {SCHEMA_VERSION}")
-    if stored_identity is not None and stored_identity != IDENTITY:
-        _refuse(path,
-                f"archive ids were computed with {stored_identity}, this build "
-                f"computes {IDENTITY}")
-    if stored_identity is None and has_items:
-        _refuse(path, "archive holds items but is unsealed: the recipe that "
-                      "computed their ids is unknown")
-
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    recipe = id_recipe()
+
+    if has_items:
+        stored_schema = meta.get("schema_version")
+        if stored_schema is not None and stored_schema != str(SCHEMA_VERSION):
+            _refuse(path,
+                    f"archive schema is version {stored_schema}, this build speaks "
+                    f"version {SCHEMA_VERSION}")
+
+        stored_identity = meta.get("id_algo")
+        if stored_identity is None:
+            _refuse(path, "archive holds items but is unsealed: the recipe that "
+                          "computed their ids is unknown")
+        if stored_identity != IDENTITY:
+            _refuse(path,
+                    f"archive ids were computed with {stored_identity}, this build "
+                    f"computes {IDENTITY}")
+
+        # A moved recipe is not a different archive. It changes the id of the
+        # URLs carrying one newly-ignored parameter and leaves the rest alone,
+        # so refusing would trade months of history for a handful of duplicates.
+        # It is written down instead, dated, so the change is never invisible.
+        stored_recipe = meta.get("id_recipe")
+        if stored_recipe is not None and stored_recipe != recipe:
+            db.executemany(
+                "INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)",
+                [("id_recipe", recipe),
+                 ("id_recipe_previous", stored_recipe),
+                 ("id_recipe_changed_at", now)],
+            )
+
+    elif meta:
+        # Nothing stored, so nothing can be wrong about it: re-stamp and carry
+        # on rather than refuse a file that holds no history to protect.
+        db.executemany(
+            "INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)",
+            [("schema_version", str(SCHEMA_VERSION)), ("id_algo", IDENTITY),
+             ("id_recipe", recipe)],
+        )
+
     db.executemany(
         "INSERT OR IGNORE INTO meta(k, v) VALUES (?, ?)",
         [
             ("schema_version", str(SCHEMA_VERSION)),
             ("id_algo", IDENTITY),
+            ("id_recipe", recipe),
             ("archive_started_at", now),
         ],
     )

@@ -216,3 +216,90 @@ def test_conditional_headers_are_handed_back_for_the_next_poll(db):
 
 def test_an_unknown_source_asks_for_everything(db):
     assert conditional_headers(db).get("openai") is None
+
+
+# ── third review, 2026-08-30: one bad entry must not cost the batch ──────────
+
+def test_one_unparseable_entry_does_not_lose_the_rest(db):
+    """The batch runs in one transaction, so anything that raises inside the loop
+    rolls back everything already written for that source.
+
+    normalise() raises on an unclosed IPv6 bracket — urlsplit's doing, uncaught
+    anywhere. That is only the shortest demonstration: a hand-built date from the
+    Telegram or cls parsers, a body of a type sqlite refuses, or a disk-full does
+    the same. The parser already promises one bad item costs that item; the one
+    module where loss is permanent promised it too and did the opposite.
+    """
+    report = store_entries(db, by_id("qbitai"), [
+        entry(url="https://good.example/1", title="first"),
+        entry(url="https://[oops/path", title="poison"),
+        entry(url="https://good.example/2", title="third"),
+    ], fetched_at=NOW)
+
+    assert report.new == 2, "the two good entries must survive the bad one"
+    assert report.failed == 1
+    assert {r["title"] for r in rows(db)} == {"first", "third"}
+
+
+def test_a_failed_entry_is_counted_not_hidden(db):
+    """Counted separately from skipped: skipped is an entry the feed did not
+    fill in, failed is one this code could not handle. They need opposite fixes."""
+    report = store_entries(db, by_id("qbitai"),
+                           [entry(url="  "), entry(url="https://[bad")], fetched_at=NOW)
+    assert (report.skipped, report.failed, report.new) == (1, 1, 0)
+
+
+# ── the first sighting should not freeze a worse version of the item ─────────
+
+def test_a_real_date_replaces_a_guessed_one(db):
+    """productradar carries no date, HN carries the real one, same URL. First-in
+    wins means the item keeps '~approximate' for life and hours= filtering stays
+    wrong — with the exact date sitting right there, never to be served again."""
+    store_entries(db, by_id("productradar"), [entry(published=None)], fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry(published=PUB)], fetched_at=NOW)
+
+    row = rows(db)[0]
+    assert row["date_exact"] == 1
+    assert row["published"] == "2026-08-30T07:12:00Z"
+
+
+def test_a_body_fills_in_where_there_was_none(db):
+    store_entries(db, by_id("productradar"), [entry(body=None, body_kind=None)], fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry(body="the whole article", body_kind="content:encoded")],
+                  fetched_at=NOW)
+    row = rows(db)[0]
+    assert row["body"] == "the whole article"
+
+
+def test_an_exact_date_is_never_overwritten(db):
+    """Only ever improve. A second source's date must not displace a real one."""
+    store_entries(db, by_id("qbitai"), [entry(published=PUB)], fetched_at=NOW)
+    other = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    store_entries(db, by_id("hn"), [entry(published=other)], fetched_at=NOW)
+    assert rows(db)[0]["published"] == "2026-08-30T07:12:00Z"
+
+
+def test_an_existing_body_is_never_replaced(db):
+    store_entries(db, by_id("qbitai"), [entry(body="first body")], fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry(body="second body")], fetched_at=NOW)
+    assert rows(db)[0]["body"] == "first body"
+
+
+# ── an id collision is not idempotency ──────────────────────────────────────
+
+def test_an_id_collision_is_reported_not_counted_as_seen(db):
+    """INSERT OR IGNORE swallows every constraint violation, not just the one on
+    url_norm. A collision would be filed as 'already archived' while the article
+    is nowhere — and its sighting would hang off a different story entirely."""
+    db.execute("INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+               " VALUES (?, 'https://other.example/x', 'https://other.example/x',"
+               " 'kr36', 'zh', 'unrelated story', ?, 1)", (item_id(GLM), NOW))
+    db.commit()
+
+    report = store_entries(db, by_id("qbitai"), [entry()], fetched_at=NOW)
+
+    assert report.failed == 1, "a collision is a failure, not a duplicate"
+    assert report.seen == 0
+    sightings = db.execute("SELECT source FROM sighting WHERE item_id = ?",
+                           (item_id(GLM),)).fetchall()
+    assert not sightings, "no sighting may be attached to somebody else's item"

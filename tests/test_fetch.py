@@ -165,3 +165,29 @@ def test_a_hanging_source_does_not_take_the_others_with_it():
     assert by_id["also_good"].ok, "a healthy source must survive a slow neighbour"
     assert by_id["slow"].ok is False and "deadline" in by_id["slow"].error
     assert [r.source_id for r in results] == ["good", "slow", "also_good"]
+
+
+def test_the_same_source_twice_gets_two_independent_results():
+    """cls.cn exposes five endpoints and Telegram pages with ?before=, so asking
+    for two windows of one source is the normal case, not an edge case.
+
+    Keying the tasks by source_id made the second overwrite the first: one
+    request was dropped, its result reported as another's, and its task left
+    running against a client that had already closed underneath it.
+    """
+    def handler(request):
+        return httpx2.Response(200, content=str(request.url).encode())
+
+    async def run():
+        import cablegram.fetch as mod
+        real = httpx2.AsyncClient
+        mod.httpx2.AsyncClient = lambda *a, **k: real(*a, transport=transport(handler), **k)
+        try:
+            return await fetch_all([("cls", "https://e.com/subject/1321"),
+                                    ("cls", "https://e.com/subject/1556")])
+        finally:
+            mod.httpx2.AsyncClient = real
+
+    results = asyncio.run(run())
+    assert [r.body for r in results] == [b"https://e.com/subject/1321",
+                                         b"https://e.com/subject/1556"]

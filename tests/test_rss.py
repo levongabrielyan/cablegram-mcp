@@ -193,7 +193,7 @@ def test_entity_expansion_cannot_blow_up_memory():
     <rss version="2.0"><channel><item>
       <title>&d;</title><link>https://e.com/a</link>
     </item></channel></rss>"""
-    with pytest.raises(ValueError, match="entities"):
+    with pytest.raises(ValueError, match="entit"):
         parse_feed(bomb)
 
 
@@ -231,7 +231,7 @@ def test_entity_guard_cannot_be_bypassed_with_padding():
             b'<!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">]>'
             b'<rss version="2.0"><channel><item><title>&d;</title>'
             b'<link>https://e.com/a</link></item></channel></rss>')
-    with pytest.raises(ValueError, match="entities"):
+    with pytest.raises(ValueError, match="entit"):
         parse_feed(bomb)
 
 
@@ -275,3 +275,41 @@ def test_an_empty_description_does_not_count_as_a_body():
         <description>&lt;p&gt; &lt;/p&gt;</description></item></channel></rss>"""
     entry = parse_feed(feed)[0]
     assert entry.body is None and entry.body_kind is None
+
+
+# ── third review: the byte-scanning guard was still bypassable ───────────────
+
+def test_a_comment_cannot_hide_the_real_doctype():
+    """Scanning bytes for '<!DOCTYPE', then '[', then ']' latches onto a comment
+    that contains all three, inspects an empty subset and waves the bomb through.
+    326 bytes became a 10,000-character title."""
+    bomb = (b'<?xml version="1.0"?>\n<!-- <!DOCTYPE fake [ ] -->\n'
+            b'<!DOCTYPE rss [<!ENTITY a "aaaaaaaaaa">'
+            b'<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">'
+            b'<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">'
+            b'<!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">]>'
+            b'<rss version="2.0"><channel><item><title>&d;</title>'
+            b'<link>https://e.com/a</link></item></channel></rss>')
+    with pytest.raises(ValueError, match="entit"):
+        parse_feed(bomb)
+
+
+def test_a_wordpress_feed_declaring_nbsp_still_parses():
+    """The other half of the same problem: refusing every internal subset takes
+    down real feeds. A character reference expands once and is not a bomb."""
+    feed = (b'<?xml version="1.0"?>\n'
+            b'<!DOCTYPE rss [<!ENTITY nbsp "&#160;"><!ENTITY mdash "&#8212;">]>\n'
+            b'<rss version="2.0"><channel><item><title>GPT&nbsp;5&mdash;out</title>'
+            b'<link>https://e.com/a</link></item></channel></rss>')
+    assert parse_feed(feed)[0].title.startswith("GPT")
+
+
+def test_an_external_entity_is_refused():
+    """No feed of ours declares one, and a feed that does is asking the parser to
+    fetch something on its behalf."""
+    feed = (b'<?xml version="1.0"?>\n'
+            b'<!DOCTYPE rss [<!ENTITY x SYSTEM "file:///etc/passwd">]>\n'
+            b'<rss version="2.0"><channel><item><title>T</title>'
+            b'<link>https://e.com/a</link></item></channel></rss>')
+    with pytest.raises(ValueError, match="entit"):
+        parse_feed(feed)

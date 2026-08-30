@@ -15,6 +15,7 @@ import html
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
+import xml.parsers.expat as expat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -84,27 +85,57 @@ def _parse_date(raw: str) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
+_ENTITY_REF = re.compile(r"&([A-Za-z_][\w.-]*);")
+_PREDEFINED = frozenset({"lt", "gt", "amp", "apos", "quot"})
+
+
+class _PrologueRead(Exception):
+    """Raised at the root element to stop before any content is expanded."""
+
+
 def _reject_entity_bombs(raw: bytes) -> None:
-    """Custom XML entities expand geometrically: a few hundred bytes become gigabytes.
+    """Refuse entity declarations that expand into other entities.
 
-    Feeds come from third parties, so this input is hostile by default.
+    Custom XML entities nest geometrically — a few hundred bytes become
+    gigabytes — and feeds come from third parties, so this input is hostile by
+    default.
 
-    The check reads the DOCTYPE's internal subset rather than a fixed window of
-    bytes. A byte window is defeated by padding the prologue, and it also fires
-    on any article that merely mentions <!ENTITY — taking a whole source down
-    for the day. Both were real: the first was demonstrated with 8.3 KB of
-    comment, the second is a plain WordPress feed declaring &nbsp;.
+    Two earlier versions scanned the bytes for <!DOCTYPE and its internal
+    subset. Both were wrong in both directions: a comment containing
+    `<!DOCTYPE fake [ ]` moved the pointers and let a real bomb through, while
+    an ordinary WordPress feed declaring `<!ENTITY nbsp "&#160;">` was thrown
+    out whole. Reading bytes cannot tell a declaration from a mention of one.
+
+    So expat reads the prologue properly and stops at the root element, before
+    a single reference is expanded. What gets refused is the structural
+    property that makes a bomb: an entity whose replacement text names another
+    entity. `&#160;` is a character reference, expands once, and is fine.
     """
-    start = raw.upper().find(b"<!DOCTYPE")
-    if start == -1:
-        return
-    opening = raw.find(b"[", start)
-    if opening == -1:
-        return  # external DTD only; ElementTree does not fetch it
-    closing = raw.find(b"]", opening)
-    subset = raw[opening : closing if closing != -1 else len(raw)]
-    if b"<!ENTITY" in subset.upper():
-        raise ValueError("feed declares custom XML entities; refusing to expand them")
+    parser = expat.ParserCreate()
+
+    def on_entity_decl(name, is_parameter, value, base, system_id, public_id, notation):
+        if system_id or public_id:
+            raise ValueError(
+                f"feed declares external entity {name!r}; refusing to fetch on its behalf"
+            )
+        nested = {ref for ref in _ENTITY_REF.findall(value or "")} - _PREDEFINED
+        if nested:
+            raise ValueError(
+                f"feed declares entity {name!r} expanding into {sorted(nested)[:3]}; "
+                "refusing to expand it"
+            )
+
+    def on_start_element(name, attrs):
+        raise _PrologueRead
+
+    parser.EntityDeclHandler = on_entity_decl
+    parser.StartElementHandler = on_start_element
+    try:
+        parser.Parse(raw, True)
+    except _PrologueRead:
+        pass
+    except expat.ExpatError:
+        return  # malformed: let ElementTree raise the error callers already expect
 
 
 # Where a feed puts the whole article, and where it puts the first paragraph.

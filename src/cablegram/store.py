@@ -23,8 +23,13 @@ from .rss import Entry
 from .sources import Source
 from .urls import item_id, normalise
 
-__all__ = ["StoreReport", "store_entries", "record_attempt",
+__all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
            "conditional_headers", "cross_count"]
+
+
+class CollisionError(RuntimeError):
+    """Two different URLs produced the same id. Counted as a failure, never as
+    a duplicate: one is arithmetic working, the other is an article lost."""
 
 
 @dataclass(slots=True)
@@ -35,7 +40,8 @@ class StoreReport:
     source: str
     new: int = 0
     seen: int = 0      # already archived, by this source or another
-    skipped: int = 0   # unusable: no url, or no title
+    skipped: int = 0   # the feed left it unusable: no url, or no title
+    failed: int = 0    # this code could not handle it — a different problem
 
 
 def _utc_iso(dt) -> str:
@@ -56,47 +62,95 @@ def store_entries(
     """
     report = StoreReport(source.id)
 
-    with db:  # one transaction per source: a crash leaves no half-written batch
-        for entry in entries:
-            url = (entry.url or "").strip()
-            title = (entry.title or "").strip()
-            if not url or not title:
-                report.skipped += 1
-                continue
-
-            url_norm = normalise(url)
-            iid = item_id(url)
-
-            # A feed that gives no date is not a feed with no news. Using the
-            # capture time keeps the item inside every time window; date_exact
-            # is what stops that convenience from becoming a claim.
-            published = _utc_iso(entry.published) if entry.published else fetched_at
-            date_exact = 1 if entry.published else 0
-
-            # Only for sources that link elsewhere. On qbitai the host is always
-            # qbitai: printing it would cost tokens on every line and say nothing.
-            target_host = urlsplit(url_norm).netloc if source.aggregator else None
-
-            cur = db.execute(
-                "INSERT OR IGNORE INTO item"
-                " (id, url_norm, url, source, lang, title, body, body_kind,"
-                "  published, date_exact, fetched_at, target_host)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (iid, url_norm, url, source.id, source.lang, title, entry.body,
-                 entry.body_kind, published, date_exact, fetched_at, target_host),
-            )
-            if cur.rowcount:
-                report.new += 1
-            else:
-                report.seen += 1
-
-            db.execute(
-                "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at)"
-                " VALUES (?,?,?,?)",
-                (iid, source.id, title, fetched_at),
-            )
+    for entry in entries:
+        try:
+            _store_one(db, source, entry, fetched_at, report)
+        except Exception:
+            # One entry, one transaction, so a failure costs that entry alone.
+            # An earlier version wrapped the whole batch, which meant a single
+            # unclosed IPv6 bracket — normalise() raises on those — rolled back
+            # everything already written for the source. The parser promises a
+            # bad item costs that item; the module where loss is permanent has
+            # more reason to keep that promise, not less.
+            report.failed += 1
 
     return report
+
+
+def _store_one(
+    db: sqlite3.Connection,
+    source: Source,
+    entry: Entry,
+    fetched_at: str,
+    report: StoreReport,
+) -> None:
+    url = (entry.url or "").strip()
+    title = (entry.title or "").strip()
+    if not url or not title:
+        report.skipped += 1
+        return
+
+    url_norm = normalise(url)
+    iid = item_id(url)
+
+    # A feed that gives no date is not a feed with no news. Using the capture
+    # time keeps the item inside every time window; date_exact is what stops
+    # that convenience from becoming a claim.
+    published = _utc_iso(entry.published) if entry.published else fetched_at
+    date_exact = 1 if entry.published else 0
+
+    # Only for sources that link elsewhere. On qbitai the host is always qbitai:
+    # printing it would cost tokens on every line and say nothing.
+    target_host = urlsplit(url_norm).netloc if source.aggregator else None
+
+    with db:
+        cur = db.execute(
+            "INSERT OR IGNORE INTO item"
+            " (id, url_norm, url, source, lang, title, body, body_kind,"
+            "  published, date_exact, fetched_at, target_host)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (iid, url_norm, url, source.id, source.lang, title, entry.body,
+             entry.body_kind, published, date_exact, fetched_at, target_host),
+        )
+
+        if cur.rowcount:
+            report.new += 1
+        else:
+            # OR IGNORE swallows every constraint violation, not only the one on
+            # url_norm. If the id landed on a different article, filing this as
+            # "already archived" would lose a real item and hang its sighting off
+            # somebody else's story. Improbable at 12 hex; silent if unchecked.
+            existing = db.execute(
+                "SELECT url_norm FROM item WHERE id = ?", (iid,)
+            ).fetchone()
+            if existing is None or existing["url_norm"] != url_norm:
+                raise CollisionError(
+                    f"id {iid} already belongs to {existing['url_norm'] if existing else '?'}"
+                )
+            report.seen += 1
+
+            # Only ever improve, never overwrite. The same story reaches several
+            # feeds and the first to arrive is often the poorest: Product Radar
+            # carries no date, Hacker News carries the real one. First-in-wins
+            # would keep the '~approximate' mark for life and leave wire_read
+            # with nothing to serve, while the feed that had both moves on.
+            if date_exact:
+                db.execute(
+                    "UPDATE item SET published = ?, date_exact = 1"
+                    " WHERE id = ? AND date_exact = 0",
+                    (published, iid),
+                )
+            if entry.body:
+                db.execute(
+                    "UPDATE item SET body = ?, body_kind = ? WHERE id = ? AND body IS NULL",
+                    (entry.body, entry.body_kind, iid),
+                )
+
+        db.execute(
+            "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at)"
+            " VALUES (?,?,?,?)",
+            (iid, source.id, title, fetched_at),
+        )
 
 
 def cross_count(db: sqlite3.Connection, iid: str) -> int:
