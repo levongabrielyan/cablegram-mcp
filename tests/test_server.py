@@ -208,3 +208,14 @@ async def test_the_recovery_hint_names_a_parameter_that_exists(server):
     wire_read does not accept."""
     out = await call(server, "wire_read", ids=["000000000000"])
     assert "urls=[" not in out
+
+
+@pytest.mark.anyio
+async def test_every_tool_has_a_readable_title_and_says_it_is_read_only(server):
+    """Both are required to submit to Anthropic's connector directory, and the
+    title is what a person sees in a client's tool list — `wire_latest` is a
+    function name, not a label."""
+    for tool in await server.list_tools():
+        assert tool.title, f"{tool.name} has no title"
+        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.open_world_hint is True

@@ -128,6 +128,7 @@ def build(open_db=None) -> MCPServer:
 
     @server.tool(
         name="wire_latest",
+        title="Latest dispatches",
         description=(
             "What 19 tech/AI sources published in a time window, grouped by source, "
             "newest first within each. English, Chinese and Russian, untranslated.\n"
@@ -190,6 +191,7 @@ def build(open_db=None) -> MCPServer:
 
     @server.tool(
         name="wire_read",
+        title="Read dispatches",
         description=(
             "The stored text of specific dispatches, by the ids wire_latest or "
             "wire_search returned.\n"
@@ -207,6 +209,7 @@ def build(open_db=None) -> MCPServer:
 
     @server.tool(
         name="wire_search",
+        title="Search the archive",
         description=(
             "Search the archived headlines of every source that carried a story.\n"
             "IMPORTANT: this searches only what this server has archived since it was "
@@ -237,6 +240,7 @@ def build(open_db=None) -> MCPServer:
 
     @server.tool(
         name="wire_sources",
+        title="Sources and health",
         description=(
             "The catalogue and its health: which sources exist, their language and "
             "tags, when each last answered, and which are failing.\n"
