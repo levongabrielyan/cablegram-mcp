@@ -39,15 +39,27 @@ class Entry:
 
 
 def _text(node: ET.Element | None) -> str:
+    """Raw text. Deliberately does NOT unescape.
+
+    ElementTree already resolved the XML entities once. A second pass would
+    expand HTML5 legacy entities that need no semicolon, so a link containing
+    `&amp;copy=` would come out as `©` — a broken URL and a wrong id, in the
+    part of the system that is frozen. Unescaping belongs to prose only.
+    """
     if node is None:
         return ""
-    raw = html.unescape("".join(node.itertext()))
+    raw = "".join(node.itertext())
     return _SPACES.sub(" ", unicodedata.normalize("NFC", raw)).strip()
 
 
+def _prose(raw: str) -> str:
+    """Same as _text but for human-readable fields, where entities must resolve."""
+    return _SPACES.sub(" ", html.unescape(raw)).strip()
+
+
 def _strip_html(raw: str) -> str:
-    """Unescape after stripping: feeds double-encode, so &amp;nbsp; needs both passes."""
-    return _SPACES.sub(" ", html.unescape(_TAGS.sub(" ", raw))).strip()
+    """Unescape, strip tags, unescape again: feeds double-encode routinely."""
+    return _SPACES.sub(" ", html.unescape(_TAGS.sub(" ", html.unescape(raw)))).strip()
 
 
 def _parse_date(raw: str) -> datetime | None:
@@ -72,14 +84,25 @@ def _parse_date(raw: str) -> datetime | None:
 
 
 def _reject_entity_bombs(raw: bytes) -> None:
-    """Custom XML entities expand geometrically. A few hundred bytes become gigabytes.
+    """Custom XML entities expand geometrically: a few hundred bytes become gigabytes.
 
-    Feeds are served by third parties, so this input is hostile by default. No
-    legitimate RSS feed declares its own entities, and refusing them costs
-    nothing while keeping the standard library instead of a new dependency.
+    Feeds come from third parties, so this input is hostile by default.
+
+    The check reads the DOCTYPE's internal subset rather than a fixed window of
+    bytes. A byte window is defeated by padding the prologue, and it also fires
+    on any article that merely mentions <!ENTITY — taking a whole source down
+    for the day. Both were real: the first was demonstrated with 8.3 KB of
+    comment, the second is a plain WordPress feed declaring &nbsp;.
     """
-    head = raw[:8192].upper()
-    if b"<!ENTITY" in head:
+    start = raw.upper().find(b"<!DOCTYPE")
+    if start == -1:
+        return
+    opening = raw.find(b"[", start)
+    if opening == -1:
+        return  # external DTD only; ElementTree does not fetch it
+    closing = raw.find(b"]", opening)
+    subset = raw[opening : closing if closing != -1 else len(raw)]
+    if b"<!ENTITY" in subset.upper():
         raise ValueError("feed declares custom XML entities; refusing to expand them")
 
 
@@ -125,7 +148,7 @@ def parse_feed(raw: bytes) -> list[Entry]:
 
     entries: list[Entry] = []
     for item in items:
-        title = _first(item, "title", f"{_RSS1}title", f"{_ATOM}title")
+        title = _prose(_first(item, "title", f"{_RSS1}title", f"{_ATOM}title"))
         url = _link(item)
         if not title or not url:
             continue

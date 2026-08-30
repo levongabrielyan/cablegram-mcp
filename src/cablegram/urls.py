@@ -12,9 +12,12 @@ Two rules drive the details below, and both come from the same asymmetry:
 
 * **Merging two articles is unrecoverable.** ``url_norm`` is UNIQUE, so the
   second one never enters the archive and nothing reports it.
-* **Splitting one article is a duplicate**, which is visible and harmless.
+* **Splitting one article is a duplicate**, which is recoverable — though not
+  harmless: every split quietly lowers the cross-source count, so a story seen
+  in six feeds may report four, and a wrong count looks like no failure at all.
 
-So every judgement call here errs towards keeping URLs apart.
+Both are bad; only one is permanent. So every judgement call here errs towards
+keeping URLs apart.
 """
 
 from __future__ import annotations
@@ -44,8 +47,11 @@ _DROP_QUERY = frozenset({
     "mc_cid", "mc_eid", "_hsenc", "_hsmi", "vero_id", "oly_enc_id",
     "ref_src", "ref_url", "at_medium", "at_campaign", "cmpid",
     "s_kwcid", "trk", "trkCampaign", "sc_channel",
-    "t",  # a tracking timestamp on much of the web; keeping it splits one story
 })
+# Deliberately NOT here: 't'. It is a tracking timestamp on some sites, but it
+# is also the thread id in phpBB and vBulletin — and Hacker News links out to
+# arbitrary sites, forums included. Dropping it globally would merge two threads
+# into one, reproducing the very ?sid= bug the denylist exists to prevent.
 
 # Whole families that are always instrumentation, whatever follows the prefix.
 _DROP_PREFIXES = ("utm_", "pk_", "mtm_", "piwik_", "ga_", "hsa_", "at_custom")

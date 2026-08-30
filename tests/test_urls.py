@@ -116,10 +116,26 @@ def test_unknown_query_keys_must_not_merge_distinct_pages():
         assert a != b, f"?{key}= identifies the page; merging it loses articles"
 
 
-def test_tracking_timestamps_must_not_split_one_article():
-    """'t' is a timestamp on much of the web. Keeping it archives one story twice."""
-    assert item_id("https://e.com/x?t=1735689600") == item_id("https://e.com/x?t=1735689700")
+def test_ambiguous_t_is_kept_and_costs_a_duplicate():
+    """'t' is a tracking timestamp on some sites and a forum thread id on others.
+
+    Keeping it archives one story twice — recoverable. Dropping it merges two
+    threads into one, and the second never enters the archive. See the note in
+    urls.py: the asymmetry decides, not which case is more common.
+    """
+    assert item_id("https://e.com/x?t=1735689600") != item_id("https://e.com/x?t=1735689700")
 
 
 def test_root_with_and_without_slash_is_one_page():
     assert item_id("https://example.com") == item_id("https://example.com/")
+
+
+def test_forum_thread_ids_must_stay_apart():
+    """?t= is the thread id in phpBB and vBulletin, the same shape as ?sid=.
+
+    Dropping it globally reproduces the very bug the denylist was written to
+    fix — and Hacker News links out to arbitrary sites, forums included.
+    """
+    a = item_id("https://forum.ex.com/viewtopic.php?t=123")
+    b = item_id("https://forum.ex.com/viewtopic.php?t=456")
+    assert a != b

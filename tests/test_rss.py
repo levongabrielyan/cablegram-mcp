@@ -204,3 +204,41 @@ def test_normal_feeds_are_unaffected_by_the_entity_guard():
         <title>Tom &amp; Jerry &lt;live&gt; &quot;quoted&quot;</title>
         <link>https://e.com/a</link></item></channel></rss>"""
     assert parse_feed(feed)[0].title == 'Tom & Jerry <live> "quoted"' 
+
+
+# ── Fixes that broke other things, found on second review, 2026-08-30 ────────
+
+@pytest.mark.parametrize("entity", ["copy", "times", "reg", "not", "para", "sect"])
+def test_unescaping_must_not_corrupt_links(entity):
+    """ElementTree already unescapes once. A second pass expands HTML5 legacy
+    entities that need no semicolon, so &amp;copy= inside a URL becomes ©.
+
+    A corrupted link is a broken URL in the archive and a wrong id — in the part
+    the module declares frozen.
+    """
+    feed = (f'<rss version="2.0"><channel><item><title>T</title>'
+            f'<link>https://ex.com/a?x=1&amp;{entity}=2</link>'
+            f'</item></channel></rss>').encode()
+    assert parse_feed(feed)[0].url == f"https://ex.com/a?x=1&{entity}=2"
+
+
+def test_entity_guard_cannot_be_bypassed_with_padding():
+    """Scanning a fixed window of bytes is defeated by a long enough prologue."""
+    bomb = (b'<?xml version="1.0"?>\n<!-- ' + b'x' * 8300 + b' -->\n'
+            b'<!DOCTYPE rss [<!ENTITY a "aaaaaaaaaa">'
+            b'<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">'
+            b'<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">'
+            b'<!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">]>'
+            b'<rss version="2.0"><channel><item><title>&d;</title>'
+            b'<link>https://e.com/a</link></item></channel></rss>')
+    with pytest.raises(ValueError, match="entities"):
+        parse_feed(bomb)
+
+
+def test_the_word_entity_in_an_article_does_not_kill_the_feed():
+    """Old WordPress feeds declare <!ENTITY nbsp "&#160;">, and articles talk
+    about XML. Refusing on either would take a whole source down for a day."""
+    feed = ('<rss version="2.0"><channel><item>'
+            '<title>How an XML &lt;!ENTITY&gt; bomb works</title>'
+            '<link>https://e.com/a</link></item></channel></rss>').encode()
+    assert parse_feed(feed)[0].title.startswith("How an XML")
