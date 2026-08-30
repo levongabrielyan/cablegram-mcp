@@ -189,3 +189,36 @@ def test_the_other_sources_are_not_slowed_by_telegram(db, network, monkeypatch):
     asyncio.run(poll_once(db, [by_id("qbitai"), by_id("n8n")]))
 
     assert waits == []
+
+
+def test_a_reference_is_counted_in_the_report(db, network):
+    """Referenced articles were the only thing writing to the archive without
+    appearing in any report: the CLI said 2,641 archived while the file held
+    2,700. A count that does not match the archive is worse than no count."""
+    page = ('<div class="tgme_widget_message" data-post="ai_newz/1">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            'Новость <a href="https://openai.com/index/x">тут</a>'
+            '</div></div>').encode()
+    network(lambda request: httpx2.Response(200, content=page))
+
+    reports = asyncio.run(poll_once(db, [by_id("ai_newz")]))
+    assert reports[0].new == 1
+    assert reports[0].referenced == 1
+    assert db.execute("SELECT COUNT(*) FROM item").fetchone()[0] == 2
+
+
+def test_a_source_at_its_ceiling_says_so(db, network):
+    """cls returns at most 100 rows and Hacker News 1,000. "100 new" does not
+    distinguish "there were 100" from "there were more and we cannot reach
+    them" — and for cls, what is beyond the ceiling is gone for good."""
+    import json
+
+    items = [{"article_id": i, "article_time": 1788078787 - i, "article_title": f"T{i}"}
+             for i in range(100)]
+    network(lambda request: httpx2.Response(
+        200, content=json.dumps({"errno": 0, "data": items}).encode()))
+
+    reports = asyncio.run(poll_once(db, [by_id("cls")]))
+    assert reports[0].at_ceiling is True

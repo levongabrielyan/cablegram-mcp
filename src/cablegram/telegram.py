@@ -30,7 +30,7 @@ import re
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
-from .rss import Entry
+from .rss import MAX_FIELD, Entry
 
 __all__ = ["parse_channel", "channel_url", "TELEGRAM_BASE"]
 
@@ -125,12 +125,36 @@ class _ChannelParser(HTMLParser):
             self._current = None
 
 
+# A channel promoting something inside itself. utm_source=chatgpt.com or
+# perplexity means somebody copied the link from there and the article is real,
+# so only this pairing is excluded — one of 67 links in a live poll, and it
+# would otherwise be the one kept, because it comes first.
+_SPONSORED = ("utm_medium=telegram", "utm_source=pr&", "utm_source=pr")
+
+
+def _pick_link(links: list[str]) -> list[str]:
+    """One link per post, the first that is not the sponsorship.
+
+    A post's headline describes one subject, so attaching it to three articles
+    would assert three things of which at most one is true. Russian channels
+    open with the promo and put the real link further down, so "first" without
+    this filter is positional rather than semantic.
+    """
+    for link in links:
+        if not any(marker in link for marker in _SPONSORED):
+            return [link]
+    return []
+
+
 def _clean(text: str) -> str:
     # No unescape here: HTMLParser(convert_charrefs=True) already did one pass,
     # and a second turned an escaped `&lt;script&gt;` in a post into a literal
     # tag in the archive.
     text = _SPACES.sub(" ", text)
-    return _BLANKS.sub("\n\n", text).strip()
+    # The same cap the feed parser applies. The adapters build their Entry by
+    # hand, so a 24,000-character post was reaching the title, the body and the
+    # trigram index untouched.
+    return _BLANKS.sub("\n\n", text).strip()[:MAX_FIELD]
 
 
 def parse_channel(page: str, *, channel: str) -> list[Entry]:
@@ -155,7 +179,7 @@ def parse_channel(page: str, *, channel: str) -> list[Entry]:
         # attaching it to three articles would assert three things of which at
         # most one is true. Links back into t.me are the same ecosystem quoting
         # itself, not an independent source carrying the story.
-        links = tuple(message.get("links", [])[:1])
+        links = tuple(_pick_link(message.get("links", [])))
         # A post is one block of text with no title field, so the first line
         # stands in for one. The whole text stays as the body: cutting a
         # headline out of a paragraph would lose the paragraph.

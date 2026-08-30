@@ -19,8 +19,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from .cls import feed_url as cls_feed_url, parse_response as parse_cls
-from .hn import MAX_ROWS, parse_search as parse_hn, search_url as hn_search_url
+from .cls import MAX_ROWS as CLS_MAX, feed_url as cls_feed_url, parse_response as parse_cls
+from .hn import MAX_ROWS as HN_MAX, parse_search as parse_hn, search_url as hn_search_url
 from .telegram import channel_url, parse_channel
 from .fetch import fetch_all
 from .rss import parse_feed
@@ -42,6 +42,19 @@ POLLABLE = ("rss", "cls", "hn", "telegram")
 TELEGRAM_GAP = 3.0
 
 
+def _ceiling(source: Source) -> int:
+    """Rows this source can return at most. Reaching it means there may be more.
+
+    It matters most where it can least be recovered: cls.cn cannot page
+    backwards at all, so anything past its hundred is gone.
+    """
+    if source.kind == "cls":
+        return CLS_MAX
+    if source.kind == "hn":
+        return HN_MAX
+    return 10**9  # RSS feeds and Telegram pages have no comparable cap
+
+
 def _request_url(source: Source, since: int) -> str:
     if source.kind == "cls":
         return cls_feed_url()
@@ -50,7 +63,7 @@ def _request_url(source: Source, since: int) -> str:
         # back with three hours of stories, because the page size decided the
         # window. One request for a thousand costs the same as one for a
         # hundred, and the extra margin is what survives a poll that was missed.
-        return hn_search_url(since=since, rows=MAX_ROWS)
+        return hn_search_url(since=since, rows=HN_MAX)
     if source.kind == "telegram":
         return channel_url(source.id)
     return source.url
@@ -145,6 +158,7 @@ async def poll_once(
             continue
 
         report = store_entries(db, source, entries, fetched_at=now)
+        report.at_ceiling = len(entries) >= _ceiling(source)
         record_write(db, report, url=source.url, at=now)
         reports.append(report)
 

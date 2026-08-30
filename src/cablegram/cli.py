@@ -32,7 +32,7 @@ def _poll(args) -> int:
     db = connect()
     reports = asyncio.run(poll_once(db, selected))
 
-    archived = sum(r.new for r in reports)
+    archived = sum(r.new + r.referenced for r in reports)
     # `unchanged` is the source answering that nothing is new — a success, and
     # the most common outcome once the archive is warm. Counting it as broken
     # would report six failures on a perfectly normal poll.
@@ -42,8 +42,12 @@ def _poll(args) -> int:
     for report in reports:
         if report.state == "ok":
             line = f"{report.new:>4} new  {report.seen:>4} seen"
+            if report.referenced:
+                line += f"  +{report.referenced} linked"
             if report.failed:
                 line += f"  {report.failed} FAILED"
+            if report.at_ceiling:
+                line += "  AT CEILING (there may be more)"
         elif report.state == "unchanged":
             line = "     nothing new (304)"
         else:

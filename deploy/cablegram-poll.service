@@ -3,4 +3,9 @@ Description=cablegram: fetch every source once and archive it
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/cablegram poll
+# Adjust to where you cloned it. `uv run` is used rather than a bare
+# `cablegram` because the documented install (git clone + uv sync) leaves the
+# entry point inside the project's own .venv and never on PATH — copying a
+# %h/.local/bin path here earns a status=203/EXEC on the first run.
+WorkingDirectory=%h/cablegram-mcp
+ExecStart=/usr/bin/env uv run cablegram poll

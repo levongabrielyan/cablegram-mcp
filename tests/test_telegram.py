@@ -164,11 +164,16 @@ def test_a_double_escaped_href_is_decoded():
             '<a class="tgme_widget_message_date">'
             '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
             '<div class="tgme_widget_message_text js-message_text">'
-            '<a href="https://ggsel.net/catalog?utm_source=pr&amp;amp;utm_medium=telegram">x</a>'
+            '<a href="https://openai.com/x?a=1&amp;amp;utm_campaign=launch">x</a>'
             '</div></div>')
     link = parse_channel(html, channel="ai_newz")[0].links[0]
     assert "&amp;" not in link
-    assert link == "https://ggsel.net/catalog?utm_source=pr&utm_medium=telegram"
+    assert link == "https://openai.com/x?a=1&utm_campaign=launch"
+
+    # and the point of it: the denylist can now see the tracking key it was
+    # blind to, so two channels with different campaigns produce one id
+    from cablegram.urls import item_id
+    assert item_id(link) == item_id("https://openai.com/x?a=1")
 
 
 def test_the_text_is_not_unescaped_twice():
@@ -184,3 +189,47 @@ def test_the_text_is_not_unescaped_twice():
     body = parse_channel(html, channel="ai_newz")[0].body
     assert "<script>" not in body
     assert "&lt;script&gt;" in body or "&amp;lt;" in body
+
+
+def test_a_sponsored_link_is_not_taken_as_the_subject():
+    """Russian channels open with the promo and put the real link further down,
+    so "the first link" is positional, not semantic. utm_medium=telegram is the
+    channel promoting something inside itself — one of 67 links in a live poll,
+    cheap to exclude, and it would otherwise be the one link kept."""
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/1">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            '<a href="https://shop.example/x?utm_source=pr&amp;amp;utm_medium=telegram">ad</a>'
+            ' а вот новость <a href="https://openai.com/index/glm">тут</a>'
+            '</div></div>')
+    assert parse_channel(html, channel="ai_newz")[0].links == \
+        ("https://openai.com/index/glm",)
+
+
+def test_a_link_carrying_an_ordinary_utm_is_kept():
+    """utm_source=chatgpt.com or perplexity means somebody copied the link from
+    there. Those are real articles — two of the three utm links in a live poll —
+    and dropping every utm would throw them away."""
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/1">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            '<a href="https://edition.cnn.com/story?utm_source=perplexity">x</a>'
+            '</div></div>')
+    assert parse_channel(html, channel="ai_newz")[0].links
+
+
+def test_a_very_long_post_is_capped_like_a_feed_entry():
+    """MAX_FIELD was applied in the RSS parser only, and the three adapters
+    build their Entry by hand — so a 24,000-character post was archived whole,
+    into the title, the body and the trigram index."""
+    from cablegram.rss import MAX_FIELD
+
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/1">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            + "x" * (MAX_FIELD * 4) + '</div></div>')
+    entry = parse_channel(html, channel="ai_newz")[0]
+    assert len(entry.body) <= MAX_FIELD and len(entry.title) <= MAX_FIELD

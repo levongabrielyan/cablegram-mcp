@@ -48,6 +48,11 @@ class StoreReport:
     seen: int = 0      # already archived, by this source or another
     skipped: int = 0   # the feed left it unusable: no url, or no title
     failed: int = 0    # this code could not handle it — a different problem
+    referenced: int = 0  # articles archived because this source linked them
+    # The source returned as many rows as it can return. "100 new" does not
+    # distinguish "there were 100" from "there were more, unreachable" — and for
+    # cls.cn, which cannot page backwards, what is beyond the ceiling is gone.
+    at_ceiling: bool = False
 
 
 def _utc_iso(dt) -> str:
@@ -75,8 +80,9 @@ def store_entries(
             # standing, reporting one entry as both new and failed. The report
             # is the only channel there is — nothing here logs — so it has to
             # describe what is actually in the archive.
-            outcome = _store_one(db, source, entry, fetched_at)
+            outcome, referenced = _store_one(db, source, entry, fetched_at)
             setattr(report, outcome, getattr(report, outcome) + 1)
+            report.referenced += referenced
         except Exception:
             # One entry, one transaction, so a failure costs that entry alone.
             # An earlier version wrapped the whole batch, which meant a single
@@ -94,12 +100,12 @@ def _store_one(
     source: Source,
     entry: Entry,
     fetched_at: str,
-) -> str:
-    """Archive one entry and name what happened: new, seen or skipped."""
+) -> tuple[str, int]:
+    """Archive one entry. Returns what happened and how many links it pulled in."""
     url = (entry.url or "").strip()
     title = (entry.title or "").strip()
     if not url or not title:
-        return "skipped"
+        return "skipped", 0
 
     url_norm = normalise(url)
     iid = item_id(url)
@@ -175,17 +181,18 @@ def _store_one(
             (iid, source.id, title, fetched_at),
         )
 
+        referenced = 0
         for link in entry.links:
             try:
-                _record_reference(db, source, link, title, published, date_exact,
-                                  fetched_at)
+                referenced += _record_reference(db, source, link, title, published,
+                                                fetched_at)
             except Exception:
                 # The post is what the channel published; the link is a bonus.
                 # A malformed href — normalise raises on an unclosed bracket —
                 # must not cost the post itself.
                 pass
 
-    return outcome
+    return outcome, referenced
 
 
 def _record_reference(
@@ -194,9 +201,8 @@ def _record_reference(
     link: str,
     title: str,
     published: str,
-    date_exact: int,
     fetched_at: str,
-) -> None:
+) -> int:
     """Credit a source for an article it pointed at.
 
     A channel writing about a launch has carried that story, and its own URL is
@@ -212,10 +218,10 @@ def _record_reference(
     """
     link = (link or "").strip()
     if not link:
-        return
+        return 0
     link_norm = normalise(link)
     if not link_norm:
-        return
+        return 0
 
     link_id = item_id(link)
     cursor = db.execute(
@@ -245,6 +251,7 @@ def _record_reference(
         " VALUES (?,?,?,?,'link')",
         (link_id, source.id, title, fetched_at),
     )
+    return 1 if cursor.rowcount else 0
 
 
 def cross_count(db: sqlite3.Connection, iid: str) -> int:

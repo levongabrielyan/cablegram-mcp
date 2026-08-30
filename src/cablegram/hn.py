@@ -23,7 +23,7 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
-from .rss import Entry
+from .rss import MAX_FIELD, Entry
 
 __all__ = ["parse_search", "search_url", "ALGOLIA", "MAX_ROWS"]
 
@@ -61,7 +61,7 @@ def _text(raw: str | None) -> str | None:
     if not raw:
         return None
     stripped = html.unescape(_TAGS.sub(" ", html.unescape(raw)))
-    return " ".join(stripped.split()) or None
+    return " ".join(stripped.split())[:MAX_FIELD] or None
 
 
 def parse_search(payload: dict) -> list[Entry]:
@@ -79,7 +79,9 @@ def parse_search(payload: dict) -> list[Entry]:
         title = (hit.get("title") or "").strip()
         stamp = hit.get("created_at_i")
         object_id = hit.get("objectID")
-        if not title or not stamp or not object_id:
+        # `is None` for the numbers: an id of 0 or a timestamp at the epoch are
+        # values, and testing for truth would drop them silently.
+        if not title or stamp is None or object_id is None:
             continue
 
         # .get, never [..]: the key is missing entirely on every Ask HN, and
@@ -87,7 +89,7 @@ def parse_search(payload: dict) -> list[Entry]:
         # The external URL is preferred because it is what makes one story
         # visible across several feeds.
         entries.append(Entry(
-            title=title,
+            title=title[:MAX_FIELD],
             url=(hit.get("url") or "").strip() or THREAD.format(object_id),
             published=datetime.fromtimestamp(int(stamp), timezone.utc),
             body=_text(hit.get("story_text")),

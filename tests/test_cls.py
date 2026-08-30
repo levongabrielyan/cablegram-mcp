@@ -145,3 +145,14 @@ def test_data_can_be_a_dict_with_the_list_inside():
     put it in data.roll_data. One adapter, both shapes."""
     payload = {"errno": 0, "data": {"roll_data": SAMPLE["data"]}}
     assert len(parse_response(payload)) == 3
+
+
+def test_a_very_long_dispatch_is_capped():
+    """cls.cn puts the whole dispatch in article_title, up to 617 characters
+    observed — and the cap lived in the RSS parser, which this never touches."""
+    from cablegram.rss import MAX_FIELD
+
+    payload = {"errno": 0, "data": [{"article_id": 1, "article_time": 1788078787,
+                                     "article_title": "【" + "标" * 40 + "】" + "文" * (MAX_FIELD * 3)}]}
+    entry = parse_response(payload)[0]
+    assert len(entry.body) <= MAX_FIELD

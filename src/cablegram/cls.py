@@ -22,7 +22,7 @@ import hashlib
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
-from .rss import Entry
+from .rss import MAX_FIELD, Entry
 
 __all__ = ["CLS_BASE", "AI_SUBJECT", "signed_url", "parse_response", "feed_url"]
 
@@ -69,13 +69,13 @@ def _headline_and_body(item: dict) -> tuple[str, str | None]:
     raw = (item.get("article_title") or "").strip()
     if raw.startswith("【") and "】" in raw:
         head, _, rest = raw[1:].partition("】")
-        body = rest.strip() or None
-        return head.strip(), body
+        body = rest.strip()[:MAX_FIELD] or None
+        return head.strip()[:MAX_FIELD], body
 
     # The six telegrams without brackets are short, and their whole text is the
     # title on the article's own page too.
     brief = (item.get("article_brief") or "").strip()
-    return raw, brief or None
+    return raw[:MAX_FIELD], brief[:MAX_FIELD] or None
 
 
 def parse_response(payload: dict) -> list[Entry]:
@@ -109,8 +109,12 @@ def parse_response(payload: dict) -> list[Entry]:
             continue
         article_id = item.get("article_id")
         # `ctime` on every endpoint but the subject one, which says article_time.
-        stamp = item.get("article_time") or item.get("ctime")
-        if not article_id or not stamp:
+        stamp = item.get("article_time")
+        if stamp is None:
+            stamp = item.get("ctime")
+        # `is None`, not falsy: an id of 0 or a timestamp at the epoch are
+        # values, and testing for truth would drop them without a word.
+        if article_id is None or stamp is None:
             # No fallback to capture time here. Ordering by timestamp is the only
             # pagination this source has, so an undated item breaks the
             # incremental stop as well as its own placement.

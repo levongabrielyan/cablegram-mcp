@@ -15,26 +15,32 @@ A full day of all nineteen costs a few thousand tokens. Six hours of them,
 grouped by source with the cuts declared, is around 700.
 
 ```
-CABLEGRAM v0.1 | 2026-08-29T09:00Z..2026-08-30T09:00Z | 210 items | 17/19 sources
-DOWN  deepmind=timeout8s
-      A DOWN SOURCE MEANS UNKNOWN, NOT "nothing happened".
-CUT   habr=25/44  kr36=25/61   (newest kept)
-CROSS a3f9c2e18b04 x6
-      Raw count of the same normalised url across sources. NOT a ranking.
+CABLEGRAM v0.1 | 2026-08-30T09:09Z..2026-08-30T14:09Z | 11 items | 19/19 sources
+CUT   habr=2/4  hn=2/159  kr36=2/3   (newest kept)
+COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## qbitai zh community 14/14
+## cls zh early,finance 1/1
 -- 08-30
-a3f9c2e18b04 07:12 智谱发布GLM-5，上下文窗口扩展至200万tokens
+e60e27faa7fc 10:04 AI数据中心扩张“限制性因素”浮现 马斯克：SpaceX正铸造燃气轮机叶片
 
-## hn en community 25/57
+## data_secrets ru telegram 1/1
 -- 08-30
-3f9a2c1d77e0 08:12 Show HN: local-first RAG over my Obsidian vault (github.com)
+a50d137e3147 10:49 Агенты OpenAI одну за одной автономно создали три цивилизации
+
+## hn en community,searchable 2/159
+-- 08-30
+2929f114895f 14:06 METR and Redwood Offer Postmortem of the HuggingFace Hack (thezvi.wordpress.com)
+7901d3fb4e1c 14:04 Google removed the URLs. Only for the people who resell them (scraping.club)
 ```
+
+*Five hours of nineteen sources, verbatim. `CUT` says what was left out and how
+much there was; `19/19` is how many answered.*
+
 
 ## Status
 
-Early development. All nineteen sources have an adapter and were verified
+v0.1 — the nineteen sources work; the tool API may still move. All nineteen sources have an adapter and were verified
 against the live endpoints: eleven RSS feeds, Hacker News through its search
 index, a signed Chinese financial API, and six public Telegram channels.
 
