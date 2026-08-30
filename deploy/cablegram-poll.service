@@ -1,0 +1,6 @@
+[Unit]
+Description=cablegram: fetch every source once and archive it
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cablegram poll
