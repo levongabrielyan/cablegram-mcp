@@ -134,3 +134,73 @@ def test_malformed_xml_raises():
 
     with pytest.raises(ET.ParseError):
         parse_feed(b"<rss><channel><item>")
+
+
+# ── Silent failures found by an external reviewer, 2026-08-30 ────────────────
+
+RSS1_RDF = b"""<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns="http://purl.org/rss/1.0/"
+         xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="https://example.com/"><title>Old school feed</title></channel>
+  <item rdf:about="https://example.com/a">
+    <title>Published through RSS 1.0</title>
+    <link>https://example.com/a</link>
+    <dc:date>2026-08-30T06:40:00Z</dc:date>
+    <description>Body text</description>
+  </item>
+</rdf:RDF>"""
+
+
+def test_rss1_rdf_is_not_silently_empty():
+    """RSS 1.0 puts <item> in a namespace, so a plain .//item search misses it.
+
+    The parser returned [] with no error: a feed could switch format and the
+    source would go mute for months with nobody noticing.
+    """
+    entries = parse_feed(RSS1_RDF)
+    assert len(entries) == 1
+    assert entries[0].title == "Published through RSS 1.0"
+    assert entries[0].url == "https://example.com/a"
+    assert entries[0].published is not None
+
+
+def test_html_entities_are_decoded():
+    """&nbsp; and friends survive tag stripping and reach the reader as literals."""
+    feed = b"""<rss version="2.0"><channel><item>
+        <title>GPT&amp;nbsp;5 &amp;mdash; released</title>
+        <link>https://e.com/a</link>
+        <description>&lt;p&gt;Cost&amp;nbsp;&amp;euro;5&lt;/p&gt;</description>
+    </item></channel></rss>"""
+    entry = parse_feed(feed)[0]
+    assert "&nbsp;" not in entry.title and "&mdash;" not in entry.title
+    assert "&nbsp;" not in entry.body and "&euro;" not in entry.body
+
+
+def test_entity_expansion_cannot_blow_up_memory():
+    """A feed is remote input. Nested entities expand geometrically ("billion laughs").
+
+    A few hundred bytes can become gigabytes and take the server down. Feeds are
+    fetched from third parties, so this is reachable by anyone who controls one.
+    """
+    bomb = b"""<?xml version="1.0"?>
+    <!DOCTYPE rss [
+      <!ENTITY a "aaaaaaaaaa">
+      <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">
+      <!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">
+      <!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">
+    ]>
+    <rss version="2.0"><channel><item>
+      <title>&d;</title><link>https://e.com/a</link>
+    </item></channel></rss>"""
+    with pytest.raises(ValueError, match="entities"):
+        parse_feed(bomb)
+
+
+def test_normal_feeds_are_unaffected_by_the_entity_guard():
+    """The guard must not reject the eleven real feeds. Standard entities
+    (&amp; &lt; &quot;) are built into XML and need no declaration."""
+    feed = b"""<rss version="2.0"><channel><item>
+        <title>Tom &amp; Jerry &lt;live&gt; &quot;quoted&quot;</title>
+        <link>https://e.com/a</link></item></channel></rss>"""
+    assert parse_feed(feed)[0].title == 'Tom & Jerry <live> "quoted"' 
