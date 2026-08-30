@@ -93,6 +93,11 @@ class _ChannelParser(HTMLParser):
         elif tag == "br" and self._text_depth is not None:
             self._chunks.append("\n")
 
+        elif tag == "a" and self._text_depth is not None and self._current is not None:
+            href = (attributes.get("href") or "").strip()
+            if href.startswith("http") and "t.me/" not in href:
+                self._current.setdefault("links", []).append(href)
+
     def handle_endtag(self, tag: str) -> None:
         if tag != "div":
             return
@@ -141,6 +146,11 @@ def parse_channel(page: str, *, channel: str) -> list[Entry]:
             continue
 
         post_id = message["post"].rsplit("/", 1)[-1]
+        # One link, the first. A post's headline describes one subject, so
+        # attaching it to three articles would assert three things of which at
+        # most one is true. Links back into t.me are the same ecosystem quoting
+        # itself, not an independent source carrying the story.
+        links = tuple(message.get("links", [])[:1])
         # A post is one block of text with no title field, so the first line
         # stands in for one. The whole text stays as the body: cutting a
         # headline out of a paragraph would lose the paragraph.
@@ -156,5 +166,6 @@ def parse_channel(page: str, *, channel: str) -> list[Entry]:
             published=datetime.fromisoformat(when).astimezone(timezone.utc),
             body=text,
             body_src="message",
+            links=links,
         ))
     return entries

@@ -102,3 +102,49 @@ def test_the_channel_url_asks_for_the_preview_view():
 
 def test_paging_asks_for_what_came_before_the_oldest_seen():
     assert channel_url("ai_newz", before=4710) == "https://t.me/s/ai_newz?before=4710"
+
+
+# ── the link inside a post, which is what makes a channel able to cross ─────
+
+def test_the_first_external_link_is_extracted():
+    """A channel's own URL is its permalink, so without this six of nineteen
+    sources can never appear in the cross-source count — and 34 of every 100
+    posts carry a link, four of them to openai.com in a single sample."""
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/1">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            'GLM-5 вышла<br/>Читайте: <a href="https://openai.com/index/glm">тут</a>'
+            '</div></div>')
+    entry = parse_channel(html, channel="ai_newz")[0]
+    assert entry.url == "https://t.me/ai_newz/1", "the post is still its own item"
+    assert entry.links == ("https://openai.com/index/glm",)
+
+
+def test_only_one_link_is_taken():
+    """A post's headline describes one subject. Attaching it to three articles
+    would assert three things, of which at most one is true."""
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/2">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            '<a href="https://a.example/one">a</a> и <a href="https://b.example/two">b</a>'
+            '</div></div>')
+    assert len(parse_channel(html, channel="ai_newz")[0].links) == 1
+
+
+def test_a_link_back_into_telegram_is_not_a_crossing():
+    """Channels quote each other constantly. Those are the same ecosystem, not
+    an independent source carrying the same story."""
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/3">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            'Смотри <a href="https://t.me/denissexy/123">там</a>'
+            '</div></div>')
+    assert parse_channel(html, channel="ai_newz")[0].links == ()
+
+
+def test_a_post_with_no_link_carries_none():
+    for entry in parse_channel(SAMPLE, channel="data_secrets"):
+        assert isinstance(entry.links, tuple)

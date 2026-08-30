@@ -464,3 +464,68 @@ def test_a_healthy_poll_clears_a_previous_write_failure(db):
 
     state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
     assert (state["wrote_new"], state["wrote_failed"]) == (3, 0)
+
+
+# ── a link inside a post counts as that source carrying the story ───────────
+
+def test_a_linked_article_is_archived_and_credited_to_the_channel(db):
+    """The decision this implements: a channel that links an article has carried
+    that story. Without it, six of nineteen sources can never cross with
+    anything, because their own URL is the permalink of the post."""
+    linked = "https://openai.com/index/glm5"
+    post = Entry("GLM-5 вышла", "https://t.me/ai_newz/1", PUB, "текст", "message",
+                 links=(linked,))
+    store_entries(db, by_id("ai_newz"), [post], fetched_at=NOW)
+
+    assert cross_count(db, item_id(linked)) == 1
+    row = db.execute("SELECT * FROM item WHERE id = ?", (item_id(linked),)).fetchone()
+    assert row["first_source"] == "ai_newz"
+    assert row["url_norm"] == linked
+
+
+def test_two_channels_linking_the_same_article_cross(db):
+    """The case this is for: several channels covering one launch within hours."""
+    linked = "https://openai.com/index/glm5"
+    for channel, title in (("ai_newz", "GLM-5 вышла"), ("denissexy", "Про GLM-5")):
+        store_entries(db, by_id(channel),
+                      [Entry(title, f"https://t.me/{channel}/1", PUB, None, None,
+                             links=(linked,))],
+                      fetched_at=NOW)
+
+    assert cross_count(db, item_id(linked)) == 2
+
+
+def test_a_linked_article_crosses_with_its_own_feed(db):
+    """The strongest signal available: a Russian channel and the lab's own blog
+    carrying the same URL within hours of each other."""
+    linked = "https://openai.com/index/glm5"
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("GLM-5 вышла", "https://t.me/ai_newz/1", PUB, None, None,
+                         links=(linked,))], fetched_at=NOW)
+    store_entries(db, by_id("openai"), [Entry("Introducing GLM-5", linked, PUB, "body",
+                                              "description")], fetched_at=NOW)
+
+    assert cross_count(db, item_id(linked)) == 2
+    row = db.execute("SELECT body FROM item WHERE id = ?", (item_id(linked),)).fetchone()
+    assert row["body"] == "body", "the source's own body fills in the placeholder"
+
+
+def test_the_post_itself_is_still_archived(db):
+    """The link is an additional sighting, not a replacement: the post has its
+    own text, which is what the channel actually wrote."""
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("GLM-5 вышла", "https://t.me/ai_newz/1", PUB, "текст", "message",
+                         links=("https://openai.com/index/glm5",))], fetched_at=NOW)
+
+    assert db.execute("SELECT COUNT(*) FROM item").fetchone()[0] == 2
+    post = db.execute("SELECT * FROM item WHERE url LIKE '%t.me%'").fetchone()
+    assert post["body"] == "текст"
+
+
+def test_a_link_that_fails_does_not_lose_the_post(db):
+    """The post is the thing the channel published; the link is a bonus."""
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("GLM-5", "https://t.me/ai_newz/1", PUB, None, None,
+                         links=("https://[malformed",))], fetched_at=NOW)
+
+    assert db.execute("SELECT COUNT(*) FROM item WHERE url LIKE '%t.me%'").fetchone()[0] == 1

@@ -48,6 +48,11 @@ class Entry:
     # how much of the article it holds is a property of the source, checked
     # against its real feed, and belongs where that check lives.
     body_src: str | None = None
+    # An article this entry points at, when the entry is a post about something
+    # rather than the thing itself. A Telegram channel's own URL is its
+    # permalink, so without this it could never appear in the cross-source
+    # count — and a channel linking a launch has carried that story.
+    links: tuple[str, ...] = ()
 
 
 def _text(node: ET.Element | None) -> str:

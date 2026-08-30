@@ -163,7 +163,61 @@ def _store_one(
             (iid, source.id, title, fetched_at),
         )
 
+        for link in entry.links:
+            try:
+                _record_reference(db, source, link, title, published, date_exact,
+                                  fetched_at)
+            except Exception:
+                # The post is what the channel published; the link is a bonus.
+                # A malformed href — normalise raises on an unclosed bracket —
+                # must not cost the post itself.
+                pass
+
     return outcome
+
+
+def _record_reference(
+    db: sqlite3.Connection,
+    source: Source,
+    link: str,
+    title: str,
+    published: str,
+    date_exact: int,
+    fetched_at: str,
+) -> None:
+    """Credit a source for an article it pointed at.
+
+    A channel writing about a launch has carried that story, and its own URL is
+    a permalink to the post rather than to the article — so without this, six of
+    nineteen sources could never appear in a cross-source count at all.
+
+    The article is archived if it is not already there, with the referring
+    post's headline standing in until its own feed supplies a better one. That
+    placeholder is the point rather than a compromise: it means an article
+    reaches the archive on the strength of somebody linking it, days before the
+    outlet's own feed carries it — which is the whole reason these sources are
+    in the list.
+    """
+    link = (link or "").strip()
+    if not link:
+        return
+    link_norm = normalise(link)
+    if not link_norm:
+        return
+
+    link_id = item_id(link)
+    db.execute(
+        "INSERT OR IGNORE INTO item"
+        " (id, url_norm, url, first_source, lang, title, body, body_src,"
+        "  published, date_exact, fetched_at, target_host)"
+        " VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?,?)",
+        (link_id, link_norm, link, source.id, source.lang, title, published,
+         date_exact, fetched_at, urlsplit(link_norm).netloc),
+    )
+    db.execute(
+        "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at) VALUES (?,?,?,?)",
+        (link_id, source.id, title, fetched_at),
+    )
 
 
 def cross_count(db: sqlite3.Connection, iid: str) -> int:
