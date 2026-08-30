@@ -24,15 +24,20 @@ def _poll(args) -> int:
     reports = asyncio.run(poll_once(db, list(resolve(args.sources)) or None))
 
     archived = sum(r.new for r in reports)
-    broken = [r for r in reports if r.state != "ok"]
+    # `unchanged` is the source answering that nothing is new — a success, and
+    # the most common outcome once the archive is warm. Counting it as broken
+    # would report six failures on a perfectly normal poll.
+    broken = [r for r in reports if r.state in ("fetch-failed", "unparseable")]
 
     for report in reports:
         if report.state == "ok":
             line = f"{report.new:>4} new  {report.seen:>4} seen"
             if report.failed:
                 line += f"  {report.failed} FAILED"
+        elif report.state == "unchanged":
+            line = "     nothing new (304)"
         else:
-            line = f"     {report.state}"
+            line = f"     {report.state.upper()}"
         print(f"  {report.source:16} {line}")
 
     print(f"\n{archived} archived · {len(reports) - len(broken)}/{len(reports)} sources ok")
