@@ -1,0 +1,28 @@
+name: publish
+
+# Publishes to PyPI when a version tag is pushed. No API token anywhere:
+# PyPI's trusted publishing verifies the workflow's identity directly, so
+# there is no secret to leak, rotate, or accidentally commit.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # this is what trusted publishing checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      # The same suite the tests workflow runs. A release that cannot pass it
+      # should not exist, and a tag is the last place to find that out.
+      - run: uv sync --locked
+      - run: uv run pytest -q
+
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
