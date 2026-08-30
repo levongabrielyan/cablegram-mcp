@@ -137,3 +137,28 @@ def test_a_source_with_no_adapter_is_not_reported_as_broken():
     assert "cls=HTTP403" in out
     assert "ai_newz" in out and "hn" in out
     assert "ai_newz=" not in out.split("PENDING")[0], "not in the DOWN line"
+
+
+def test_full_detail_actually_carries_the_body():
+    """detail="full" lowered the per-source limit and shipped no body, so asking
+    for more returned five headlines instead of twenty-five and nothing else —
+    strictly less information, from a parameter whose name promises more.
+
+    A promise in a tool description that the code does not keep is the worst
+    failure this surface has: the model believes it read the article."""
+    out = render_latest([row(body="正文内容完整版", body_src="content:encoded")],
+                        since="s", until="u", down={}, sources_total=19, detail="full")
+    assert "正文内容完整版" in out
+
+
+def test_headlines_detail_ships_no_bodies():
+    out = render_latest([row(body="should not appear")], since="s", until="u",
+                        down={}, sources_total=19)
+    assert "should not appear" not in out
+
+
+def test_a_full_listing_marks_the_teasers():
+    """Same reason as wire_read: unmarked, two sentences read as the article."""
+    out = render_latest([row(body="two sentences", body_src="description")],
+                        since="s", until="u", down={}, sources_total=19, detail="full")
+    assert "teaser" in out

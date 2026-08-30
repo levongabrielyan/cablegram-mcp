@@ -71,7 +71,14 @@ def _item_line(row: dict) -> str:
     return f"{mark}{row['id']} {_time(row['published'])} {row['title']}{host}"
 
 
-def _blocks(rows: list[dict], limit_per_source: int | None) -> tuple[list[str], dict[str, tuple[int, int]]]:
+def _body_kind(row: dict) -> str:
+    if not row.get("body"):
+        return "none"
+    return "full" if row.get("body_src") in ("content:encoded", "atom:content") else "teaser"
+
+
+def _blocks(rows: list[dict], limit_per_source: int | None,
+            detail: str = "headlines") -> tuple[list[str], dict[str, tuple[int, int]]]:
     """Group by source, chronological within. Neutral, and it makes cuts legible.
 
     Ordering by recency across sources would let one firehose own the top of the
@@ -95,6 +102,11 @@ def _blocks(rows: list[dict], limit_per_source: int | None) -> tuple[list[str], 
                 day = _day(item["published"])
                 out.append(f"-- {day}")
             out.append(_item_line(item))
+            if detail == "full" and item.get("body"):
+                kind = _body_kind(item)
+                out.append(f"   {item['body']}")
+                if kind == "teaser":
+                    out.append("   !! teaser: a truncated excerpt, NOT the full article.")
     return out, cuts
 
 
@@ -106,10 +118,11 @@ def render_latest(
     down: dict[str, str],
     sources_total: int,
     no_adapter: list[str] | None = None,
+    detail: str = "headlines",
     limit_per_source: int | None = None,
     max_tokens: int = 12000,
 ) -> str:
-    body, cuts = _blocks(rows, limit_per_source)
+    body, cuts = _blocks(rows, limit_per_source, detail)
 
     # Sources that answered: not the total minus failures, which would count
     # the eight with no adapter as healthy and overstate the coverage of every
@@ -144,7 +157,7 @@ def render_latest(
     kept = len(rows)
     while kept > 1 and estimate_tokens(text) > max_tokens:
         kept = int(kept * 0.7)
-        body, cuts = _blocks(rows[:kept], limit_per_source)
+        body, cuts = _blocks(rows[:kept], limit_per_source, detail)
         text = "\n".join(header + body)
     return (f"BUDGET {kept}/{len(rows)} items fit in max_tokens={max_tokens}. "
             f"Raise it or narrow `hours`/`sources`.\n" + text)

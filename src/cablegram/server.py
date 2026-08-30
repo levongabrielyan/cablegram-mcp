@@ -83,7 +83,10 @@ def build(open_db=None) -> MCPServer:
             "CROSS counts how many sources carried the same URL. It is arithmetic, not "
             "a ranking — but a story in six feeds across three languages within hours "
             "is the earliest signal this server can give you.\n"
-            "Returns headlines with ids. Pass those ids to wire_read for the text."
+            "detail='headlines' (the default) returns titles and ids; pass those ids to "
+            "wire_read for the text. detail='full' includes each stored body inline and "
+            "drops to 5 per source, because bodies are expensive — a teaser is marked as "
+            "one, and is NOT the article."
         ),
         annotations=READ_ONLY,
     )
@@ -115,7 +118,7 @@ def build(open_db=None) -> MCPServer:
         }
         return render_latest(rows, since=start, until=_iso(until), down=down,
                              sources_total=len(wanted),
-                             no_adapter=sorted(wanted - pollable),
+                             no_adapter=sorted(wanted - pollable), detail=detail,
                              limit_per_source=limit_per_source, max_tokens=max_tokens)
 
     @server.tool(
