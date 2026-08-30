@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-cablegram = "cablegram.server:main"
+cablegram = "cablegram.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/levongabrielyan/cablegram-mcp"

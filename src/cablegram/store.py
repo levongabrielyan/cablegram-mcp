@@ -39,6 +39,10 @@ class StoreReport:
     'archived 400 items' hides that one source contributed nothing."""
 
     source: str
+    # What happened to this source this pass. A failed or unchanged source keeps
+    # its row rather than vanishing from the list: nine reports for eleven
+    # sources makes two disappear, and nothing downstream can tell.
+    state: str = "ok"  # ok | fetch-failed | unparseable | unchanged
     new: int = 0
     seen: int = 0      # already archived, by this source or another
     skipped: int = 0   # the feed left it unusable: no url, or no title
