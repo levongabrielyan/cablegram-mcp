@@ -113,3 +113,14 @@ def test_the_page_size_stays_under_the_documented_cap():
     """hitsPerPage above 1000 is silently capped rather than refused."""
     assert "hitsPerPage=1000" not in search_url(since=0, rows=5000) or True
     assert "hitsPerPage=100" in search_url(since=0, rows=100)
+
+
+def test_the_poller_asks_for_the_whole_ceiling():
+    """hitsPerPage defaulted to 100, so a 48-hour window returned 3 hours of
+    stories: the cap decided the window, not the parameter. One request for
+    1000 costs exactly the same as one for 100."""
+    from cablegram.poll import _request_url
+    from cablegram.sources import by_id
+
+    url = _request_url(by_id("hn"), since=0)
+    assert "hitsPerPage=1000" in url

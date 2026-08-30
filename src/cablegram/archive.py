@@ -23,7 +23,7 @@ from .urls import IDENTITY, id_recipe
 
 __all__ = ["archive_path", "connect", "SCHEMA_VERSION", "ArchiveMismatch"]
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class ArchiveMismatch(RuntimeError):
@@ -63,7 +63,16 @@ CREATE TABLE IF NOT EXISTS sighting (
     source      TEXT NOT NULL,
     title       TEXT NOT NULL,
     seen_at     TEXT NOT NULL,
-    PRIMARY KEY (item_id, source)
+    -- How this source saw it. 'feed' is something the source published; 'link'
+    -- is an article it pointed at from a post of its own.
+    --
+    -- Both count towards the cross-source total — a channel writing about a
+    -- launch has carried that story — but only 'feed' belongs in that source's
+    -- listing. Without the distinction every Telegram post with a link appeared
+    -- twice under the same headline, and the block header claimed completeness
+    -- over the inflated list: 100 posts became 167 rows.
+    via         TEXT NOT NULL DEFAULT 'feed',
+    PRIMARY KEY (item_id, source, via)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sighting_source ON sighting(source, seen_at DESC);

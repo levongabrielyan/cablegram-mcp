@@ -94,7 +94,10 @@ class _ChannelParser(HTMLParser):
             self._chunks.append("\n")
 
         elif tag == "a" and self._text_depth is not None and self._current is not None:
-            href = (attributes.get("href") or "").strip()
+            # Telegram escapes ampersands twice, so one more pass is needed
+            # here — the opposite of the rule in rss._text, and for the opposite
+            # reason: unescape as many times as the producer escaped.
+            href = html_module.unescape((attributes.get("href") or "").strip())
             if href.startswith("http") and "t.me/" not in href:
                 self._current.setdefault("links", []).append(href)
 
@@ -123,7 +126,9 @@ class _ChannelParser(HTMLParser):
 
 
 def _clean(text: str) -> str:
-    text = html_module.unescape(text)
+    # No unescape here: HTMLParser(convert_charrefs=True) already did one pass,
+    # and a second turned an escaped `&lt;script&gt;` in a post into a literal
+    # tag in the archive.
     text = _SPACES.sub(" ", text)
     return _BLANKS.sub("\n\n", text).strip()
 

@@ -240,13 +240,23 @@ def render_read(rows: list[dict], *, requested: list[str]) -> str:
         # not something a tag name can be asked, in either direction.
         body = (f" body={row['body_src']} {len(row['body'])}c" if row.get("body")
                 else " body=none")
+        borrowed = row.get("via") == "link"
+        mark = "~" if borrowed or not row.get("date_exact", 1) else ""
         out.append(f"\n## {row['id']} {row.get('first_source', '')} {row.get('lang','')} "
-                   f"{row['published']}{body}{cross}")
+                   f"{mark}{row['published']}{body}{cross}")
         out.append(f"url {row['url']}")
         out.append(row["title"])
         if row.get("body"):
             out.append(row["body"])
-        if not row.get("body"):
+        if borrowed:
+            # Everything on the line above is borrowed from whoever linked it.
+            # Left unmarked, a model answers "per the Russian channel ai_newz,
+            # published on the 26th" about an article that outlet never touched.
+            out.append(f"!! reached the archive because {row.get('first_source')} linked "
+                       f"it, not from its own feed. The headline, language, source and "
+                       f"date are that post's, not the article's. Open `url` for the "
+                       f"real thing.")
+        elif not row.get("body"):
             out.append("!! this source publishes headlines only. Open `url` for the text.")
     return "\n".join(out)
 

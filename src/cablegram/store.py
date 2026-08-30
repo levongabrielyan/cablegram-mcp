@@ -157,9 +157,21 @@ def _store_one(
                     (entry.body, entry.body_src, iid),
                 )
 
+        # A feed arriving corrects whatever a reference had to guess. Guarded in
+        # SQL rather than by a lookup: it only fires while no feed has claimed
+        # this item, so a second channel linking it cannot overwrite a real
+        # headline, and it runs before this source's own sighting exists.
         db.execute(
-            "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at)"
-            " VALUES (?,?,?,?)",
+            "UPDATE item SET title = ?, lang = ?, first_source = ?,"
+            "                published = ?, date_exact = ?"
+            " WHERE id = ? AND NOT EXISTS"
+            "   (SELECT 1 FROM sighting WHERE item_id = ? AND via = 'feed')",
+            (title, source.lang, source.id, published, date_exact, iid, iid),
+        )
+
+        db.execute(
+            "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at, via)"
+            " VALUES (?,?,?,?,'feed')",
             (iid, source.id, title, fetched_at),
         )
 
@@ -206,16 +218,31 @@ def _record_reference(
         return
 
     link_id = item_id(link)
-    db.execute(
+    cursor = db.execute(
         "INSERT OR IGNORE INTO item"
         " (id, url_norm, url, first_source, lang, title, body, body_src,"
         "  published, date_exact, fetched_at, target_host)"
-        " VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?,?)",
+        # date_exact is 0, always. A reference knows when somebody linked the
+        # article, never when it was published — and writing 1 there stopped the
+        # improving UPDATE from ever firing, so an article linked three days
+        # before its own feed carried it kept the channel's date, flagged exact,
+        # for good. That is precisely the case these sources exist for.
+        " VALUES (?,?,?,?,?,?,NULL,NULL,?,0,?,?)",
         (link_id, link_norm, link, source.id, source.lang, title, published,
-         date_exact, fetched_at, urlsplit(link_norm).netloc),
+         fetched_at, urlsplit(link_norm).netloc),
     )
+    if not cursor.rowcount:
+        # Same check the main path grew earlier: OR IGNORE swallows every
+        # constraint violation, so a collision would hang this sighting off an
+        # unrelated story rather than being noticed.
+        existing = db.execute("SELECT url_norm FROM item WHERE id = ?",
+                              (link_id,)).fetchone()
+        if existing is None or existing["url_norm"] != link_norm:
+            raise CollisionError(f"id {link_id} already belongs to another url")
+
     db.execute(
-        "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at) VALUES (?,?,?,?)",
+        "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at, via)"
+        " VALUES (?,?,?,?,'link')",
         (link_id, source.id, title, fetched_at),
     )
 
@@ -409,7 +436,9 @@ def latest_items(
         f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY i.published DESC)"
         f"           AS rank_in_source"
         f" FROM sighting s JOIN item i ON i.id = s.item_id"
-        f" WHERE i.published >= ?{clause}"
+        # via='feed' only: a linked article is not something the channel wrote,
+        # and listing it repeats the post under the same headline.
+        f" WHERE s.via = 'feed' AND i.published >= ?{clause}"
         f" ORDER BY s.source, i.published DESC",
         params,
     ).fetchall()
@@ -435,7 +464,13 @@ def items_by_ids(db: sqlite3.Connection, ids: list[str]) -> list[dict]:
             f"SELECT {_ITEM_COLUMNS}, i.title,"
             f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
             f"       (SELECT GROUP_CONCAT(x.source) FROM sighting x WHERE x.item_id = i.id)"
-            f"           AS sources"
+            f"           AS sources,"
+            # 'link' when nothing has published this under its own feed: the
+            # title, language, source and date are all borrowed from whoever
+            # linked it, and wire_read has to say so.
+            f"       CASE WHEN EXISTS (SELECT 1 FROM sighting x"
+            f"                         WHERE x.item_id = i.id AND x.via = 'feed')"
+            f"            THEN 'feed' ELSE 'link' END AS via"
             f" FROM item i WHERE i.id IN ({marks})", ids)
     }
     return [found[i] for i in ids if i in found]

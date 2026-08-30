@@ -148,3 +148,39 @@ def test_a_link_back_into_telegram_is_not_a_crossing():
 def test_a_post_with_no_link_carries_none():
     for entry in parse_channel(SAMPLE, channel="data_secrets"):
         assert isinstance(entry.links, tuple)
+
+
+def test_a_double_escaped_href_is_decoded():
+    """Telegram escapes ampersands twice: &amp;amp; in the raw HTML. HTMLParser
+    unescapes once, so what reaches normalise still carries &amp; — parse_qsl
+    splits on & and the keys become `amp;utm_medium`, which do not start with
+    utm_ and survive the denylist whole.
+
+    The rubbish in the URL is not the problem. Two channels linking the same
+    article with different campaigns then produce different ids, and the
+    crossing this feature exists to create does not happen.
+    """
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/1">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            '<a href="https://ggsel.net/catalog?utm_source=pr&amp;amp;utm_medium=telegram">x</a>'
+            '</div></div>')
+    link = parse_channel(html, channel="ai_newz")[0].links[0]
+    assert "&amp;" not in link
+    assert link == "https://ggsel.net/catalog?utm_source=pr&utm_medium=telegram"
+
+
+def test_the_text_is_not_unescaped_twice():
+    """HTMLParser(convert_charrefs=True) already converts once, and _clean called
+    html.unescape again — so `R&amp;amp;D` in a post came out as `R&D` and an
+    escaped `&amp;lt;script&amp;gt;` became a literal tag in the archive."""
+    html = ('<div class="tgme_widget_message" data-post="ai_newz/1">'
+            '<a class="tgme_widget_message_date">'
+            '<time datetime="2026-08-30T10:00:00+00:00">10:00</time></a>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            'Цена: 5 &amp;lt;script&amp;gt; и R&amp;amp;D'
+            '</div></div>')
+    body = parse_channel(html, channel="ai_newz")[0].body
+    assert "<script>" not in body
+    assert "&lt;script&gt;" in body or "&amp;lt;" in body

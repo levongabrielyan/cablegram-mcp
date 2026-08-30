@@ -249,3 +249,17 @@ def test_a_reverse_engineered_source_says_so():
                          archive_path="/tmp/a.db")
     cls_line = [line for line in out.splitlines() if line.startswith("cls ")][0]
     assert "fragile" in cls_line
+
+
+def test_a_referenced_article_does_not_pretend_to_be_its_own_source():
+    """Four claims nobody checked: the source, the language, the date, and that
+    the outlet publishes headlines only. A model reading it would answer "per
+    the Russian channel ai_newz, published on the 26th" about an Alibaba blog
+    post it linked."""
+    out = render_read([row(via="link", first_source="ai_newz", lang="ru", body=None,
+                           title="Вышла Qwen 3.8", url="https://qwen.ai/blog?id=q3",
+                           date_exact=0, sources="ai_newz")], requested=["a3f9c2e1"])
+    assert "linked" in out, "it has to say the row arrived through a link"
+    assert "not from its own feed" in out
+    assert "headlines only" not in out, "qwen.ai does publish text; nobody fetched it"
+    assert "ai_newz" in out, "and name who linked it"

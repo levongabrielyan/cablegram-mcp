@@ -15,6 +15,7 @@ from cablegram.fetch import Fetched
 from cablegram.rss import Entry
 from cablegram.sources import by_id
 from cablegram.store import (StoreReport, conditional_headers, cross_count,
+                             items_by_ids, latest_items,
                              record_attempt,
                              store_entries)
 from cablegram.urls import item_id
@@ -529,3 +530,118 @@ def test_a_link_that_fails_does_not_lose_the_post(db):
                          links=("https://[malformed",))], fetched_at=NOW)
 
     assert db.execute("SELECT COUNT(*) FROM item WHERE url LIKE '%t.me%'").fetchone()[0] == 1
+
+
+# ── sixth review: a link is a sighting, but not something the channel wrote ──
+
+def test_a_channel_block_does_not_repeat_the_post_for_its_link(db):
+    """The post and its link both created a sighting by the same source, and
+    latest_items returns a row per sighting — so every Telegram post with a link
+    appeared twice, with the same headline, and the block header claimed
+    completeness over the inflated list. Measured live: 100 posts became 167
+    rows across six sources, and the model counts 23 stories where there are 13.
+    """
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("Робо-утка за $399", "https://t.me/ai_newz/1", PUB, "текст",
+                         "message", links=("https://pollen-robotics.com/microduck",))],
+                  fetched_at=NOW)
+
+    rows = latest_items(db, since="2020-01-01T00:00:00Z", sources=["ai_newz"])
+    assert len(rows) == 1
+    assert rows[0]["url"] == "https://t.me/ai_newz/1"
+
+
+def test_the_linked_article_still_counts_towards_the_crossing(db):
+    """Excluding it from the listing must not exclude it from the count: that
+    count is the whole reason the link is recorded."""
+    linked = "https://pollen-robotics.com/microduck"
+    for channel in ("ai_newz", "data_secrets"):
+        store_entries(db, by_id(channel),
+                      [Entry("Робо-утка", f"https://t.me/{channel}/1", PUB, None, None,
+                             links=(linked,))], fetched_at=NOW)
+
+    assert cross_count(db, item_id(linked)) == 2
+
+
+def test_a_borrowed_headline_is_marked_as_borrowed(db):
+    """wire_read on a referenced article asserted four things nobody checked:
+    the source, the language, the publication date and that the outlet publishes
+    headlines only. It has to say where the row came from."""
+    linked = "https://qwen.ai/blog?id=qwen3"
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("Вышла Qwen 3.8", "https://t.me/ai_newz/1", PUB, None, None,
+                         links=(linked,))], fetched_at=NOW)
+
+    row = items_by_ids(db, [item_id(linked)])[0]
+    assert row["via"] == "link"
+
+
+def test_a_reference_does_not_claim_to_know_the_publication_date(db):
+    """The reference wrote date_exact=1 with the post's time, and the improving
+    UPDATE only fires WHERE date_exact = 0 — so an article linked by a channel
+    three days before its own feed carried it kept the channel's date, flagged
+    exact, for good. wire_latest(hours=24) would never find it on the day it
+    was actually published. That is the case these sources exist for."""
+    linked = "https://openai.com/index/gpt6"
+    early = datetime(2026, 8, 26, 9, 0, tzinfo=timezone.utc)
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("Вышла GPT-6", "https://t.me/ai_newz/1", early, None, None,
+                         links=(linked,))], fetched_at=NOW)
+
+    row = db.execute("SELECT * FROM item WHERE id = ?", (item_id(linked),)).fetchone()
+    assert row["date_exact"] == 0, "a reference does not know when the article came out"
+
+
+def test_the_articles_own_feed_corrects_what_the_reference_guessed(db):
+    """Title, language and source were guesses from the post. When the outlet's
+    own feed arrives they are facts, and nothing updated them."""
+    linked = "https://openai.com/index/gpt6"
+    early = datetime(2026, 8, 26, 9, 0, tzinfo=timezone.utc)
+    real = datetime(2026, 8, 29, 15, 0, tzinfo=timezone.utc)
+
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("Вышла GPT-6", "https://t.me/ai_newz/1", early, None, None,
+                         links=(linked,))], fetched_at=NOW)
+    store_entries(db, by_id("openai"),
+                  [Entry("Introducing GPT-6", linked, real, "the announcement",
+                         "description")], fetched_at=NOW)
+
+    row = db.execute("SELECT * FROM item WHERE id = ?", (item_id(linked),)).fetchone()
+    assert row["title"] == "Introducing GPT-6"
+    assert row["lang"] == "en"
+    assert row["first_source"] == "openai"
+    assert row["published"] == "2026-08-29T15:00:00Z"
+    assert row["date_exact"] == 1
+
+
+def test_a_second_channel_does_not_overwrite_a_real_headline(db):
+    """Only a feed corrects a reference. Another reference must not."""
+    linked = "https://openai.com/index/gpt6"
+    store_entries(db, by_id("openai"),
+                  [Entry("Introducing GPT-6", linked, PUB, "body", "description")],
+                  fetched_at=NOW)
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("Вышла GPT-6", "https://t.me/ai_newz/1", PUB, None, None,
+                         links=(linked,))], fetched_at=NOW)
+
+    row = db.execute("SELECT * FROM item WHERE id = ?", (item_id(linked),)).fetchone()
+    assert row["title"] == "Introducing GPT-6"
+    assert row["first_source"] == "openai"
+
+
+def test_a_reference_reports_a_collision_like_the_main_path_does(db):
+    """_store_one grew this check in an earlier round and the new path did not."""
+    linked = "https://openai.com/index/gpt6"
+    db.execute("INSERT INTO item(id, url_norm, url, first_source, lang, title,"
+               " fetched_at, date_exact) VALUES (?,'https://other.example/x',"
+               " 'https://other.example/x','kr36','zh','unrelated',?,1)",
+               (item_id(linked), NOW))
+    db.commit()
+
+    report = store_entries(db, by_id("ai_newz"),
+                           [Entry("Вышла GPT-6", "https://t.me/ai_newz/1", PUB, None,
+                                  None, links=(linked,))], fetched_at=NOW)
+
+    assert report.new == 1, "the post itself is archived"
+    assert not db.execute("SELECT 1 FROM sighting WHERE item_id = ? AND source = 'ai_newz'"
+                          " AND via = 'link'", (item_id(linked),)).fetchall()

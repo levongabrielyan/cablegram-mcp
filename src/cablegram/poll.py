@@ -20,7 +20,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from .cls import feed_url as cls_feed_url, parse_response as parse_cls
-from .hn import parse_search as parse_hn, search_url as hn_search_url
+from .hn import MAX_ROWS, parse_search as parse_hn, search_url as hn_search_url
 from .telegram import channel_url, parse_channel
 from .fetch import fetch_all
 from .rss import parse_feed
@@ -46,7 +46,11 @@ def _request_url(source: Source, since: int) -> str:
     if source.kind == "cls":
         return cls_feed_url()
     if source.kind == "hn":
-        return hn_search_url(since=since)
+        # The whole ceiling, not the default 100: a 48-hour window was coming
+        # back with three hours of stories, because the page size decided the
+        # window. One request for a thousand costs the same as one for a
+        # hundred, and the extra margin is what survives a poll that was missed.
+        return hn_search_url(since=since, rows=MAX_ROWS)
     if source.kind == "telegram":
         return channel_url(source.id)
     return source.url
