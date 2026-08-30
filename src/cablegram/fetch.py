@@ -30,6 +30,9 @@ USER_AGENT = (
     "Chrome/141.0 Safari/537.36"
 )
 
+# Per operation, not per request: httpx restarts the read timeout on every
+# chunk, so a server dripping a byte every seven seconds stays under it forever.
+# What actually bounds a source is TOTAL_DEADLINE below.
 PER_SOURCE_TIMEOUT = 8.0
 TOTAL_DEADLINE = 25.0
 MAX_BYTES = 8 * 1024 * 1024  # cls.cn's largest observed response is 634 KB
@@ -103,6 +106,10 @@ async def fetch_one(
                         return Fetched(source_id, ok=False, status=response.status_code,
                                        error=f"HTTP {response.status_code}")
                     last_error = f"HTTP {response.status_code}"
+                    if attempt < RETRIES:
+                        # A 5xx retried in the same millisecond is not a retry:
+                        # whatever was overloaded still is.
+                        await asyncio.sleep(0.5 * (attempt + 1))
                     continue
 
                 body = await _read_capped(response, MAX_BYTES)

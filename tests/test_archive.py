@@ -1,7 +1,7 @@
 """The Chinese search tests are the point of this file.
 
 With SQLite's default tokenizer every Chinese query returns zero hits without
-raising anything. Three of fifteen sources would go mute and no error would ever
+raising anything. Three of nineteen sources would go mute and no error would ever
 say so. These tests fail loudly if that regression ever comes back.
 """
 

@@ -1,4 +1,4 @@
-"""The fifteen sources, as data.
+"""The nineteen sources, as data.
 
 The set is fixed on purpose. A configurable aggregator is a different product:
 this one is tuned for one question — what is happening in tech and AI today,
@@ -10,7 +10,7 @@ reader which language to expect, since headlines are never translated.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 __all__ = ["Source", "SOURCES", "by_id", "resolve"]
 
@@ -155,7 +155,7 @@ def by_id(source_id: str) -> Source | None:
 def resolve(selectors: list[str] | None) -> tuple[Source, ...]:
     """Accept ids and tags in the same list: ``["early", "hn"]``.
 
-    Nobody remembers eighteen ids. Asking for a theme is the common case, so both
+    Nobody remembers nineteen ids. Asking for a theme is the common case, so both
     resolve through one argument instead of two.
     """
     if not selectors:

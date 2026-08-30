@@ -338,3 +338,23 @@ def test_cross_counts_come_back_in_one_query(db):
     from cablegram.store import cross_counts
     counts = cross_counts(db, [item_id(GLM), item_id("https://qbitai.com/b")])
     assert counts == {item_id(GLM): 2, item_id("https://qbitai.com/b"): 1}
+
+
+def test_a_304_does_not_clear_the_validators(db):
+    """It works today only because fetch_one echoes back the validator it sent.
+
+    Nothing writes that coupling down, so the day a hand-written fetcher — cls
+    or Telegram — reports a 304 without echoing it, record_attempt would null
+    the etag on a *success* path and every poll would re-download the whole feed
+    for good. No error, just a bill.
+    """
+    record_attempt(db, Fetched("qbitai", ok=True, body=b"x", status=200,
+                               etag='W/"v1"', last_modified="Sat, 30 Aug 2026 06:00:00 GMT",
+                               fetched_at="2026-08-30T12:00:00Z"))
+    record_attempt(db, Fetched("qbitai", ok=True, status=304, unchanged=True,
+                               fetched_at="2026-08-30T12:05:00Z"))  # no validators echoed
+
+    state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
+    assert state["etag"] == 'W/"v1"'
+    assert state["last_mod"] == "Sat, 30 Aug 2026 06:00:00 GMT"
+    assert state["last_ok"] == "2026-08-30T12:05:00Z", "still a success"

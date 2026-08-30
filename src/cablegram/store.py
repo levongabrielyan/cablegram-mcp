@@ -208,9 +208,13 @@ def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
     * A failure never touches ``last_ok``. That field is how anyone notices a
       source has been mute for days — overwrite it and the silence is invisible.
     * A failure never touches the validators either, or the next poll
-      re-downloads a feed the server already has.
+      re-downloads a feed the server already has. Neither does a 304: there is
+      no new content, so the stored validators are still the right ones — and
+      relying on the fetcher to echo them back would make a hand-written
+      adapter that forgets able to null them on a success path.
     """
     ok = fetched.ok
+    keep_validators = not ok or fetched.unchanged
     with db:
         db.execute(
             "INSERT INTO source_state(source, last_ok, last_try, last_error, etag, last_mod)"
@@ -218,17 +222,18 @@ def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
             "         CASE WHEN :ok THEN :now END,"
             "         :now,"
             "         CASE WHEN :ok THEN NULL ELSE :error END,"
-            "         CASE WHEN :ok THEN :etag END,"
-            "         CASE WHEN :ok THEN :last_mod END)"
+            "         CASE WHEN :keep THEN NULL ELSE :etag END,"
+            "         CASE WHEN :keep THEN NULL ELSE :last_mod END)"
             " ON CONFLICT(source) DO UPDATE SET"
             "   last_ok    = CASE WHEN :ok THEN :now      ELSE last_ok  END,"
             "   last_try   = :now,"
             "   last_error = CASE WHEN :ok THEN NULL      ELSE :error   END,"
-            "   etag       = CASE WHEN :ok THEN :etag     ELSE etag     END,"
-            "   last_mod   = CASE WHEN :ok THEN :last_mod ELSE last_mod END",
+            "   etag       = CASE WHEN :keep THEN etag     ELSE :etag     END,"
+            "   last_mod   = CASE WHEN :keep THEN last_mod ELSE :last_mod END",
             {
                 "source": fetched.source_id,
                 "ok": 1 if ok else 0,
+                "keep": 1 if keep_validators else 0,
                 "now": fetched.fetched_at,
                 "error": fetched.error,
                 "etag": fetched.etag,

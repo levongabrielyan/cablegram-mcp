@@ -17,6 +17,27 @@ def transport(handler):
     return httpx2.MockTransport(handler)
 
 
+@pytest.fixture
+def fake_network(monkeypatch):
+    """Install a fake transport into the client fetch_all builds for itself.
+
+    Passing a transport to fetch_one is not enough: fetch_all constructs its own
+    AsyncClient, so a handler handed to it is never consulted and the test goes
+    to the real network — passing on the DNS failures of a domain that does not
+    exist, and passing just as well on a machine with no egress at all.
+    """
+    def install(handler):
+        real = httpx2.AsyncClient
+
+        def patched(*args, **kwargs):
+            kwargs.setdefault("transport", httpx2.MockTransport(handler))
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(httpx2, "AsyncClient", patched)
+
+    return install
+
+
 async def _one(handler, **kwargs):
     async with httpx2.AsyncClient(transport=transport(handler)) as client:
         return await fetch_one(client, "src", "https://e.com/feed", **kwargs)
@@ -99,35 +120,41 @@ def test_oversized_response_is_refused():
     assert result.ok is False and "exceeded" in result.error
 
 
-def test_every_target_gets_a_result_even_when_it_fails():
-    """The caller must never have to guess which source went missing."""
+def test_every_target_gets_a_result_even_when_it_fails(fake_network):
+    """The caller must never have to guess which source went missing.
+
+    This asserted only the order and the length, which held with both sources
+    down — and both were, because the handler below was never installed and the
+    requests went to the real network. It now checks what its name claims.
+    """
     def handler(request):
         if "bad" in str(request.url):
             raise httpx2.ConnectError("down")
         return httpx2.Response(200, content=b"ok")
 
-    async def run():
-        # fetch_all builds its own client, so exercise the shape it guarantees
-        results = await fetch_all([("good", "https://e.com/a"), ("bad", "https://nope.invalid/b")])
-        return results
+    fake_network(handler)
+    results = asyncio.run(fetch_all([("good", "https://e.com/a"),
+                                     ("bad", "https://e.com/bad")]))
 
-    results = asyncio.run(run())
     assert [r.source_id for r in results] == ["good", "bad"]
-    assert len(results) == 2
+    assert results[0].ok and results[0].body == b"ok"
+    assert results[1].ok is False and "ConnectError" in results[1].error
 
 
-@pytest.mark.parametrize("field", ["ok", "source_id"])
-def test_result_always_identifies_its_source(field):
+def test_a_failed_result_still_names_its_source_and_says_why():
+    """Was parametrised over `ok`, which asserted that False is not None."""
     def handler(request):
         return httpx2.Response(500)
 
     result = asyncio.run(_one(handler))
-    assert getattr(result, field) is not None
+    assert result.source_id == "src"
+    assert result.ok is False
+    assert "500" in result.error
 
 
 # ── the deadline must cost the slow source, not the whole poll ───────────────
 
-def test_a_hanging_source_does_not_take_the_others_with_it():
+def test_a_hanging_source_does_not_take_the_others_with_it(fake_network):
     """The failure mode the deadline exists for is the source that never answers.
 
     Cancelling the whole batch turns one slow feed into eleven dead ones, and
@@ -139,26 +166,12 @@ def test_a_hanging_source_does_not_take_the_others_with_it():
             await asyncio.sleep(30)
         return httpx2.Response(200, content=b"ok")
 
-    async def run():
-        import cablegram.fetch as fetch_mod
-
-        real = httpx2.AsyncClient
-
-        def patched(*args, **kwargs):
-            kwargs["transport"] = httpx2.MockTransport(handler)
-            return real(*args, **kwargs)
-
-        fetch_mod.httpx2.AsyncClient = patched
-        try:
-            return await fetch_all(
-                [("good", "https://e.com/a"), ("slow", "https://e.com/slow"),
-                 ("also_good", "https://e.com/b")],
-                deadline=1.0,
-            )
-        finally:
-            fetch_mod.httpx2.AsyncClient = real
-
-    results = asyncio.run(run())
+    fake_network(handler)
+    results = asyncio.run(fetch_all(
+        [("good", "https://e.com/a"), ("slow", "https://e.com/slow"),
+         ("also_good", "https://e.com/b")],
+        deadline=1.0,
+    ))
     by_id = {r.source_id: r for r in results}
 
     assert by_id["good"].ok and by_id["good"].body == b"ok"
@@ -167,7 +180,7 @@ def test_a_hanging_source_does_not_take_the_others_with_it():
     assert [r.source_id for r in results] == ["good", "slow", "also_good"]
 
 
-def test_the_same_source_twice_gets_two_independent_results():
+def test_the_same_source_twice_gets_two_independent_results(fake_network):
     """cls.cn exposes five endpoints and Telegram pages with ?before=, so asking
     for two windows of one source is the normal case, not an edge case.
 
@@ -178,16 +191,8 @@ def test_the_same_source_twice_gets_two_independent_results():
     def handler(request):
         return httpx2.Response(200, content=str(request.url).encode())
 
-    async def run():
-        import cablegram.fetch as mod
-        real = httpx2.AsyncClient
-        mod.httpx2.AsyncClient = lambda *a, **k: real(*a, transport=transport(handler), **k)
-        try:
-            return await fetch_all([("cls", "https://e.com/subject/1321"),
-                                    ("cls", "https://e.com/subject/1556")])
-        finally:
-            mod.httpx2.AsyncClient = real
-
-    results = asyncio.run(run())
+    fake_network(handler)
+    results = asyncio.run(fetch_all([("cls", "https://e.com/subject/1321"),
+                                     ("cls", "https://e.com/subject/1556")]))
     assert [r.body for r in results] == [b"https://e.com/subject/1321",
                                          b"https://e.com/subject/1556"]
