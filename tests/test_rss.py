@@ -384,3 +384,53 @@ def test_a_single_field_cannot_be_unbounded():
 def test_a_normal_feed_is_untouched_by_the_cap():
     entry = parse_feed(RSS2)[0]
     assert entry.title == "Perplexity is testing a new Spaces sidebar"
+
+
+def test_the_guard_does_not_depend_on_the_expat_build():
+    """SetAllocTrackerMaximumAmplification exists in expat 2.8 and not in what
+    Debian 13 ships. Relying on it meant the parser raised AttributeError on the
+    first feed of every poll — on most machines in the world — while 329 tests
+    passed on the one where it was written. Caught by running the repo on a
+    clean machine, not by any test here.
+
+    The expansion is measured directly instead: the size of a declared entity
+    times how many times the document references it. That works on every build
+    and is a tighter bound than the amplification ratio.
+    """
+    import xml.parsers.expat as expat
+
+    real_create = expat.ParserCreate
+
+    class Older:
+        """An expat without the tracker, which is what Debian ships."""
+
+        def __init__(self):
+            self._parser = real_create()
+
+        def __getattr__(self, name):
+            if "AllocTracker" in name:
+                raise AttributeError(name)
+            return getattr(self._parser, name)
+
+        def __setattr__(self, name, value):
+            if name == "_parser":
+                object.__setattr__(self, name, value)
+            else:
+                setattr(self._parser, name, value)
+
+    expat.ParserCreate = Older
+    try:
+        assert parse_feed(RSS2), "must parse on a build without the tracker"
+        with pytest.raises(ValueError, match="expan|entit"):
+            parse_feed(_flat_bomb())
+    finally:
+        expat.ParserCreate = real_create
+
+
+def test_the_flat_bomb_is_still_refused_without_the_tracker():
+    """The measurement has to be as strong as what it replaces."""
+    flat = (b'<?xml version="1.0"?>\n<!DOCTYPE rss [<!ENTITY big "' + b"a" * 100_000 +
+            b'">]>\n<rss version="2.0"><channel><item><title>' + b"&big;" * 700 +
+            b'</title><link>https://e.com/a</link></item></channel></rss>')
+    with pytest.raises(ValueError, match="expan|entit"):
+        parse_feed(flat)

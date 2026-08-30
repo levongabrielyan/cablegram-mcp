@@ -106,28 +106,32 @@ _ENTITY_REF = re.compile(r"&([A-Za-z_][\w.-]*);")
 _PREDEFINED = frozenset({"lt", "gt", "amp", "apos", "quot"})
 
 
+# An entity's replacement text, times the number of times the document
+# references it. A feed has no legitimate reason to expand by megabytes.
+MAX_EXPANSION = 8 * 1024 * 1024
+
+
 def _reject_entity_bombs(raw: bytes) -> None:
     """Refuse a feed whose entities expand far beyond the size of the document.
 
     Three earlier versions each looked for the *shape* of the last attack —
-    a nested declaration, then a padded prologue, then a comment hiding the
-    DOCTYPE — and each left the property open. The flat bomb walked through all
-    three: one entity of 100 KB, no nesting anywhere, referenced 700 times, and
-    a 103 KB feed became a 70 MB title in 1.3 seconds. It broke no rule any of
-    them enforced.
+    nested declarations, a padded prologue, a comment hiding the DOCTYPE — and
+    each left the property open. A flat bomb (one entity of 100 KB, no nesting,
+    referenced seven hundred times) walked through all three: it broke no rule
+    any of them enforced.
 
-    So this measures instead of inferring. expat tracks how much it allocates
-    against how much it has read, which is the property itself; the declaration
-    handler stays only because it names the problem in the error message and
-    catches external entities, which are a different matter — a feed asking the
-    parser to fetch something on its behalf.
+    A fourth version measured expansion with expat's allocation tracker, which
+    was correct and unavailable: SetAllocTrackerMaximumAmplification exists in
+    expat 2.8 and not in what Debian ships, so the parser raised AttributeError
+    on the first feed of every poll, on most machines, while the whole suite
+    passed on the one where it was written. Found by running the repo on a
+    clean machine.
+
+    So the expansion is computed here instead, from the declaration size and the
+    number of references in the document. It needs no optional API, it is a
+    tighter bound than an amplification ratio, and it holds on every build.
     """
-    parser = expat.ParserCreate()
-
-    # Ten times the input is far above any real feed and far below an attack.
-    # The threshold keeps small documents, where the ratio is noisy, out of it.
-    parser.SetAllocTrackerMaximumAmplification(10.0)
-    parser.SetAllocTrackerActivationThreshold(1 << 20)
+    declared: list[tuple[str, int]] = []
 
     def on_entity_decl(name, is_parameter, value, base, system_id, public_id, notation):
         if system_id or public_id:
@@ -140,14 +144,31 @@ def _reject_entity_bombs(raw: bytes) -> None:
                 f"feed declares entity {name!r} expanding into {sorted(nested)[:3]}; "
                 "refusing to expand it"
             )
+        declared.append((name, len(value or "")))
 
+    parser = expat.ParserCreate()
     parser.EntityDeclHandler = on_entity_decl
+    aborted = None
     try:
         parser.Parse(raw, True)
     except expat.ExpatError as exc:
-        if "amplification" in str(exc):
-            raise ValueError(f"feed expands far beyond its own size: {exc}") from exc
-        return  # malformed: let ElementTree raise the error callers already expect
+        # Some builds abort on their own amplification limit. Returning here
+        # skipped the check below entirely and handed the document straight to
+        # ElementTree, which then raised a parse error instead of the refusal
+        # this function exists to produce.
+        aborted = exc
+
+    for name, size in declared:
+        uses = raw.count(f"&{name};".encode())
+        if size * uses > MAX_EXPANSION:
+            raise ValueError(
+                f"feed entity {name!r} expands to {size * uses} characters "
+                f"({size} x {uses} references); refusing to expand it"
+            )
+
+    if aborted is not None and "amplification" in str(aborted):
+        raise ValueError(f"feed expands far beyond its own size: {aborted}")
+    # Anything else malformed: let ElementTree raise what callers already catch.
 
 
 # Searched in this order — a feed carrying both usually puts more in the first.
