@@ -1,0 +1,36 @@
+{
+ "errno": 0,
+ "msg": "",
+ "data": [
+  {
+   "article_id": 2468792,
+   "article_type": -1,
+   "article_time": 1788078787,
+   "article_title": "【中信证券：AI在Q2集中体现 而能化接下来可能逐步升温】财联社8月30日电，中信证券研报指出，2022年后A股“结构性快速轮动”是常态，极高轮动速度持续时间一般在1~2个月，高速轮动背后的共性是盈利上修的广度不足，可持续的主线稀缺。当前，贸易摩擦步入高发期，汇兑损益的影响也在放大，出海作为A股最重要的业绩线索之一遭遇估值约束，制约了行情的宽度，容易形成行业快速轮动的市场状态。打破僵局需要新的变化，近期的AI进展强化了算力需求快速增长的既有趋势，但不足以改变远期商业化叙事，若后续看到类似RSI、防蒸馏等可能的新变化出现则有望打开远期估值空间。在行情快速轮动的阶段，主要的风格策略当中，赢家大部分是“低估值系”策略，不过其中只有PB-ROE策略在快速轮动环境下明显占优，且策略收益率随着轮动速度提升而进一步增强，动量策略则是快速轮动阶段最受损的策略，高轮动下市场机会或将更多体现为具备业绩支撑品种的估值修复。配置上，我们在中期策略中提出“AI+能化”的杠铃结构，AI在Q2集中体现，而能化接下来可能逐步升温。",
+   "article_brief": "",
+   "article_author": "",
+   "share_url": "https://api3.cls.cn/share/article/2468792?os=web&sv=8.7.9&app=",
+   "jump_url": "cailianshe://telegram_detail?detail_id=2468792"
+  },
+  {
+   "article_id": 2468704,
+   "article_type": -1,
+   "article_time": 1788062371,
+   "article_title": "财联社8月30日电，据报道，谷歌、OpenAI、Meta正与日本官方机构和本土企业联手，打击激增的网络诈骗案件。",
+   "article_brief": "",
+   "article_author": "",
+   "share_url": "https://api3.cls.cn/share/article/2468704?os=web&sv=8.7.9&app=",
+   "jump_url": "cailianshe://telegram_detail?detail_id=2468704"
+  },
+  {
+   "article_id": 2468531,
+   "article_type": 0,
+   "article_time": 1787983330,
+   "article_title": "奥尔特曼与马斯克恩怨升级：OpenAI拒绝为SpaceX旗下公司提供服务",
+   "article_brief": "①OpenAI宣布将停止向代码工具Cursor提供AI模型服务，只因Cursor被马斯克旗下SpaceX收购；\n②OpenAI称，马斯克旗下多家公司此前曾存在违约行为。",
+   "article_author": "财联社 刘蕊",
+   "share_url": "https://api3.cls.cn/share/article/2468531?os=web&sv=8.7.9&app=",
+   "jump_url": "cailianshe://article_detail?article_id=2468531"
+  }
+ ]
+}

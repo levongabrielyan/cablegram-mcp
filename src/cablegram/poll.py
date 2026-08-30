@@ -12,10 +12,13 @@ nothing is indistinguishable from a quiet day.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from datetime import datetime, timezone
 
+from .cls import feed_url as cls_feed_url, parse_response as parse_cls
 from .fetch import fetch_all
 from .rss import parse_feed
 from .sources import SOURCES, Source
@@ -24,9 +27,10 @@ from .store import (StoreReport, conditional_headers, record_attempt,
 
 __all__ = ["poll_once"]
 
-# The other three kinds have no adapter yet. Handing their URLs to the RSS
-# parser would file every one as a parse failure and bury the real ones.
-POLLABLE = ("rss",)
+# Kinds with an adapter. The rest are listed and never fetched: handing their
+# URLs to the RSS parser would file every one as a parse failure and bury the
+# real ones among them.
+POLLABLE = ("rss", "cls")
 
 
 async def poll_once(
@@ -45,14 +49,17 @@ async def poll_once(
         return []
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    results = await fetch_all(
-        [(s.id, s.url) for s in targets],
-        conditional=conditional_headers(db),
-    )
+    # cls.cn needs a signature computed per request, so its URL is built here
+    # rather than stored in the catalogue.
+    requests = [(s.id, cls_feed_url() if s.kind == "cls" else s.url) for s in targets]
+    results = await fetch_all(requests, conditional=conditional_headers(db))
 
     reports: list[StoreReport] = []
     for source, fetched in zip(targets, results, strict=True):
-        record_attempt(db, fetched)
+        # The signature makes cls.cn's URL different every call, so the state is
+        # keyed on the catalogue URL — otherwise source_state would grow a row
+        # per poll and never match a stored validator.
+        record_attempt(db, replace(fetched, url=source.url))
 
         # 304 means alive with nothing new. record_write is deliberately not
         # called: writing a zero over the last real result would erase what the
@@ -65,8 +72,9 @@ async def poll_once(
             continue
 
         try:
-            entries = parse_feed(fetched.body)
-        except (ValueError, ET.ParseError) as exc:
+            entries = (parse_cls(json.loads(fetched.body))
+                       if source.kind == "cls" else parse_feed(fetched.body))
+        except (ValueError, ET.ParseError, json.JSONDecodeError) as exc:
             # The download worked and the parse did not. Both facts matter, and
             # a source answering with broken XML is not a source with no news.
             report = StoreReport(source.id, state="unparseable", failed=1)

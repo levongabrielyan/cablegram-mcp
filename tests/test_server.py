@@ -79,8 +79,8 @@ async def test_a_source_with_no_adapter_is_not_called_broken(server):
     """Eight PENDING lines under DOWN would bury the one source that is
     actually failing."""
     out = await call(server, "wire_latest", hours=24)
-    assert "PENDING" in out and "cls" in out
-    assert "cls" not in out.split("PENDING")[0]
+    assert "PENDING" in out and "ai_newz" in out
+    assert "ai_newz" not in out.split("PENDING")[0]
 
 
 @pytest.mark.anyio

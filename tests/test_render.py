@@ -238,3 +238,14 @@ def test_a_fresh_source_is_not_marked_stale():
                          archive_items=1, archive_start="2026-01-01",
                          archive_path="/tmp/a.db")
     assert "STALE" not in out
+
+
+def test_a_reverse_engineered_source_says_so():
+    """cls.cn is an undocumented internal API with a signature nobody published.
+    It can stop working without notice, and the honest thing is to say that
+    before it does rather than after — the same disclosure a security document
+    makes when it lists what it does not protect."""
+    out = render_sources(health={}, archive_items=1, archive_start="2026-01-01",
+                         archive_path="/tmp/a.db")
+    cls_line = [line for line in out.splitlines() if line.startswith("cls ")][0]
+    assert "fragile" in cls_line

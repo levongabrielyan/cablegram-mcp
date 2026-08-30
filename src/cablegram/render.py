@@ -348,9 +348,13 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
         else:
             status = "never polled"
         tags = ",".join(source.tags)
+        mark = "  fragile" if source.fragile else ""
         out.append(f"{source.id:16} {source.lang} {source.kind:9} {tags:24} "
-                   f"{last_ok:14} {status}")
+                   f"{last_ok:14} {status}{mark}")
     out.append("")
     out.append("Sources with no adapter yet are listed and never polled: they are known "
                "to exist, and known to be empty.")
+    if any(s.fragile for s in SOURCES):
+        out.append("fragile = reverse-engineered rather than published. It works today "
+                   "and may stop without notice; treat its silence as unknown.")
     return "\n".join(out)

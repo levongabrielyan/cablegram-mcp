@@ -25,6 +25,9 @@ class Source:
     tags: tuple[str, ...] = ()
     note: str = ""
     aggregator: bool = False  # links out; show the destination host
+    # Reverse-engineered rather than published, so it can break without notice.
+    # Declared in the output before it happens rather than explained after.
+    fragile: bool = False
 
 
 SOURCES: tuple[Source, ...] = (
@@ -77,7 +80,10 @@ SOURCES: tuple[Source, ...] = (
         "https://www.cls.cn/api/subject/1321/article", "zh",
         ("early", "finance"),
         "A financial wire, not an AI outlet. Its reporters hear from suppliers and "
-        "investors, so model launches surface here days before the official post.",
+        "investors, so model launches surface here days before the official post. "
+        "Undocumented internal API with a signed request: holds 3.34 days at most "
+        "and cannot page backwards, so a gap in polling is permanent.",
+        fragile=True,
     ),
     Source(
         "qbitai", "量子位 QbitAI", "rss",

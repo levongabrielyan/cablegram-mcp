@@ -115,7 +115,7 @@ def test_only_rss_sources_are_polled_for_now(db, network):
     the RSS parser would file every one of them as a parse failure and bury the
     real ones — so they are not attempted, and say so."""
     network(lambda request: httpx2.Response(200, content=FEED))
-    reports = asyncio.run(poll_once(db, [by_id("cls"), by_id("ai_newz"), by_id("qbitai")]))
+    reports = asyncio.run(poll_once(db, [by_id("ai_newz"), by_id("hn"), by_id("qbitai")]))
 
     assert {r.source for r in reports} == {"qbitai"}
 
