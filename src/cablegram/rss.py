@@ -30,6 +30,11 @@ _DC = "{http://purl.org/dc/elements/1.1/}"
 _TAGS = re.compile(r"<[^>]+>")
 _SPACES = re.compile(r"\s+")
 
+# No headline or summary is longer than this, and anything that claims to be is
+# either an attack or a source misusing the field — cls.cn puts the whole
+# dispatch in article_title. Either way it does not belong in the trigram index.
+MAX_FIELD = 4000
+
 
 @dataclass(frozen=True, slots=True)
 class Entry:
@@ -55,7 +60,7 @@ def _text(node: ET.Element | None) -> str:
     """
     if node is None:
         return ""
-    raw = "".join(node.itertext())
+    raw = "".join(node.itertext())[:MAX_FIELD]
     return _SPACES.sub(" ", unicodedata.normalize("NFC", raw)).strip()
 
 
@@ -66,7 +71,8 @@ def _prose(raw: str) -> str:
 
 def _strip_html(raw: str) -> str:
     """Unescape, strip tags, unescape again: feeds double-encode routinely."""
-    return _SPACES.sub(" ", html.unescape(_TAGS.sub(" ", html.unescape(raw)))).strip()
+    stripped = _SPACES.sub(" ", html.unescape(_TAGS.sub(" ", html.unescape(raw)))).strip()
+    return stripped[:MAX_FIELD]
 
 
 def _parse_date(raw: str) -> datetime | None:
@@ -94,29 +100,28 @@ _ENTITY_REF = re.compile(r"&([A-Za-z_][\w.-]*);")
 _PREDEFINED = frozenset({"lt", "gt", "amp", "apos", "quot"})
 
 
-class _PrologueRead(Exception):
-    """Raised at the root element to stop before any content is expanded."""
-
-
 def _reject_entity_bombs(raw: bytes) -> None:
-    """Refuse entity declarations that expand into other entities.
+    """Refuse a feed whose entities expand far beyond the size of the document.
 
-    Custom XML entities nest geometrically — a few hundred bytes become
-    gigabytes — and feeds come from third parties, so this input is hostile by
-    default.
+    Three earlier versions each looked for the *shape* of the last attack —
+    a nested declaration, then a padded prologue, then a comment hiding the
+    DOCTYPE — and each left the property open. The flat bomb walked through all
+    three: one entity of 100 KB, no nesting anywhere, referenced 700 times, and
+    a 103 KB feed became a 70 MB title in 1.3 seconds. It broke no rule any of
+    them enforced.
 
-    Two earlier versions scanned the bytes for <!DOCTYPE and its internal
-    subset. Both were wrong in both directions: a comment containing
-    `<!DOCTYPE fake [ ]` moved the pointers and let a real bomb through, while
-    an ordinary WordPress feed declaring `<!ENTITY nbsp "&#160;">` was thrown
-    out whole. Reading bytes cannot tell a declaration from a mention of one.
-
-    So expat reads the prologue properly and stops at the root element, before
-    a single reference is expanded. What gets refused is the structural
-    property that makes a bomb: an entity whose replacement text names another
-    entity. `&#160;` is a character reference, expands once, and is fine.
+    So this measures instead of inferring. expat tracks how much it allocates
+    against how much it has read, which is the property itself; the declaration
+    handler stays only because it names the problem in the error message and
+    catches external entities, which are a different matter — a feed asking the
+    parser to fetch something on its behalf.
     """
     parser = expat.ParserCreate()
+
+    # Ten times the input is far above any real feed and far below an attack.
+    # The threshold keeps small documents, where the ratio is noisy, out of it.
+    parser.SetAllocTrackerMaximumAmplification(10.0)
+    parser.SetAllocTrackerActivationThreshold(1 << 20)
 
     def on_entity_decl(name, is_parameter, value, base, system_id, public_id, notation):
         if system_id or public_id:
@@ -130,16 +135,12 @@ def _reject_entity_bombs(raw: bytes) -> None:
                 "refusing to expand it"
             )
 
-    def on_start_element(name, attrs):
-        raise _PrologueRead
-
     parser.EntityDeclHandler = on_entity_decl
-    parser.StartElementHandler = on_start_element
     try:
         parser.Parse(raw, True)
-    except _PrologueRead:
-        pass
-    except expat.ExpatError:
+    except expat.ExpatError as exc:
+        if "amplification" in str(exc):
+            raise ValueError(f"feed expands far beyond its own size: {exc}") from exc
         return  # malformed: let ElementTree raise the error callers already expect
 
 

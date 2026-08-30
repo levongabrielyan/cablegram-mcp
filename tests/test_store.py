@@ -358,3 +358,25 @@ def test_a_304_does_not_clear_the_validators(db):
     assert state["etag"] == 'W/"v1"'
     assert state["last_mod"] == "Sat, 30 Aug 2026 06:00:00 GMT"
     assert state["last_ok"] == "2026-08-30T12:05:00Z", "still a success"
+
+
+# ── fourth review: the report is the only channel, so it cannot lie ──────────
+
+def test_a_rolled_back_entry_is_not_counted_as_archived(db):
+    """new was incremented inside the transaction. If the commit then failed,
+    the row went away and the count did not — the same entry reported as new and
+    as failed at once.
+
+    There is no logging anywhere in this project: the report is all a caller
+    gets. One that contradicts itself is worse than none, because it will be
+    believed.
+    """
+    db.execute("CREATE TRIGGER boom AFTER INSERT ON sighting"
+               " BEGIN SELECT RAISE(ABORT, 'boom'); END")
+    db.commit()
+
+    report = store_entries(db, by_id("qbitai"), [entry()], fetched_at=NOW)
+
+    assert report.failed == 1
+    assert report.new == 0, "nothing was archived, so nothing may be reported as new"
+    assert len(rows(db)) == 0

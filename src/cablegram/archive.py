@@ -162,6 +162,42 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     return db
 
 
+_TABLES = ("item", "sighting", "source_state", "meta")
+
+
+def _shape(db: sqlite3.Connection) -> dict[str, set[str]]:
+    """The columns actually present, per table. The fact, not the claim."""
+    return {
+        name: {row[1] for row in db.execute(f"PRAGMA table_info({name})")}
+        for name in _TABLES
+    }
+
+
+def _expected_shape() -> dict[str, set[str]]:
+    """The columns this build creates, read from the schema it would create.
+
+    Built by running _SCHEMA into an empty in-memory database rather than
+    listing the columns here a second time. A hand-written list is one more
+    thing to forget to update — which is the whole failure this function exists
+    to catch, and it would be embarrassing to reintroduce it in the check.
+    """
+    probe = sqlite3.connect(":memory:")
+    try:
+        probe.executescript(_SCHEMA)
+        return _shape(probe)
+    finally:
+        probe.close()
+
+
+def _rebuild(db: sqlite3.Connection) -> None:
+    """Drop and recreate. Only ever called on an archive holding no items."""
+    db.executescript(
+        "DROP TABLE IF EXISTS sighting_fts;"
+        + "".join(f"DROP TABLE IF EXISTS {name};" for name in _TABLES)
+    )
+    db.executescript(_SCHEMA)
+
+
 def _seal(db: sqlite3.Connection, path: Path) -> None:
     """Record which recipe wrote these ids, and refuse the file if it changed.
 
@@ -180,12 +216,29 @@ def _seal(db: sqlite3.Connection, path: Path) -> None:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     recipe = id_recipe()
 
-    if has_items:
-        stored_schema = meta.get("schema_version")
-        if stored_schema is not None and stored_schema != str(SCHEMA_VERSION):
+    # The columns, not meta.schema_version. CREATE TABLE IF NOT EXISTS leaves an
+    # older table exactly as it was, so a file could carry v1 columns under a v2
+    # label: re-stamped on open, never questioned again, and every insert failing
+    # for good — counted as `failed`, which nothing reads. Asking the label was
+    # how that happened; asking the columns cannot be fooled by a stale one.
+    actual, expected = _shape(db), _expected_shape()
+    if actual != expected:
+        if has_items:
+            missing = sorted(expected["item"] - actual["item"])
             _refuse(path,
-                    f"archive schema is version {stored_schema}, this build speaks "
-                    f"version {SCHEMA_VERSION}")
+                    f"archive was written by an older build: item is missing "
+                    f"{missing or 'columns this build writes'}")
+        _rebuild(db)
+        meta = {}
+
+    if has_items:
+        # The columns cannot show this one: a newer build may write different
+        # meaning into the same shape. It is the one thing the label knows.
+        stored_schema = meta.get("schema_version")
+        if stored_schema is not None and int(stored_schema) > SCHEMA_VERSION:
+            _refuse(path,
+                    f"archive was written by a newer build (schema {stored_schema}, "
+                    f"this build speaks {SCHEMA_VERSION})")
 
         stored_identity = meta.get("id_algo")
         if stored_identity is None:
@@ -240,7 +293,8 @@ def _refuse(path: Path, problem: str) -> None:
     raise ArchiveMismatch(
         f"{problem}.\n"
         f"Archive: {path}\n"
-        "Reusing it would archive everything in it a second time. Move that "
-        "file aside — it stays readable with any SQLite client — or point "
-        "CABLEGRAM_DB at a different path."
+        "Refusing rather than writing into it, which would either duplicate "
+        "everything it holds or fail on every insert. Move that file aside — it "
+        "stays readable with any SQLite client — or point CABLEGRAM_DB "
+        "somewhere else."
     )

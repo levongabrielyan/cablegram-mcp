@@ -314,3 +314,73 @@ def test_an_external_entity_is_refused():
             b'<link>https://e.com/a</link></item></channel></rss>')
     with pytest.raises(ValueError, match="entit"):
         parse_feed(feed)
+
+
+# ── fourth review: three guards, three shapes, one property never checked ────
+
+def _nested_bomb():
+    return (b'<?xml version="1.0"?>\n<!DOCTYPE rss [<!ENTITY a "aaaaaaaaaa">'
+            b'<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">'
+            b'<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">'
+            b'<!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">]>'
+            b'<rss version="2.0"><channel><item><title>&d;</title>'
+            b'<link>https://e.com/a</link></item></channel></rss>')
+
+
+def _flat_bomb():
+    """No nesting at all. One entity, repeated — the quadratic blowup.
+
+    Every guard so far looked for an entity naming another entity, so this
+    walked straight through all three of them. expat's own limit does not stop
+    it either: 100 KB x 700 is an amplification of 675 measured against the
+    entity, but well inside the factor it permits for a 100 KB input.
+    """
+    return (b'<?xml version="1.0"?>\n<!DOCTYPE rss [<!ENTITY big "' + b"a" * 100_000 +
+            b'">]>\n<rss version="2.0"><channel><item><title>' + b"&big;" * 700 +
+            b'</title><link>https://e.com/a</link></item></channel></rss>')
+
+
+def _padded_bomb():
+    return (b'<?xml version="1.0"?>\n<!-- ' + b"x" * 8300 + b' -->\n' + _nested_bomb()[22:])
+
+
+def _commented_bomb():
+    return (b'<?xml version="1.0"?>\n<!-- <!DOCTYPE fake [ ] -->\n' + _nested_bomb()[22:])
+
+
+@pytest.mark.parametrize("make_bomb", [_nested_bomb, _flat_bomb, _padded_bomb, _commented_bomb],
+                         ids=["nested", "flat", "padded", "commented"])
+def test_no_feed_expands_far_beyond_its_own_size(make_bomb):
+    """The property, stated once, instead of a test per shape of attack.
+
+    Three previous guards each closed the shape they were shown and left the
+    property open — which is why the flat one survived all three with the tests
+    green every time. What matters is not how a feed nests its declarations; it
+    is that a 100 KB document cannot become 70 MB of title.
+    """
+    with pytest.raises(ValueError, match="expan|entit"):
+        parse_feed(make_bomb())
+
+
+def test_a_single_field_cannot_be_unbounded():
+    """Second line of defence, and the one that reaches the database.
+
+    Even an expansion small enough to pass the parser must not put a megabyte
+    into item.title, sighting.title and the trigram index. This also covers a
+    source that simply writes very long fields: cls.cn puts the whole dispatch
+    in article_title, up to 617 characters.
+    """
+    from cablegram.rss import MAX_FIELD
+
+    feed = (b'<rss version="2.0"><channel><item><title>' + b"x" * (MAX_FIELD * 3) +
+            b'</title><link>https://e.com/a</link>'
+            b'<description>' + b"y" * (MAX_FIELD * 3) + b'</description>'
+            b'</item></channel></rss>')
+    entry = parse_feed(feed)[0]
+    assert len(entry.title) <= MAX_FIELD
+    assert len(entry.body) <= MAX_FIELD
+
+
+def test_a_normal_feed_is_untouched_by_the_cap():
+    entry = parse_feed(RSS2)[0]
+    assert entry.title == "Perplexity is testing a new Spaces sidebar"

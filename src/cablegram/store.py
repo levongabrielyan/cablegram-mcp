@@ -65,7 +65,13 @@ def store_entries(
 
     for entry in entries:
         try:
-            _store_one(db, source, entry, fetched_at, report)
+            # Counted only after the transaction commits. Incrementing inside it
+            # meant a failed commit rolled the row back and left the count
+            # standing, reporting one entry as both new and failed. The report
+            # is the only channel there is — nothing here logs — so it has to
+            # describe what is actually in the archive.
+            outcome = _store_one(db, source, entry, fetched_at)
+            setattr(report, outcome, getattr(report, outcome) + 1)
         except Exception:
             # One entry, one transaction, so a failure costs that entry alone.
             # An earlier version wrapped the whole batch, which meant a single
@@ -83,13 +89,12 @@ def _store_one(
     source: Source,
     entry: Entry,
     fetched_at: str,
-    report: StoreReport,
-) -> None:
+) -> str:
+    """Archive one entry and name what happened: new, seen or skipped."""
     url = (entry.url or "").strip()
     title = (entry.title or "").strip()
     if not url or not title:
-        report.skipped += 1
-        return
+        return "skipped"
 
     url_norm = normalise(url)
     iid = item_id(url)
@@ -115,7 +120,7 @@ def _store_one(
         )
 
         if cur.rowcount:
-            report.new += 1
+            outcome = "new"
         else:
             # OR IGNORE swallows every constraint violation, not only the one on
             # url_norm. If the id landed on a different article, filing this as
@@ -128,7 +133,7 @@ def _store_one(
                 raise CollisionError(
                     f"id {iid} already belongs to {existing['url_norm'] if existing else '?'}"
                 )
-            report.seen += 1
+            outcome = "seen"
 
             # Only ever improve, never overwrite. The same story reaches several
             # feeds and the first to arrive is often the poorest: Product Radar
@@ -152,6 +157,8 @@ def _store_one(
             " VALUES (?,?,?,?)",
             (iid, source.id, title, fetched_at),
         )
+
+    return outcome
 
 
 def cross_count(db: sqlite3.Connection, iid: str) -> int:
