@@ -70,30 +70,6 @@ def test_a_story_in_one_source_is_not_counted():
     out = render_latest([row(cross=1)], since="s", until="u", down={}, sources_total=19)
     assert "CROSS" not in out
 
-
-def test_a_budget_cut_says_so():
-    """Silently returning half is the failure this server exists to avoid."""
-    rows = [row(id=f"{i:08x}", title="x" * 200) for i in range(200)]
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
-                        max_tokens=500)
-    assert "BUDGET" in out
-    assert len(out) < 12000
-
-
-def test_a_teaser_is_never_presented_as_the_article():
-    """Unmarked, the model reports conclusions drawn from two sentences, and
-    nobody ever notices because nobody reads this."""
-    out = render_read([row(sources="qbitai,hn", title="智谱发布GLM-5")], requested=["a3f9c2e1"])
-    assert "body=teaser" in out
-    assert "NOT the full article" in out
-
-
-def test_a_full_body_carries_no_warning():
-    out = render_read([row(body_src="content:encoded", sources="qbitai")],
-                      requested=["a3f9c2e1"])
-    assert "NOT the full article" not in out
-
-
 def test_an_id_that_is_not_there_is_named_with_a_way_out():
     """The only way the model recovers on its own."""
     out = render_read([], requested=["9f01aa2b"])
@@ -156,9 +132,77 @@ def test_headlines_detail_ships_no_bodies():
                         down={}, sources_total=19)
     assert "should not appear" not in out
 
+def test_a_budget_cut_names_the_sources_it_dropped():
+    """Trimming the flat list beheads its alphabetical tail, so whole sources
+    vanished — openai and huggingface among them — while the header still said
+    11/19. This module's own docstring says that cannot happen: missing from the
+    list, a source cannot be known to exist."""
+    rows = [row(id=f"{i:012x}", source=s, title="x" * 300, source_total=50)
+            for s in ("alternativeto", "habr", "openai", "qbitai") for i in range(50)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
+                        max_tokens=800)
 
-def test_a_full_listing_marks_the_teasers():
-    """Same reason as wire_read: unmarked, two sentences read as the article."""
-    out = render_latest([row(body="two sentences", body_src="description")],
-                        since="s", until="u", down={}, sources_total=19, detail="full")
-    assert "teaser" in out
+    blocks = {line.split()[1] for line in out.splitlines() if line.startswith("## ")}
+    assert blocks == {"alternativeto", "habr", "openai", "qbitai"}, \
+        "every source keeps its heading, even if all its items were cut"
+
+
+def test_a_budget_cut_lands_inside_the_budget():
+    from cablegram.render import estimate_tokens
+
+    rows = [row(id=f"{i:012x}", source=s, title="x" * 300, source_total=50)
+            for s in ("alternativeto", "habr", "openai") for i in range(50)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
+                        max_tokens=1500)
+    assert estimate_tokens(out) <= 1500
+
+
+def test_search_declares_its_cut_like_the_listing_does():
+    """Printing 3/3 for a source holding 437 does not leave the cut undeclared —
+    it denies it. And this is the tool whose entire description is about not
+    drawing conclusions from a small number."""
+    rows = [row(id=f"{i:012x}", source="openai", source_total=437) for i in range(3)]
+    out = render_search(rows, query="AI", since="s", days=7,
+                        archive_start="2020-01-01", archive_items=2341)
+    assert "3/437" in out
+    assert "CUT" in out
+
+
+def test_the_body_element_is_reported_without_a_verdict():
+    """The full/teaser table was removed from the parser in the fourth round
+    because it is wrong in both directions, and it came back here — stamped on
+    36Kr digests of 3,334 characters, telling the model not to trust a complete
+    text it has already paid for. 1,335 of 2,341 archived items carried it."""
+    out = render_latest([row(body="x" * 3000, body_src="description")], since="s",
+                        until="u", down={}, sources_total=19, detail="full")
+    assert "NOT the full article" not in out
+    assert "description" in out
+
+
+def test_cross_says_when_it_is_showing_only_some():
+    rows = [row(id=f"{i:012x}", cross=3) for i in range(30)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19)
+    assert "of 30" in out or "30 " in out.split("---")[0]
+
+
+def test_the_archive_path_is_not_a_home_directory():
+    """Pasting the output into an issue must not leak a username."""
+    out = render_sources(health={}, archive_items=1, archive_start="2026-01-01",
+                         archive_path="/home/someone/.local/share/cablegram/archive.db")
+    assert "/home/someone" not in out
+    assert "~/.local/share/cablegram" in out
+
+
+def test_a_budget_too_small_for_the_sources_says_so():
+    """With one item each, the headers alone can exceed a small max_tokens.
+    Going over is the right call — dropping sources is worse — but going over
+    silently is not: the caller set a limit and has to know it was missed."""
+    from cablegram.render import estimate_tokens
+
+    rows = [row(id=f"{i:012x}", source=s, title="x" * 200, source_total=9)
+            for s in ("a", "b", "c", "d", "e", "f", "g", "h") for i in range(9)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
+                        max_tokens=50)
+    assert estimate_tokens(out) > 50
+    assert "OVER BUDGET" in out
+    assert len({l.split()[1] for l in out.splitlines() if l.startswith("## ")}) == 8

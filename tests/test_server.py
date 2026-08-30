@@ -83,10 +83,14 @@ async def test_latest_counts_the_cross_source_repeat(server):
 
 
 @pytest.mark.anyio
-async def test_read_warns_that_a_teaser_is_not_the_article(server):
+async def test_read_reports_the_element_not_a_verdict(server):
+    """The full/teaser judgement was removed from the parser and came back here.
+    What is printed now is the element and the size — facts — because whether a
+    feed ships whole articles is a property of the source, not of a tag name."""
     out = await call(server, "wire_read", ids=[item_id("https://qbitai.example/glm5")])
     assert "正文内容" in out
-    assert "NOT the full article" in out
+    assert "NOT the full article" not in out
+    assert "body=description" in out
 
 
 @pytest.mark.anyio
@@ -119,3 +123,80 @@ async def test_sources_lists_all_nineteen(server):
 async def test_all_four_tools_are_registered(server):
     names = {t.name for t in await server.list_tools()}
     assert names == {"wire_latest", "wire_read", "wire_search", "wire_sources"}
+
+
+# ── fifth review ────────────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("since", ["yesterday", "30/08/2026", "2026/08/30", "next week"])
+async def test_a_malformed_since_is_an_error_not_an_empty_day(server, since):
+    """`since` went straight into a string comparison, so '2026-8-30' — what a
+    model writes half the time — is greater than every real date and matched
+    nothing. The reply was perfectly formed: 0 items, 11/19 sources, no DOWN.
+    The model reports that nothing happened today, and it is the parameter the
+    design added on day one for "since last time"."""
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError) as exc:
+        await call(server, "wire_latest", since=since)
+    assert "since" in str(exc.value).lower() and "ISO-8601" in str(exc.value)
+    assert "hours" in str(exc.value), "the error has to say what to do instead"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("since", ["2020-01-01T00:00:00Z", "2020-01-01", "2020-1-1",
+                                   "2020-01-01 00:00:00", "2020-01-01T00:00"])
+async def test_a_reasonable_since_is_normalised_rather_than_refused(server, since):
+    """"2026-8-30" without the leading zero is what a model writes half the time.
+    Refusing it would be as unhelpful as the silent empty result it used to give:
+    it is unambiguous, so it is accepted and canonicalised."""
+    out = await call(server, "wire_latest", since=since)
+    assert "智谱发布GLM-5" in out
+
+
+@pytest.mark.anyio
+async def test_a_source_that_worked_and_now_fails_is_reported_down(server, tmp_path):
+    """DOWN only looked at sources that had never once succeeded, so one failing
+    for three days counted as healthy — while wire_sources listed it as FAIL.
+    The two tools contradicted each other, and the one called every morning is
+    the one that lied."""
+    from cablegram.archive import connect
+    from cablegram.fetch import Fetched
+    from cablegram.sources import by_id
+    from cablegram.store import record_attempt
+
+    db = connect(tmp_path / "a.db")
+    url = by_id("qbitai").url
+    record_attempt(db, Fetched("qbitai", url=url, ok=True, body=b"x", status=200,
+                               fetched_at="2026-08-27T09:00:00Z"))
+    record_attempt(db, Fetched("qbitai", url=url, ok=False, error="HTTP 403",
+                               fetched_at="2026-08-30T09:00:00Z"))
+    db.close()
+
+    out = await call(build(lambda: connect(tmp_path / "a.db")), "wire_latest", hours=24)
+    assert "qbitai=HTTP 403" in out
+
+
+@pytest.mark.anyio
+async def test_search_says_how_far_back_the_archive_really_goes(server):
+    """It printed the file's creation date, so an archive holding ten years of
+    OpenAI posts announced itself as starting today — and a model asked "since
+    when has X been discussed" refuses to answer."""
+    out = await call(server, "wire_search", query="GLM")
+    assert "oldest" in out, "the header states how far back the archive reaches"
+
+
+@pytest.mark.anyio
+async def test_an_unknown_source_selector_is_named(server):
+    """wire_latest(sources=["deepseek"]) answered 0 items | 0/0 sources: a
+    plausible empty reply to a typo."""
+    out = await call(server, "wire_latest", sources=["deepseek"])
+    assert "deepseek" in out
+
+
+@pytest.mark.anyio
+async def test_the_recovery_hint_names_a_parameter_that_exists(server):
+    """The one route to autonomous recovery pointed at urls=[...], which
+    wire_read does not accept."""
+    out = await call(server, "wire_read", ids=["000000000000"])
+    assert "urls=[" not in out

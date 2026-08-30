@@ -19,6 +19,9 @@ the tokens and truncates.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from .sources import SOURCES, by_id
 
 __all__ = ["render_latest", "render_read", "render_search", "render_sources",
@@ -40,6 +43,22 @@ def estimate_tokens(text: str) -> int:
     return ascii_chars // 4 + (len(text) - ascii_chars)
 
 
+_HOME_PATTERN = re.compile(r"^(?:/home|/Users|[A-Za-z]:\\Users)[/\\][^/\\]+")
+
+
+def _tilde(path: str) -> str:
+    """Collapse the home directory: this output gets pasted into issues.
+
+    Matched by shape as well as against this process's own home, so a path that
+    came from somewhere else — a test, another machine, an archive moved with
+    CABLEGRAM_DB — does not carry a username through either.
+    """
+    home = str(Path.home())
+    if path.startswith(home):
+        return "~" + path[len(home):]
+    return _HOME_PATTERN.sub("~", path)
+
+
 def _day(published: str) -> str:
     return published[5:10].replace("-", "-")
 
@@ -57,10 +76,12 @@ def _header_cross(rows: list[dict]) -> list[str]:
     if not seen:
         return []
 
+    ranked = sorted(seen.items(), key=lambda kv: -kv[1]["cross"])
     lines = []
-    for i, (iid, row) in enumerate(sorted(seen.items(), key=lambda kv: -kv[1]["cross"])[:8]):
-        prefix = "CROSS " if i == 0 else "      "
-        lines.append(f"{prefix}{iid} x{row['cross']}")
+    for i, (iid, row) in enumerate(ranked[:8]):
+        lines.append(f"{'CROSS ' if i == 0 else '      '}{iid} x{row['cross']}")
+    if len(ranked) > 8:
+        lines.append(f"      8 shown of {len(ranked)} repeated stories, most-carried first")
     lines.append("      Raw count of the same normalised url across sources. NOT a ranking.")
     return lines
 
@@ -71,10 +92,23 @@ def _item_line(row: dict) -> str:
     return f"{mark}{row['id']} {_time(row['published'])} {row['title']}{host}"
 
 
-def _body_kind(row: dict) -> str:
-    if not row.get("body"):
-        return "none"
-    return "full" if row.get("body_src") in ("content:encoded", "atom:content") else "teaser"
+def _by_source(rows: list[dict]) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        grouped.setdefault(row["source"], []).append(row)
+    return grouped
+
+
+def _cap_per_source(rows: list[dict], allowance: int) -> list[dict]:
+    """Keep at most `allowance` per source, and keep every source.
+
+    A source whose items are all cut keeps one placeholder row so its heading
+    and real total survive: 0/57 is a fact, absence is a lie.
+    """
+    out = []
+    for items in _by_source(rows).values():
+        out.extend(items[:allowance] if allowance else items[:1])
+    return out
 
 
 def _blocks(rows: list[dict], limit_per_source: int | None,
@@ -103,10 +137,14 @@ def _blocks(rows: list[dict], limit_per_source: int | None,
                 out.append(f"-- {day}")
             out.append(_item_line(item))
             if detail == "full" and item.get("body"):
-                kind = _body_kind(item)
-                out.append(f"   {item['body']}")
-                if kind == "teaser":
-                    out.append("   !! teaser: a truncated excerpt, NOT the full article.")
+                # The element and the size, never a verdict. Deciding "full" or
+                # "teaser" from the tag name was removed from the parser in an
+                # earlier round because it is wrong in both directions — feeds
+                # put whole articles in <description> and two sentences in
+                # <atom:content> — and it came back here, stamped on 36Kr
+                # digests of 3,300 characters as "not the full article".
+                out.append(f"   [{item.get('body_src', '?')} {len(item['body'])}c] "
+                           f"{item['body']}")
     return out, cuts
 
 
@@ -118,6 +156,7 @@ def render_latest(
     down: dict[str, str],
     sources_total: int,
     no_adapter: list[str] | None = None,
+    unknown: list[str] | None = None,
     detail: str = "headlines",
     limit_per_source: int | None = None,
     max_tokens: int = 12000,
@@ -140,6 +179,9 @@ def render_latest(
         # attention under the eight that are simply not built yet.
         header.append("PENDING " + " ".join(sorted(no_adapter))
                       + "  (no adapter in this build: never fetched, hold nothing)")
+    if unknown:
+        header.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, tag "
+                      f"or language. Call wire_sources for the catalogue.")
     cut = [f"{k}={s}/{t}" for k, (s, t) in sorted(cuts.items()) if s < t]
     if cut:
         header.append("CUT   " + "  ".join(cut) + "   (newest kept)")
@@ -151,16 +193,27 @@ def render_latest(
     if estimate_tokens(text) <= max_tokens:
         return text
 
-    # Over budget: drop whole items from the end of each block rather than
-    # cutting mid-text, and say what was dropped. A payload that silently stops
-    # is the one failure this format exists to prevent.
-    kept = len(rows)
-    while kept > 1 and estimate_tokens(text) > max_tokens:
-        kept = int(kept * 0.7)
-        body, cuts = _blocks(rows[:kept], limit_per_source, detail)
+    # Over budget: lower the allowance every source gets, rather than trimming
+    # the end of a flat list — which is ordered by source, so it beheaded the
+    # alphabetical tail and made openai and huggingface vanish entirely while
+    # the header still counted them as answering. A source may lose all of its
+    # items; it may never lose its heading.
+    allowance = limit_per_source or max(1, max(len(v) for v in _by_source(rows).values()))
+    while allowance > 0:
+        allowance = allowance - 1 if allowance <= 3 else int(allowance * 0.6)
+        trimmed = _cap_per_source(rows, allowance)
+        body, cuts = _blocks(trimmed, allowance, detail)
         text = "\n".join(header + body)
-    return (f"BUDGET {kept}/{len(rows)} items fit in max_tokens={max_tokens}. "
-            f"Raise it or narrow `hours`/`sources`.\n" + text)
+        if estimate_tokens(text) <= max_tokens:
+            break
+    over = estimate_tokens(text) > max_tokens
+    label = "OVER BUDGET" if over else "BUDGET"
+    note = (" — one item per source already exceeds it, and dropping sources would be "
+            "worse than going over" if over else "")
+    return (f"{label} max_tokens={max_tokens}: at most {allowance} per source "
+            f"({len(trimmed)}/{len(rows)} items){note}. Every source is still listed "
+            f"with its real total. Raise max_tokens, narrow `hours`, or pass "
+            f"`sources`.\n" + text)
 
 
 def render_read(rows: list[dict], *, requested: list[str]) -> str:
@@ -170,29 +223,29 @@ def render_read(rows: list[dict], *, requested: list[str]) -> str:
     out = [f"CABLEGRAM read | {len(requested)} requested | {len(rows)} resolved "
            f"| {len(missing)} unknown"]
     if missing:
+        # The only route to autonomous recovery, so it must name something that
+        # exists: it used to suggest urls=[...], which wire_read does not accept.
         out.append(f"UNKNOWN {' '.join(missing)} -> not in the archive (pruned, or "
                    f"server reinstalled).")
-        out.append("        Re-run wire_latest for the same window, or pass urls=[...] "
-                   "directly.")
+        out.append("        Re-run wire_latest or wire_search for the same window to "
+                   "get current ids.")
     out.append("---")
 
     for row in rows:
-        kind = "full" if row.get("body_src") in ("content:encoded", "atom:content") else "teaser"
-        if not row.get("body"):
-            kind = "none"
         sources = row.get("sources") or row.get("source", "")
         cross = f" x{row['cross']}[{sources}]" if row.get("cross", 1) > 1 else ""
-        size = f" {len(row['body'])}c" if row.get("body") else ""
+        # The element it came from and its length. Which of those holds a whole
+        # article is a property of the source, checked once against its feed —
+        # not something a tag name can be asked, in either direction.
+        body = (f" body={row['body_src']} {len(row['body'])}c" if row.get("body")
+                else " body=none")
         out.append(f"\n## {row['id']} {row.get('first_source', '')} {row.get('lang','')} "
-                   f"{row['published']} body={kind}{size}{cross}")
+                   f"{row['published']}{body}{cross}")
         out.append(f"url {row['url']}")
         out.append(row["title"])
         if row.get("body"):
             out.append(row["body"])
-        if kind == "teaser":
-            out.append("!! body=teaser: the feed only ships a truncated excerpt. "
-                       "This is NOT the full article.")
-        elif kind == "none":
+        if not row.get("body"):
             out.append("!! this source publishes headlines only. Open `url` for the text.")
     return "\n".join(out)
 
@@ -209,10 +262,30 @@ def render_search(
 ) -> str:
     body, _ = _blocks(rows, None)
 
+    # Declaring the cut matters more here than in the listing. A source holding
+    # 437 matches, printed as 3/3, does not leave the cut undeclared — it denies
+    # it, asserting completeness, from the one tool whose entire purpose is to
+    # stop a small number being read as an answer.
+    shown: dict[str, int] = {}
+    totals: dict[str, int] = {}
+    for r in rows:
+        shown[r["source"]] = shown.get(r["source"], 0) + 1
+        totals[r["source"]] = r.get("source_total") or shown[r["source"]]
+    cut = [f"{s}={shown[s]}/{totals[s]}" for s in sorted(shown) if totals[s] > shown[s]]
+
     header = [
-        f'CABLEGRAM search "{query}" | last {days}d | {len(rows)} hits',
-        f"COVER local-archive {archive_items} items since {archive_start}",
-        "      The local archive starts the day this server was first run.",
+        f'CABLEGRAM search "{query}" | last {days}d | {len(rows)} shown'
+        + (f" of {sum(totals.values())} matching" if cut else " hits")
+    ]
+    if cut:
+        header.append("CUT   " + "  ".join(cut) + "   (newest kept)")
+    header += [
+        # The oldest item, not when the file was made: an archive holding ten
+        # years of a blog announced itself as starting today, and a model asked
+        # "since when has X been discussed" declined to answer.
+        f"COVER local-archive {archive_items} items, oldest {archive_start}",
+        "      Only what this server archived. It holds nothing from before its "
+        "first run.",
         '      "0 hits" = "not in what we can search". It does NOT mean nobody is '
         'talking about it.',
         "      zh/ru sources index the native term: a Chinese company is 智谱 here and "
@@ -221,20 +294,31 @@ def render_search(
         "COLS  id hh:mm title",
         "---",
     ]
+
     text = "\n".join(header + body)
-    if estimate_tokens(text) > max_tokens:
-        kept = max(1, int(len(rows) * max_tokens / max(estimate_tokens(text), 1)))
-        body, _ = _blocks(rows[:kept], None)
-        text = (f"BUDGET {kept}/{len(rows)} hits fit in max_tokens={max_tokens}.\n"
-                + "\n".join(header + body))
-    return text
+    if estimate_tokens(text) <= max_tokens:
+        return text
+
+    # Trim per source and verify, rather than computing a proportion once and
+    # trusting it: the old estimate ignored the header and overshot every time,
+    # returning 450 tokens for max_tokens=300 while announcing that it fit.
+    allowance = max(shown.values(), default=1)
+    while allowance > 0:
+        allowance = allowance - 1 if allowance <= 3 else int(allowance * 0.6)
+        trimmed = _cap_per_source(rows, allowance)
+        body, _ = _blocks(trimmed, allowance)
+        text = "\n".join(header + body)
+        if estimate_tokens(text) <= max_tokens:
+            break
+    return (f"BUDGET max_tokens={max_tokens} reached: at most {allowance} per source. "
+            f"Every source keeps its heading and real total.\n" + text)
 
 
 def render_sources(*, health: dict, archive_items: int, archive_start: str,
                    archive_path: str) -> str:
     out = [
         f"CABLEGRAM {VERSION} | {len(SOURCES)} sources",
-        f"ARCHIVE {archive_path} | {archive_items} items | since {archive_start}",
+        f"ARCHIVE {_tilde(archive_path)} | {archive_items} items | oldest {archive_start}",
         "",
         "id               lg kind      tags                     last_ok        state",
     ]

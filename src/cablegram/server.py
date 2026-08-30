@@ -20,6 +20,7 @@ from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from .archive import archive_path, connect
@@ -41,10 +42,65 @@ def _iso(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Accepted spellings, widest first. Anything else is refused rather than
+# silently matching nothing.
+_SINCE_FORMATS = ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S",
+                  "%Y-%m-%dT%H:%MZ", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
+
+
+def _parse_since(raw: str) -> str:
+    """Normalise `since`, or refuse it.
+
+    It went straight into `published >= ?`, which is a string comparison. So
+    '2026-8-30' — no zero, what a model writes half the time — sorts above every
+    real timestamp and matched nothing, and the reply came back perfectly
+    formed: 0 items, every source healthy, no DOWN line. The model reports that
+    nothing happened today.
+
+    This is the only free-text parameter in the whole surface with a required
+    shape, so it is the only place that can produce that particular lie.
+    """
+    text = (raw or "").strip()
+    for fmt in _SINCE_FORMATS:
+        try:
+            parsed = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return _iso(parsed.astimezone(timezone.utc))
+    # ToolError, not ValueError: the SDK forwards its message to the client and
+    # withholds the text of anything else, so a plain exception would reach the
+    # model as "Error executing tool" — with the recovery instructions stripped
+    # out of the one message written to make recovery possible.
+    raise ToolError(
+        f"`since` must be ISO-8601 UTC, e.g. 2026-08-30T09:00:00Z or 2026-08-30. "
+        f"Got {raw!r}, which cannot be compared against stored timestamps — it "
+        f"would have returned an empty result that looks like a quiet day. "
+        f"Use `hours` instead if you want a relative window."
+    )
+
+
 def _archive_facts(db) -> tuple[int, str]:
+    """How much is held, and how far back it reaches.
+
+    The oldest item, not when the file was created: an archive holding ten years
+    of a blog announced itself as starting today, so a model asked "since when
+    has X been discussed" had no reason to answer.
+    """
     items = db.execute("SELECT COUNT(*) FROM item").fetchone()[0]
-    started = db.execute("SELECT v FROM meta WHERE k = 'archive_started_at'").fetchone()
-    return items, (started[0][:10] if started else "-")
+    oldest = db.execute("SELECT MIN(published) FROM item").fetchone()[0]
+    return items, (oldest[:10] if oldest else "-")
+
+
+def _unknown_selectors(selectors: list[str] | None) -> list[str]:
+    """Selectors that matched no source. An empty answer to a typo is plausible
+    and wrong: wire_latest(sources=["deepseek"]) returned 0 items | 0/0."""
+    if not selectors:
+        return []
+    known = {s.id for s in SOURCES} | {t for s in SOURCES for t in s.tags} | \
+            {s.lang for s in SOURCES}
+    return sorted(s for s in selectors if s.lower() not in known)
 
 
 def build(open_db=None) -> MCPServer:
@@ -100,7 +156,7 @@ def build(open_db=None) -> MCPServer:
     ) -> str:
         """since: ISO-8601 UTC, wins over hours. sources: ids, tags or languages."""
         until = _now()
-        start = since or _iso(until - timedelta(hours=max(1, hours)))
+        start = _parse_since(since) if since else _iso(until - timedelta(hours=max(1, hours)))
         if limit_per_source is None:
             limit_per_source = 5 if detail == "full" else 25
 
@@ -110,16 +166,27 @@ def build(open_db=None) -> MCPServer:
             health = source_health(db)
 
         wanted = {s.id for s in resolve(sources)}
+        unknown = _unknown_selectors(sources)
         pollable = {s.id for s in SOURCES if s.kind in POLLABLE}
-        down = {
-            sid: (health.get(sid, {}).get("last_error") or "never polled")[:40]
-            for sid in wanted & pollable
-            if not health.get(sid, {}).get("last_ok")
-        }
+        # A source is DOWN when its most recent attempt failed — not when it has
+        # never once succeeded. Looking only at last_ok let a source failing for
+        # three days count as healthy here while wire_sources listed it as FAIL:
+        # two tools contradicting each other, with the one called every morning
+        # doing the lying.
+        down = {}
+        for sid in wanted & pollable:
+            state = health.get(sid, {})
+            if not state:
+                down[sid] = "never polled"
+            elif state.get("last_error") and (
+                not state.get("last_ok") or state["last_try"] > state["last_ok"]
+            ):
+                down[sid] = state["last_error"][:40]
         return render_latest(rows, since=start, until=_iso(until), down=down,
                              sources_total=len(wanted),
                              no_adapter=sorted(wanted - pollable), detail=detail,
-                             limit_per_source=limit_per_source, max_tokens=max_tokens)
+                             unknown=unknown, limit_per_source=limit_per_source,
+                             max_tokens=max_tokens)
 
     @server.tool(
         name="wire_read",
@@ -129,7 +196,8 @@ def build(open_db=None) -> MCPServer:
             "Read body=teaser literally: that feed ships a truncated excerpt, and the "
             "text you get is NOT the article. Do not draw conclusions from it — open "
             "the url or say the full text was not available.\n"
-            "Ids not in the archive are named in the reply rather than dropped."
+            "Ids not in the archive are named in the reply rather than dropped: "
+            "re-run wire_latest or wire_search for the same window to get current ones."
         ),
         annotations=READ_ONLY,
     )

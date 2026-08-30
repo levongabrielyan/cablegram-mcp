@@ -438,6 +438,10 @@ def search_items(
     rows = db.execute(
         f"SELECT {_ITEM_COLUMNS}, s.source, s.title, s.seen_at,"
         f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
+        # Without this the renderer falls back to the number shown, so a source
+        # holding 437 matches printed 3/3 — not an undeclared cut but a denied
+        # one, asserting completeness in the tool built to prevent exactly that.
+        f"       COUNT(*) OVER (PARTITION BY s.source) AS source_total,"
         f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY i.published DESC)"
         f"           AS rank_in_source"
         f" FROM sighting s JOIN item i ON i.id = s.item_id"

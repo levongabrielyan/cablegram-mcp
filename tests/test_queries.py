@@ -141,3 +141,17 @@ def test_a_query_with_punctuation_does_not_raise(query):
 
 def test_search_respects_its_window(db):
     assert search_items(db, "Zhipu", since=iso(NOW + timedelta(hours=1))) == []
+
+
+def test_search_reports_the_total_it_cut_from(db):
+    """Printing 3/3 for a source holding hundreds is not an undeclared cut: it
+    is a denied one, in the tool whose description is entirely about not reading
+    a small number as an answer."""
+    entries = [Entry(f"AI story {i}", f"https://hn.example/ai{i}", NOW, None, None)
+               for i in range(40)]
+    store_entries(db, by_id("hn"), entries, fetched_at=iso(NOW))
+
+    rows = search_items(db, "AI story", since=iso(NOW - timedelta(days=7)),
+                        limit_per_source=5)
+    assert len(rows) == 5
+    assert rows[0]["source_total"] == 40
