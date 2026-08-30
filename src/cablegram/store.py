@@ -43,7 +43,7 @@ class StoreReport:
     # What happened to this source this pass. A failed or unchanged source keeps
     # its row rather than vanishing from the list: nine reports for eleven
     # sources makes two disappear, and nothing downstream can tell.
-    state: str = "ok"  # ok | fetch-failed | unparseable | unchanged
+    state: str = "ok"  # ok | fetch-failed | unparseable | parsed-empty | unchanged
     new: int = 0
     seen: int = 0      # already archived, by this source or another
     skipped: int = 0   # the feed left it unusable: no url, or no title
@@ -405,8 +405,13 @@ def search_items(
     since: str,
     sources: list[str] | None = None,
     limit_per_source: int = 25,
-) -> list[dict]:
-    """Search the archived headlines of every source that carried each story.
+) -> tuple[list[dict], str]:
+    """Search the archived headlines, and say which engine answered.
+
+    Returns (rows, engine). The engine matters to the caller: "GLM" runs on the
+    trigram index and "GL" cannot, so it falls to a substring scan with
+    different recall. Two queries answered by different engines are not
+    comparable, and nothing in the output would otherwise say so.
 
     Two passes on purpose. FTS5's trigram tokenizer cannot index terms shorter
     than three characters, and the most common Chinese company names — 智谱,
@@ -415,11 +420,11 @@ def search_items(
     """
     query = query.strip()
     if not query:
-        return []
+        return [], "none"
 
     wanted = [s.id for s in resolve(sources)] if sources else None
     if wanted is not None and not wanted:
-        return []
+        return [], "none"
 
     clause, params = "", [since]
     if wanted is not None:
@@ -427,10 +432,12 @@ def search_items(
         params += wanted
 
     if len(query) >= 3:
+        engine = "index"
         matcher = ("s.rowid IN (SELECT rowid FROM sighting_fts"
                    " WHERE sighting_fts MATCH ?)")
         args = [_fts_query(query)] + params
     else:
+        engine = "substring"
         matcher = "s.title LIKE ? ESCAPE '\\'"
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         args = [f"%{escaped}%"] + params
@@ -450,4 +457,4 @@ def search_items(
         args,
     ).fetchall()
 
-    return [dict(r) for r in rows if r["rank_in_source"] <= limit_per_source]
+    return [dict(r) for r in rows if r["rank_in_source"] <= limit_per_source], engine

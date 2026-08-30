@@ -40,6 +40,13 @@ def server(tmp_path):
                                status=200, fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
     # deepmind, not cls: cls has no adapter in this build, so it is PENDING
     # rather than DOWN and could never record a fetch error in the first place.
+    #
+    # It succeeded first and fails now, which is the shape a real outage takes.
+    # The fixture used to hold only a source that had never once worked — the
+    # one case the old DOWN logic got right — so a source failing today after
+    # working yesterday appeared in no test at all.
+    record_attempt(db, Fetched("deepmind", url=by_id("deepmind").url, ok=True,
+                               body=b"x", status=200, fetched_at="2026-08-20T09:00:00Z"))
     record_attempt(db, Fetched("deepmind", url=by_id("deepmind").url, ok=False,
                                error="timeout8s",
                                fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))

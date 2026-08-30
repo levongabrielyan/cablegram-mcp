@@ -6,7 +6,8 @@ article, a capture time read as a publication time. The tests are named after
 the wrong conclusion, not after the format.
 """
 
-from cablegram.render import render_latest, render_read, render_search, render_sources
+from cablegram.render import (estimate_tokens, render_latest, render_read,
+                              render_search, render_sources)
 
 ROW = {
     "id": "a3f9c2e1", "source": "qbitai", "lang": "zh", "title": "智谱发布GLM-5",
@@ -206,3 +207,34 @@ def test_a_budget_too_small_for_the_sources_says_so():
     assert estimate_tokens(out) > 50
     assert "OVER BUDGET" in out
     assert len({l.split()[1] for l in out.splitlines() if l.startswith("## ")}) == 8
+
+
+def test_search_declares_which_engine_answered():
+    """"GLM" runs on the trigram index and finds 4; "GL" falls to a LIKE scan and
+    finds 63. Different recall, different semantics, same-looking answer — and a
+    model comparing two queries has no way to know they were not comparable."""
+    out = render_search([], query="GL", since="s", days=7, archive_start="2020-01-01",
+                        archive_items=10, engine="substring")
+    assert "substring" in out.lower()
+
+
+def test_a_source_silent_for_days_is_marked_stale():
+    """OK with a three-day-old date reads as OK. Nobody compares it to today,
+    least of all the model, and a dead timer looks like healthy sources."""
+    from datetime import datetime, timedelta, timezone
+
+    old = (datetime.now(timezone.utc) - timedelta(hours=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = render_sources(health={"qbitai": {"last_ok": old, "last_try": old}},
+                         archive_items=1, archive_start="2026-01-01",
+                         archive_path="/tmp/a.db")
+    assert "STALE" in out and "60h" in out
+
+
+def test_a_fresh_source_is_not_marked_stale():
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = render_sources(health={"qbitai": {"last_ok": now, "last_try": now}},
+                         archive_items=1, archive_start="2026-01-01",
+                         archive_path="/tmp/a.db")
+    assert "STALE" not in out

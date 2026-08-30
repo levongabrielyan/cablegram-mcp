@@ -20,6 +20,7 @@ the tokens and truncates.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .sources import SOURCES, by_id
@@ -258,6 +259,7 @@ def render_search(
     days: int,
     archive_start: str,
     archive_items: int,
+    engine: str = "index",
     max_tokens: int = 8000,
 ) -> str:
     body, _ = _blocks(rows, None)
@@ -291,6 +293,12 @@ def render_search(
         "      zh/ru sources index the native term: a Chinese company is 智谱 here and "
         "Zhipu on Hacker News.",
         "      Retry transliterated or translated if this comes back empty.",
+        # Two queries answered by different engines are not comparable, and
+        # nothing else in this output would say so.
+        ("      ENGINE substring scan: terms under 3 characters cannot use the index, "
+         "so recall differs from a longer query."
+         if engine == "substring" else
+         "      ENGINE trigram index over archived headlines."),
         "COLS  id hh:mm title",
         "---",
     ]
@@ -322,13 +330,21 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
         "",
         "id               lg kind      tags                     last_ok        state",
     ]
+    now = datetime.now(timezone.utc)
     for source in SOURCES:
         state = health.get(source.id, {})
         last_ok = (state.get("last_ok") or "-")[:16].replace("T", " ")
-        if state.get("last_error"):
+        if state.get("last_error") and (
+            not state.get("last_ok") or (state.get("last_try") or "") > state["last_ok"]
+        ):
             status = f"FAIL {state['last_error'][:28]}"
         elif state.get("last_ok"):
-            status = "OK"
+            # OK beside a three-day-old date still reads as OK, and nobody
+            # compares it to today — so a dead timer looks like healthy sources.
+            age = (now - datetime.strptime(state["last_ok"], "%Y-%m-%dT%H:%M:%SZ")
+                   .replace(tzinfo=timezone.utc))
+            hours = int(age.total_seconds() // 3600)
+            status = f"STALE {hours}h" if hours >= 6 else "OK"
         else:
             status = "never polled"
         tags = ",".join(source.tags)

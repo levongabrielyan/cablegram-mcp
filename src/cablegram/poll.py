@@ -74,6 +74,16 @@ async def poll_once(
             reports.append(report)
             continue
 
+        if not entries:
+            # A valid document with no entries is what a feed looks like the day
+            # it changes format. Recorded as a plain success it is identical to a
+            # source with no news — the silent failure this project exists to
+            # prevent, in the case most likely to occur.
+            report = StoreReport(source.id, state="parsed-empty", failed=1)
+            record_write(db, report, url=source.url, at=now)
+            reports.append(report)
+            continue
+
         report = store_entries(db, source, entries, fetched_at=now)
         record_write(db, report, url=source.url, at=now)
         reports.append(report)

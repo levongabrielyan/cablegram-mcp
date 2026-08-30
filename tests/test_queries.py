@@ -13,8 +13,14 @@ import pytest
 from cablegram.archive import connect
 from cablegram.rss import Entry
 from cablegram.sources import by_id
-from cablegram.store import (items_by_ids, latest_items, search_items,
+from cablegram.store import (items_by_ids, latest_items, search_items as _search_items,
                              store_entries)
+
+
+def search_items(*args, **kwargs):
+    """Rows only; the engine label has its own tests in test_render."""
+    rows, _engine = _search_items(*args, **kwargs)
+    return rows
 from cablegram.urls import item_id
 
 NOW = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
@@ -155,3 +161,12 @@ def test_search_reports_the_total_it_cut_from(db):
                         limit_per_source=5)
     assert len(rows) == 5
     assert rows[0]["source_total"] == 40
+
+
+def test_search_says_which_engine_answered(db):
+    """A three-character term uses the index and a two-character one cannot, so
+    their recall differs. The caller has to be able to tell them apart."""
+    _, long_engine = _search_items(db, "Zhipu", since=iso(NOW - timedelta(days=7)))
+    _, short_engine = _search_items(db, "智谱", since=iso(NOW - timedelta(days=7)))
+    assert long_engine == "index"
+    assert short_engine == "substring"

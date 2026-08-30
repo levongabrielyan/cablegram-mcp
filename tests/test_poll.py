@@ -132,3 +132,18 @@ def test_a_source_that_failed_still_appears_in_the_report(network, db):
 
     assert [(r.source, r.state) for r in reports] == [("qbitai", "fetch-failed"),
                                                       ("n8n", "ok")]
+
+
+def test_a_feed_that_parses_to_nothing_is_not_a_quiet_day(db, network):
+    """A valid document with no entries — the shape a feed takes when it changes
+    format — was recorded as state="ok", new=0. Indistinguishable from a source
+    with no news, which is the exact silent failure this project is built
+    around, in the case most likely to actually happen."""
+    network(lambda request: httpx2.Response(
+        200, content=b'<rss version="2.0"><channel><title>t</title></channel></rss>'))
+    reports = asyncio.run(poll_once(db, [by_id("qbitai")]))
+
+    assert reports[0].state == "parsed-empty"
+    state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
+    assert state["last_ok"], "the download worked"
+    assert state["wrote_failed"] == 1, "and it yielded nothing, which must be visible"

@@ -228,12 +228,12 @@ def build(open_db=None) -> MCPServer:
     ) -> str:
         start = _iso(_now() - timedelta(days=max(1, days)))
         with closing(open_db()) as db:
-            rows = search_items(db, query, since=start, sources=sources,
-                                limit_per_source=limit_per_source)
+            rows, engine = search_items(db, query, since=start, sources=sources,
+                                        limit_per_source=limit_per_source)
             items, began = _archive_facts(db)
         return render_search(rows, query=query, since=start, days=days,
                              archive_start=began, archive_items=items,
-                             max_tokens=max_tokens)
+                             engine=engine, max_tokens=max_tokens)
 
     @server.tool(
         name="wire_sources",
