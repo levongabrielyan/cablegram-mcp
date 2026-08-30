@@ -18,9 +18,15 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-__all__ = ["archive_path", "connect", "SCHEMA_VERSION"]
+from .urls import IDENTITY
+
+__all__ = ["archive_path", "connect", "SCHEMA_VERSION", "ArchiveMismatch"]
 
 SCHEMA_VERSION = 1
+
+
+class ArchiveMismatch(RuntimeError):
+    """The archive on disk was written by a build that disagrees with this one."""
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS item (
@@ -33,13 +39,31 @@ CREATE TABLE IF NOT EXISTS item (
     body         TEXT,
     body_kind    TEXT,
     published    TEXT,
-    date_exact   INTEGER NOT NULL DEFAULT 1,
+    date_exact   INTEGER NOT NULL,
     fetched_at   TEXT NOT NULL,
     target_host  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_item_pub        ON item(published DESC);
 CREATE INDEX IF NOT EXISTS idx_item_source_pub ON item(source, published DESC);
+
+-- One row per source that published the same URL. `item` can only name the
+-- source that got there first, because url_norm is UNIQUE — so without this
+-- table the cross-source count reads 1 for everything, which looks like a story
+-- nobody else picked up rather than like a missing feature.
+--
+-- The headline is kept per sighting: qbitai writes 智谱 where Hacker News writes
+-- Zhipu for the same link, and that pairing is the only bridge between a Chinese
+-- story and an English query. The feed will not serve it again.
+CREATE TABLE IF NOT EXISTS sighting (
+    item_id     TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    seen_at     TEXT NOT NULL,
+    PRIMARY KEY (item_id, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sighting_source ON sighting(source, seen_at DESC);
 
 CREATE TABLE IF NOT EXISTS source_state (
     source      TEXT PRIMARY KEY,
@@ -120,10 +144,63 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     db.execute("PRAGMA busy_timeout = 5000")
     db.executescript(_SCHEMA)
 
+    _seal(db, path)
+    return db
+
+
+def _seal(db: sqlite3.Connection, path: Path) -> None:
+    """Record which recipe wrote these ids, and refuse the file if it changed.
+
+    An id is a pure function of a URL, so the archive only holds together while
+    that function does. If it changes, nothing breaks loudly: every stored id
+    stops matching, every item is inserted again, and the archive quietly
+    doubles while reporting nothing wrong. Six months of history would look
+    like six months of duplicates.
+
+    So the recipe is written down on creation and compared on every open. An
+    empty archive is adopted — there is nothing there to be wrong about — but
+    one holding items written by an unknown recipe is refused.
+    """
+    meta = dict(db.execute("SELECT k, v FROM meta").fetchall())
+    stored_schema = meta.get("schema_version")
+    stored_identity = meta.get("id_algo")
+    has_items = db.execute("SELECT EXISTS(SELECT 1 FROM item)").fetchone()[0]
+
+    if stored_schema is not None and stored_schema != str(SCHEMA_VERSION):
+        _refuse(path,
+                f"archive schema is version {stored_schema}, this build speaks "
+                f"version {SCHEMA_VERSION}")
+    if stored_identity is not None and stored_identity != IDENTITY:
+        _refuse(path,
+                f"archive ids were computed with {stored_identity}, this build "
+                f"computes {IDENTITY}")
+    if stored_identity is None and has_items:
+        _refuse(path, "archive holds items but is unsealed: the recipe that "
+                      "computed their ids is unknown")
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     db.executemany(
         "INSERT OR IGNORE INTO meta(k, v) VALUES (?, ?)",
-        [("schema_version", str(SCHEMA_VERSION)), ("archive_started_at", now)],
+        [
+            ("schema_version", str(SCHEMA_VERSION)),
+            ("id_algo", IDENTITY),
+            ("archive_started_at", now),
+        ],
     )
     db.commit()
-    return db
+
+
+def _refuse(path: Path, problem: str) -> None:
+    """Raise with the way out attached.
+
+    Nobody reads this server's ordinary output, so this message is one of the
+    few that reaches a person. Stating the problem without the remedy would
+    leave the archive looking broken when it is merely from another build.
+    """
+    raise ArchiveMismatch(
+        f"{problem}.\n"
+        f"Archive: {path}\n"
+        "Reusing it would archive everything in it a second time. Move that "
+        "file aside — it stays readable with any SQLite client — or point "
+        "CABLEGRAM_DB at a different path."
+    )

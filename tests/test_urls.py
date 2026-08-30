@@ -139,3 +139,38 @@ def test_forum_thread_ids_must_stay_apart():
     a = item_id("https://forum.ex.com/viewtopic.php?t=123")
     b = item_id("https://forum.ex.com/viewtopic.php?t=456")
     assert a != b
+
+
+# ── the frozen contract ──────────────────────────────────────────────────────
+
+# Computed with the system's sha1sum, not with this package, so the test does
+# not merely agree with itself:
+#     printf '%s' 'https://36kr.com/p/123' | sha1sum | cut -c1-12
+GOLDEN = {
+    "https://36kr.com/p/123": "39ac6fbab00b",
+    "https://news.ycombinator.com/item?id=41234567": "895d9e6ec40b",
+    "https://t.me/ai_newz/1234": "805c2e3aff22",
+    "https://www.cls.cn/detail/2160000": "a2d26f2a8453",   # www. is dropped first
+    "https://qbitai.com/2026/08/glm5.html": "1e73bc6f1829",
+    "https://habr.com/ru/post/1": "cbba733bbca5",
+    "https://example.com": "327c3fda87ce",
+}
+
+
+@pytest.mark.parametrize("url,expected", sorted(GOLDEN.items()))
+def test_ids_never_change(url, expected):
+    """If this fails, one of two things happened, and they need opposite fixes.
+
+    Either normalise() broke — fix it. Or it was changed on purpose, in which
+    case every id ever written now points at nothing: bump NORMALISE_VERSION so
+    existing archives refuse to open instead of silently doubling.
+    """
+    assert item_id(url) == expected
+
+
+def test_the_recipe_is_declared_and_matches_it(tmp_path):
+    """IDENTITY is what gets stamped into an archive. If it drifts from what the
+    code actually does, the seal certifies the wrong thing."""
+    from cablegram.urls import IDENTITY, NORMALISE_VERSION
+
+    assert IDENTITY == f"sha1[:{ID_LENGTH}]/v{NORMALISE_VERSION}"

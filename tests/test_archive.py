@@ -30,8 +30,8 @@ def db(tmp_path):
     conn = connect(tmp_path / "archive.db")
     for url, source, lang, title in ROWS:
         conn.execute(
-            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
             (item_id(url), url, url, source, lang, title, NOW),
         )
     conn.commit()
@@ -96,8 +96,8 @@ def test_same_url_cannot_archive_twice(db):
     url = ROWS[0][0]
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
-            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
             (item_id(url), url, url, "other", "zh", "duplicate", NOW),
         )
 
@@ -112,8 +112,8 @@ def test_reopening_keeps_the_history(tmp_path):
     path = tmp_path / "archive.db"
     conn = connect(path)
     conn.execute(
-        "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at)"
-        " VALUES ('a1b2c3d4', 'u', 'u', 's', 'en', 'kept', ?)", (NOW,))
+        "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+        " VALUES ('a1b2c3d4e5f6', 'u', 'u', 's', 'en', 'kept', ?, 1)", (NOW,))
     conn.commit()
     conn.close()
 
@@ -144,3 +144,12 @@ def test_relative_xdg_is_ignored(monkeypatch):
     monkeypatch.delenv("CABLEGRAM_DB", raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", "relative/path")
     assert archive_path().is_absolute()
+
+
+def test_a_date_must_be_declared_exact_or_not(db):
+    """No default: an omitted date_exact used to mean "exact", so a forgotten
+    field would have claimed certainty the feed never gave."""
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at)"
+            " VALUES ('ffffffffffff', 'x', 'x', 's', 'en', 'T', ?)", (NOW,))

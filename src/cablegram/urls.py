@@ -26,13 +26,24 @@ import hashlib
 import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-__all__ = ["normalise", "item_id", "ID_LENGTH"]
+__all__ = ["normalise", "item_id", "ID_LENGTH", "IDENTITY", "NORMALISE_VERSION"]
 
 # 12 hex = 48 bits. A 50% chance of collision arrives at ~19.7 million items;
 # this archive grows by ~200k a year. At 8 hex that point was 77k items — five
 # months — and a collision means a real article silently rejected by the PRIMARY
 # KEY, in the one part of the system that cannot be rebuilt.
 ID_LENGTH = 12
+
+# Bumped only when a change in this module reassigns ids that were already
+# issued. Adding a tracking key to the denylist does not qualify: it leaves
+# essentially every existing id alone. Rewriting how the path or host is treated
+# does, and an archive stamped with the old value then refuses to open rather
+# than silently archiving everything it already holds a second time.
+NORMALISE_VERSION = 1
+
+# The recipe, as one string. Stamped into every archive on creation and checked
+# on every open; see archive.connect().
+IDENTITY = f"sha1[:{ID_LENGTH}]/v{NORMALISE_VERSION}"
 
 _HOST_PREFIXES = ("www.", "m.", "amp.", "mobile.")
 
