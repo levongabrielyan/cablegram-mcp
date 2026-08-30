@@ -12,6 +12,7 @@ would scatter several half-archives across the disk and silently lose history.
 
 from __future__ import annotations
 
+import functools
 import os
 import sqlite3
 import sys
@@ -186,6 +187,7 @@ def _shape(db: sqlite3.Connection) -> dict[str, set[str]]:
     }
 
 
+@functools.lru_cache(maxsize=1)
 def _expected_shape() -> dict[str, set[str]]:
     """The columns this build creates, read from the schema it would create.
 

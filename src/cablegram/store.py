@@ -20,12 +20,13 @@ from urllib.parse import urlsplit
 
 from .fetch import Fetched
 from .rss import Entry
-from .sources import Source
+from .sources import Source, resolve
 from .urls import item_id, normalise
 
 __all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
            "conditional_headers", "cross_count", "cross_counts",
-           "items_of_source", "record_write", "source_health"]
+           "items_of_source", "record_write", "source_health",
+           "latest_items", "items_by_ids", "search_items"]
 
 
 class CollisionError(RuntimeError):
@@ -310,3 +311,139 @@ def conditional_headers(db: sqlite3.Connection) -> dict[str, tuple[str | None, s
         row["url"]: (row["etag"], row["last_mod"])
         for row in db.execute("SELECT url, etag, last_mod FROM source_state")
     }
+
+
+# ── reads ───────────────────────────────────────────────────────────────────
+#
+# Every query below can fail by returning less, and none of them can fail by
+# raising. A window that drops a source, a limit that cuts from the wrong end, a
+# search escaped wrong: all of them come back as a shorter list, which reads as
+# a quiet day. So each one carries the totals needed to tell the difference.
+
+_ITEM_COLUMNS = (
+    "i.id, i.url, i.url_norm, i.lang, i.body, i.body_src, i.published,"
+    " i.date_exact, i.target_host, i.first_source"
+)
+
+
+def latest_items(
+    db: sqlite3.Connection,
+    *,
+    since: str,
+    sources: list[str] | None = None,
+    limit_per_source: int | None = None,
+) -> list[dict]:
+    """Items seen since `since`, grouped by the source that carried them.
+
+    One row per (source, item): a story two feeds ran appears under both, which
+    is what "what did this source carry" means. `source_total` is the count
+    before the limit, so a cut can be declared rather than looking like silence.
+    """
+    wanted = [s.id for s in resolve(sources)] if sources else None
+    params: list = [since]
+    clause = ""
+    if wanted is not None:
+        if not wanted:
+            return []
+        clause = f" AND s.source IN ({','.join('?' * len(wanted))})"
+        params += wanted
+
+    rows = db.execute(
+        f"SELECT {_ITEM_COLUMNS}, s.source, s.title, s.seen_at,"
+        f"       COUNT(*) OVER (PARTITION BY s.source) AS source_total,"
+        f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
+        f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY i.published DESC)"
+        f"           AS rank_in_source"
+        f" FROM sighting s JOIN item i ON i.id = s.item_id"
+        f" WHERE i.published >= ?{clause}"
+        f" ORDER BY s.source, i.published DESC",
+        params,
+    ).fetchall()
+
+    keep = [dict(r) for r in rows
+            if limit_per_source is None or r["rank_in_source"] <= limit_per_source]
+    return keep
+
+
+def items_by_ids(db: sqlite3.Connection, ids: list[str]) -> list[dict]:
+    """Full rows for the ids given, in the order given, skipping unknown ones.
+
+    The caller compares what it asked for against what came back and reports the
+    difference: returning two of three without a word lets the model believe it
+    read all three.
+    """
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    found = {
+        row["id"]: dict(row)
+        for row in db.execute(
+            f"SELECT {_ITEM_COLUMNS}, i.title,"
+            f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
+            f"       (SELECT GROUP_CONCAT(x.source) FROM sighting x WHERE x.item_id = i.id)"
+            f"           AS sources"
+            f" FROM item i WHERE i.id IN ({marks})", ids)
+    }
+    return [found[i] for i in ids if i in found]
+
+
+def _fts_query(query: str) -> str:
+    """Wrap a user's words as one FTS5 phrase, escaping the quotes.
+
+    FTS5 reads ", *, -, OR and NEAR as syntax, so an unescaped query raises
+    OperationalError and the model gets a crash instead of a result — for
+    something a person could plausibly type. Doubling the quotes inside one
+    quoted phrase makes every character literal.
+    """
+    return '"' + query.replace('"', '""') + '"'
+
+
+def search_items(
+    db: sqlite3.Connection,
+    query: str,
+    *,
+    since: str,
+    sources: list[str] | None = None,
+    limit_per_source: int = 25,
+) -> list[dict]:
+    """Search the archived headlines of every source that carried each story.
+
+    Two passes on purpose. FTS5's trigram tokenizer cannot index terms shorter
+    than three characters, and the most common Chinese company names — 智谱,
+    阿里, 字节 — are exactly two. Without the LIKE fallback those return nothing,
+    with no error, and the answer reads as "nobody is talking about them".
+    """
+    query = query.strip()
+    if not query:
+        return []
+
+    wanted = [s.id for s in resolve(sources)] if sources else None
+    if wanted is not None and not wanted:
+        return []
+
+    clause, params = "", [since]
+    if wanted is not None:
+        clause = f" AND s.source IN ({','.join('?' * len(wanted))})"
+        params += wanted
+
+    if len(query) >= 3:
+        matcher = ("s.rowid IN (SELECT rowid FROM sighting_fts"
+                   " WHERE sighting_fts MATCH ?)")
+        args = [_fts_query(query)] + params
+    else:
+        matcher = "s.title LIKE ? ESCAPE '\\'"
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        args = [f"%{escaped}%"] + params
+
+    rows = db.execute(
+        f"SELECT {_ITEM_COLUMNS}, s.source, s.title, s.seen_at,"
+        f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
+        f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY i.published DESC)"
+        f"           AS rank_in_source"
+        f" FROM sighting s JOIN item i ON i.id = s.item_id"
+        f" WHERE {matcher} AND i.published >= ?{clause}"
+        f" ORDER BY s.source, i.published DESC",
+        args,
+    ).fetchall()
+
+    return [dict(r) for r in rows if r["rank_in_source"] <= limit_per_source]
