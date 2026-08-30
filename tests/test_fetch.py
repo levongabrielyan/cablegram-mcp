@@ -123,3 +123,45 @@ def test_result_always_identifies_its_source(field):
 
     result = asyncio.run(_one(handler))
     assert getattr(result, field) is not None
+
+
+# ── the deadline must cost the slow source, not the whole poll ───────────────
+
+def test_a_hanging_source_does_not_take_the_others_with_it():
+    """The failure mode the deadline exists for is the source that never answers.
+
+    Cancelling the whole batch turns one slow feed into eleven dead ones, and
+    the caller cannot tell the difference — it reports a total outage on a day
+    when ten sources were fine.
+    """
+    async def handler(request):
+        if "slow" in str(request.url):
+            await asyncio.sleep(30)
+        return httpx2.Response(200, content=b"ok")
+
+    async def run():
+        import cablegram.fetch as fetch_mod
+
+        real = httpx2.AsyncClient
+
+        def patched(*args, **kwargs):
+            kwargs["transport"] = httpx2.MockTransport(handler)
+            return real(*args, **kwargs)
+
+        fetch_mod.httpx2.AsyncClient = patched
+        try:
+            return await fetch_all(
+                [("good", "https://e.com/a"), ("slow", "https://e.com/slow"),
+                 ("also_good", "https://e.com/b")],
+                deadline=1.0,
+            )
+        finally:
+            fetch_mod.httpx2.AsyncClient = real
+
+    results = asyncio.run(run())
+    by_id = {r.source_id: r for r in results}
+
+    assert by_id["good"].ok and by_id["good"].body == b"ok"
+    assert by_id["also_good"].ok, "a healthy source must survive a slow neighbour"
+    assert by_id["slow"].ok is False and "deadline" in by_id["slow"].error
+    assert [r.source_id for r in results] == ["good", "slow", "also_good"]

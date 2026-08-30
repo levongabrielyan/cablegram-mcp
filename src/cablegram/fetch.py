@@ -129,25 +129,42 @@ async def fetch_all(
 ) -> list[Fetched]:
     """Fetch every target concurrently, bounded by one global deadline.
 
-    Sources that have not answered when the deadline passes are reported as
-    timed out. The caller always receives one result per target, in the order
-    given — a source never disappears from the list just because it failed.
+    The caller always receives one result per target, in the order given. A
+    source never disappears from the list because it failed, and — the case
+    that is easy to get wrong — a source that answered is never discarded
+    because a different one hung. Cancelling the batch on the deadline would
+    turn one slow feed into eleven dead ones, and nothing downstream could tell
+    that apart from a real outage.
     """
     conditional = conditional or {}
 
-    async def run() -> list[Fetched]:
-        # HTTP/1.1 on purpose: http2=True needs the `h2` package, and one extra
-        # dependency is not worth a few milliseconds on eleven feeds.
-        async with httpx2.AsyncClient() as client:
-            tasks = [
-                fetch_one(client, sid, url, etag=conditional.get(sid, (None, None))[0],
-                          last_modified=conditional.get(sid, (None, None))[1])
-                for sid, url in targets
-            ]
-            return await asyncio.gather(*tasks)
+    # HTTP/1.1 on purpose: http2=True needs the `h2` package, and one extra
+    # dependency is not worth a few milliseconds on eleven feeds.
+    async with httpx2.AsyncClient() as client:
+        tasks = {}
+        for source_id, url in targets:
+            etag, last_modified = conditional.get(source_id, (None, None))
+            tasks[source_id] = asyncio.create_task(
+                fetch_one(client, source_id, url, etag=etag, last_modified=last_modified)
+            )
 
-    try:
-        return await asyncio.wait_for(run(), timeout=deadline)
-    except (asyncio.TimeoutError, TimeoutError):
-        return [Fetched(sid, ok=False, error=f"deadline {deadline:g}s exceeded")
-                for sid, _ in targets]
+        if tasks:
+            _, pending = await asyncio.wait(tasks.values(), timeout=deadline)
+            for task in pending:
+                task.cancel()
+            # Settle the cancellations before the client closes underneath them.
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        results = []
+        for source_id, _ in targets:
+            task = tasks[source_id]
+            if task.cancelled() or not task.done():
+                results.append(Fetched(source_id, ok=False,
+                                       error=f"deadline {deadline:g}s exceeded"))
+                continue
+            if exc := task.exception():
+                results.append(Fetched(source_id, ok=False,
+                                       error=f"{type(exc).__name__}: {str(exc)[:80]}"))
+                continue
+            results.append(task.result())
+        return results
