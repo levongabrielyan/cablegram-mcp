@@ -2,7 +2,7 @@
 
 import pytest
 
-from cablegram.urls import item_id, normalise
+from cablegram.urls import ID_LENGTH, item_id, normalise
 
 
 @pytest.mark.parametrize(
@@ -38,8 +38,19 @@ def test_meaningful_query_survives():
 
 
 def test_tracking_never_survives():
-    for junk in ("fbclid=abc", "utm_campaign=x", "spm=a.b.c", "share_token=zz", "from=timeline"):
+    """Only keys that are instrumentation wherever they appear are dropped."""
+    for junk in ("fbclid=abc", "utm_campaign=x", "spm=a.b.c", "share_token=zz",
+                 "gclid=1", "yclid=2", "igshid=3", "mc_cid=4", "_hsenc=5"):
         assert normalise(f"https://example.com/a?{junk}") == "https://example.com/a"
+
+
+def test_ambiguous_keys_are_kept_on_purpose():
+    """`from` is tracking on WeChat and a real parameter elsewhere.
+
+    Keeping it costs a duplicate — visible and harmless. Dropping it risks
+    merging two articles, which is unrecoverable. When unsure, keep.
+    """
+    assert normalise("https://example.com/a?from=timeline") == "https://example.com/a?from=timeline"
 
 
 def test_query_order_does_not_matter():
@@ -67,7 +78,7 @@ def test_unicode_path_is_stable():
 
 def test_id_shape():
     ident = item_id("https://example.com/a")
-    assert len(ident) == 8
+    assert len(ident) == ID_LENGTH
     assert all(c in "0123456789abcdef" for c in ident)
 
 
@@ -78,5 +89,37 @@ def test_id_is_deterministic_across_calls():
 
 def test_root_and_empty_do_not_crash():
     assert normalise("https://example.com") == "https://example.com"
-    assert normalise("https://example.com/") == "https://example.com/"
+    assert normalise("https://example.com/") == "https://example.com"
     assert normalise("") == ""
+
+
+# ── Regressions found by an external reviewer, 2026-08-30 ────────────────────
+# Written before the fix, so they fail against the old behaviour. A test written
+# after the code tends to confirm what the code does, not what it should do.
+
+def test_id_is_wide_enough_to_outlast_the_archive():
+    """8 hex is 32 bits: a 50% chance of collision after ~77k items, five months
+    of feeds. `id` is the PRIMARY KEY, so a collision silently rejects a real
+    article — in the one part of the system that cannot be regenerated.
+    """
+    assert len(item_id("https://e.com/a")) >= 12
+
+
+def test_unknown_query_keys_must_not_merge_distinct_pages():
+    """A whitelist fails destructively: an unlisted key that identifies the page
+    merges two articles into one and the second never enters the archive.
+    A blacklist fails benignly — it lets tracking through and creates a duplicate.
+    """
+    for key in ("sid", "story", "topic", "article", "post", "aid", "tid"):
+        a = item_id(f"https://e.com/x?{key}=1")
+        b = item_id(f"https://e.com/x?{key}=2")
+        assert a != b, f"?{key}= identifies the page; merging it loses articles"
+
+
+def test_tracking_timestamps_must_not_split_one_article():
+    """'t' is a timestamp on much of the web. Keeping it archives one story twice."""
+    assert item_id("https://e.com/x?t=1735689600") == item_id("https://e.com/x?t=1735689700")
+
+
+def test_root_with_and_without_slash_is_one_page():
+    assert item_id("https://example.com") == item_id("https://example.com/")
