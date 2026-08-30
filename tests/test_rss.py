@@ -246,25 +246,26 @@ def test_the_word_entity_in_an_article_does_not_kill_the_feed():
 
 # ── how much body arrived, which only the parser can know ────────────────────
 
-def test_content_encoded_is_marked_full():
-    """Whether a body is the article or its first paragraph decides if the reader
-    has to open the link. Inferring it later from length is guesswork."""
-    assert parse_feed(RSS2)[1].body_kind == "full"
+def test_the_element_is_recorded_verbatim():
+    """A fact, not a verdict. A feed is free to put the whole article in
+    <description> and two sentences in <atom:content>, and both happen — so
+    "full" and "teaser" were guesses dressed as data."""
+    assert parse_feed(RSS2)[1].body_src == "content:encoded"
 
 
-def test_description_is_marked_teaser():
-    assert parse_feed(RSS2)[0].body_kind == "teaser"
+def test_description_is_named_description():
+    assert parse_feed(RSS2)[0].body_src == "description"
 
 
-def test_atom_summary_is_a_teaser():
-    assert parse_feed(ATOM)[0].body_kind == "teaser"
+def test_atom_summary_keeps_its_own_name():
+    assert parse_feed(ATOM)[0].body_src == "atom:summary"
 
 
 def test_no_body_no_kind():
     feed = b"""<rss version="2.0"><channel><item>
         <title>T</title><link>https://e.com/a</link></item></channel></rss>"""
     entry = parse_feed(feed)[0]
-    assert entry.body is None and entry.body_kind is None
+    assert entry.body is None and entry.body_src is None
 
 
 def test_an_empty_description_does_not_count_as_a_body():
@@ -274,7 +275,7 @@ def test_an_empty_description_does_not_count_as_a_body():
         <title>T</title><link>https://e.com/a</link>
         <description>&lt;p&gt; &lt;/p&gt;</description></item></channel></rss>"""
     entry = parse_feed(feed)[0]
-    assert entry.body is None and entry.body_kind is None
+    assert entry.body is None and entry.body_src is None
 
 
 # ── third review: the byte-scanning guard was still bypassable ───────────────

@@ -22,7 +22,7 @@ from .urls import IDENTITY, id_recipe
 
 __all__ = ["archive_path", "connect", "SCHEMA_VERSION", "ArchiveMismatch"]
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class ArchiveMismatch(RuntimeError):
@@ -33,11 +33,11 @@ CREATE TABLE IF NOT EXISTS item (
     id           TEXT PRIMARY KEY,
     url_norm     TEXT NOT NULL UNIQUE,
     url          TEXT NOT NULL,
-    source       TEXT NOT NULL,
+    first_source TEXT NOT NULL,   -- whoever archived it first; see `sighting`
     lang         TEXT NOT NULL,
     title        TEXT NOT NULL,
     body         TEXT,
-    body_kind    TEXT,
+    body_src     TEXT,            -- the element it came from, not a judgement
     published    TEXT,
     date_exact   INTEGER NOT NULL,
     fetched_at   TEXT NOT NULL,
@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS item (
 );
 
 CREATE INDEX IF NOT EXISTS idx_item_pub        ON item(published DESC);
-CREATE INDEX IF NOT EXISTS idx_item_source_pub ON item(source, published DESC);
+-- No index on first_source on purpose: grouping by it is the mistake the
+-- column's old name invited. Anything asking "what did this source carry"
+-- reads `sighting`, which is the only place that knows.
 
 -- One row per source that published the same URL. `item` can only name the
 -- source that got there first, because url_norm is UNIQUE — so without this
@@ -76,32 +78,44 @@ CREATE TABLE IF NOT EXISTS source_state (
 
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 
--- Only titles are indexed. Bodies are stored and served by wire_read, but
--- indexing them costs five times the disk for little recall: a product name
--- lives in the headline.
+-- Every headline is indexed, and they live in `sighting`: one story carries a
+-- different one per source, and the pairing is the point. Searching only the
+-- item's title would write Hacker News's "Zhipu" down and never find it, for a
+-- story qbitai filed as 智谱 — the schema documenting a bridge it did not have.
+--
+-- Bodies stay out. Indexing them costs five times the disk for little recall:
+-- a product name lives in the headline.
 --
 -- 'trigram' is not a preference. With the default tokenizer every Chinese query
 -- returns zero hits, silently: Chinese has no spaces, so a whole headline
--- becomes one token. Three of fifteen sources would go mute with nobody
+-- becomes one token. Three of nineteen sources would go mute with nobody
 -- noticing. Queries under three characters still need the LIKE fallback.
-CREATE VIRTUAL TABLE IF NOT EXISTS item_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS sighting_fts USING fts5(
     title,
-    content = 'item',
+    content = 'sighting',
     content_rowid = 'rowid',
     tokenize = 'trigram'
 );
 
-CREATE TRIGGER IF NOT EXISTS item_ai AFTER INSERT ON item BEGIN
-    INSERT INTO item_fts(rowid, title) VALUES (new.rowid, new.title);
+CREATE TRIGGER IF NOT EXISTS sighting_ai AFTER INSERT ON sighting BEGIN
+    INSERT INTO sighting_fts(rowid, title) VALUES (new.rowid, new.title);
 END;
 
+CREATE TRIGGER IF NOT EXISTS sighting_ad AFTER DELETE ON sighting BEGIN
+    INSERT INTO sighting_fts(sighting_fts, rowid, title)
+    VALUES ('delete', old.rowid, old.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS sighting_au AFTER UPDATE ON sighting BEGIN
+    INSERT INTO sighting_fts(sighting_fts, rowid, title)
+    VALUES ('delete', old.rowid, old.title);
+    INSERT INTO sighting_fts(rowid, title) VALUES (new.rowid, new.title);
+END;
+
+-- Deleting an item must not leave its sightings, or the index keeps answering
+-- for a story that is gone.
 CREATE TRIGGER IF NOT EXISTS item_ad AFTER DELETE ON item BEGIN
-    INSERT INTO item_fts(item_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
-END;
-
-CREATE TRIGGER IF NOT EXISTS item_au AFTER UPDATE ON item BEGIN
-    INSERT INTO item_fts(item_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
-    INSERT INTO item_fts(rowid, title) VALUES (new.rowid, new.title);
+    DELETE FROM sighting WHERE item_id = old.id;
 END;
 """
 

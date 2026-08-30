@@ -19,7 +19,7 @@ NOW = "2026-08-30T12:00:00Z"
 
 def _row(conn, url="https://e.com/a"):
     conn.execute(
-        "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+        "INSERT INTO item(id, url_norm, url, first_source, lang, title, fetched_at, date_exact)"
         " VALUES ('deadbeef0001', ?, ?, 's', 'en', 'T', ?, 1)", (url, url, NOW))
     conn.commit()
 

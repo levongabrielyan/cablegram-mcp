@@ -30,9 +30,13 @@ def db(tmp_path):
     conn = connect(tmp_path / "archive.db")
     for url, source, lang, title in ROWS:
         conn.execute(
-            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+            "INSERT INTO item(id, url_norm, url, first_source, lang, title, fetched_at, date_exact)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
             (item_id(url), url, url, source, lang, title, NOW),
+        )
+        conn.execute(
+            "INSERT INTO sighting(item_id, source, title, seen_at) VALUES (?, ?, ?, ?)",
+            (item_id(url), source, title, NOW),
         )
     conn.commit()
     yield conn
@@ -41,8 +45,8 @@ def db(tmp_path):
 
 def _search(conn, query):
     return [r["title"] for r in conn.execute(
-        "SELECT i.title FROM item_fts f JOIN item i ON i.rowid = f.rowid"
-        " WHERE item_fts MATCH ?", (f'"{query}"',)
+        "SELECT s.title FROM sighting_fts f JOIN sighting s ON s.rowid = f.rowid"
+        " WHERE sighting_fts MATCH ?", (f'"{query}"',)
     )]
 
 
@@ -73,7 +77,7 @@ def test_two_character_chinese_needs_the_fallback(db):
     belt-and-braces: without it these queries return nothing.
     """
     assert _search(db, "智谱") == []
-    rows = db.execute("SELECT title FROM item WHERE title LIKE ?", ("%智谱%",)).fetchall()
+    rows = db.execute("SELECT title FROM sighting WHERE title LIKE ?", ("%智谱%",)).fetchall()
     assert rows, "LIKE fallback must catch what FTS5 structurally cannot"
 
 
@@ -96,14 +100,14 @@ def test_same_url_cannot_archive_twice(db):
     url = ROWS[0][0]
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
-            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+            "INSERT INTO item(id, url_norm, url, first_source, lang, title, fetched_at, date_exact)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
             (item_id(url), url, url, "other", "zh", "duplicate", NOW),
         )
 
 
 def test_delete_leaves_no_ghost_in_the_index(db):
-    db.execute("DELETE FROM item WHERE source = 'habr'")
+    db.execute("DELETE FROM item WHERE first_source = 'habr'")
     db.commit()
     assert _search(db, "параметров") == []
 
@@ -112,7 +116,7 @@ def test_reopening_keeps_the_history(tmp_path):
     path = tmp_path / "archive.db"
     conn = connect(path)
     conn.execute(
-        "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+        "INSERT INTO item(id, url_norm, url, first_source, lang, title, fetched_at, date_exact)"
         " VALUES ('a1b2c3d4e5f6', 'u', 'u', 's', 'en', 'kept', ?, 1)", (NOW,))
     conn.commit()
     conn.close()
@@ -151,5 +155,29 @@ def test_a_date_must_be_declared_exact_or_not(db):
     field would have claimed certainty the feed never gave."""
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
-            "INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at)"
+            "INSERT INTO item(id, url_norm, url, first_source, lang, title, fetched_at)"
             " VALUES ('ffffffffffff', 'x', 'x', 's', 'en', 'T', ?)", (NOW,))
+
+
+# ── third review: the bridge the schema documented but did not have ─────────
+
+def test_the_english_headline_of_a_chinese_story_is_searchable(tmp_path):
+    """Storing each source's own headline is only worth anything if it can be
+    found. Indexing item.title alone meant Hacker News's "Zhipu" was written
+    down and unreachable — the schema documenting a capability it lacked."""
+    conn = connect(tmp_path / "a.db")
+    url = "https://qbitai.com/2026/08/glm5.html"
+    iid = item_id(url)
+    conn.execute(
+        "INSERT INTO item(id, url_norm, url, first_source, lang, title, fetched_at, date_exact)"
+        " VALUES (?,?,?,'qbitai','zh','智谱发布GLM-5',?,1)", (iid, url, url, NOW))
+    for source, title in (("qbitai", "智谱发布GLM-5"), ("hn", "Zhipu releases GLM-5")):
+        conn.execute("INSERT INTO sighting(item_id, source, title, seen_at) VALUES (?,?,?,?)",
+                     (iid, source, title, NOW))
+    conn.commit()
+
+    found = [r["item_id"] for r in conn.execute(
+        "SELECT DISTINCT s.item_id FROM sighting_fts f"
+        " JOIN sighting s ON s.rowid = f.rowid WHERE sighting_fts MATCH ?", ('"Zhipu"',))]
+    assert found == [iid]
+    conn.close()

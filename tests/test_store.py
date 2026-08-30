@@ -30,8 +30,8 @@ def db(tmp_path):
     conn.close()
 
 
-def entry(url=GLM, title="智谱发布GLM-5", published=PUB, body="正文", body_kind="teaser"):
-    return Entry(title=title, url=url, published=published, body=body, body_kind=body_kind)
+def entry(url=GLM, title="智谱发布GLM-5", published=PUB, body="正文", body_src="description"):
+    return Entry(title=title, url=url, published=published, body=body, body_src=body_src)
 
 
 def rows(db):
@@ -144,15 +144,15 @@ def test_a_local_timezone_is_converted_not_stored_raw(db):
 
 # ── the two fields the reader uses to decide whether to open something ───────
 
-def test_body_kind_survives_from_the_parser(db):
-    store_entries(db, by_id("qbitai"), [entry(body_kind="full")], fetched_at=NOW)
-    assert rows(db)[0]["body_kind"] == "full"
+def test_body_src_survives_from_the_parser(db):
+    store_entries(db, by_id("qbitai"), [entry(body_src="content:encoded")], fetched_at=NOW)
+    assert rows(db)[0]["body_src"] == "content:encoded"
 
 
-def test_no_body_means_no_kind(db):
-    store_entries(db, by_id("qbitai"), [entry(body=None, body_kind=None)], fetched_at=NOW)
+def test_no_body_means_no_source(db):
+    store_entries(db, by_id("qbitai"), [entry(body=None, body_src=None)], fetched_at=NOW)
     row = rows(db)[0]
-    assert row["body"] is None and row["body_kind"] is None
+    assert row["body"] is None and row["body_src"] is None
 
 
 def test_target_host_is_recorded_for_aggregators(db):
@@ -264,8 +264,8 @@ def test_a_real_date_replaces_a_guessed_one(db):
 
 
 def test_a_body_fills_in_where_there_was_none(db):
-    store_entries(db, by_id("productradar"), [entry(body=None, body_kind=None)], fetched_at=NOW)
-    store_entries(db, by_id("hn"), [entry(body="the whole article", body_kind="content:encoded")],
+    store_entries(db, by_id("productradar"), [entry(body=None, body_src=None)], fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry(body="the whole article", body_src="content:encoded")],
                   fetched_at=NOW)
     row = rows(db)[0]
     assert row["body"] == "the whole article"
@@ -291,7 +291,7 @@ def test_an_id_collision_is_reported_not_counted_as_seen(db):
     """INSERT OR IGNORE swallows every constraint violation, not just the one on
     url_norm. A collision would be filed as 'already archived' while the article
     is nowhere — and its sighting would hang off a different story entirely."""
-    db.execute("INSERT INTO item(id, url_norm, url, source, lang, title, fetched_at, date_exact)"
+    db.execute("INSERT INTO item(id, url_norm, url, first_source, lang, title, fetched_at, date_exact)"
                " VALUES (?, 'https://other.example/x', 'https://other.example/x',"
                " 'kr36', 'zh', 'unrelated story', ?, 1)", (item_id(GLM), NOW))
     db.commit()
@@ -303,3 +303,38 @@ def test_an_id_collision_is_reported_not_counted_as_seen(db):
     sightings = db.execute("SELECT source FROM sighting WHERE item_id = ?",
                            (item_id(GLM),)).fetchall()
     assert not sightings, "no sighting may be attached to somebody else's item"
+
+
+# ── third review: item.source only ever names the first one ─────────────────
+
+def test_asking_for_a_source_finds_what_that_source_carried(db):
+    """item names whoever got there first, because url_norm is UNIQUE. Reading
+    that column as "the source" makes the natural query wrong precisely when the
+    design is working: a story several feeds carried would be listed under one
+    of them and missing from the others.
+    """
+    store_entries(db, by_id("qbitai"), [entry()], fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry(title="Zhipu releases GLM-5")], fetched_at=NOW)
+
+    from cablegram.store import items_of_source
+    assert [r["id"] for r in items_of_source(db, "hn")] == [item_id(GLM)]
+    assert [r["id"] for r in items_of_source(db, "qbitai")] == [item_id(GLM)]
+
+
+def test_a_source_shows_the_headline_it_used(db):
+    store_entries(db, by_id("qbitai"), [entry()], fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry(title="Zhipu releases GLM-5")], fetched_at=NOW)
+
+    from cablegram.store import items_of_source
+    assert items_of_source(db, "hn")[0]["title"] == "Zhipu releases GLM-5"
+
+
+def test_cross_counts_come_back_in_one_query(db):
+    """One query per item is 210 queries for a normal day's wire_latest."""
+    store_entries(db, by_id("qbitai"), [entry(), entry(url="https://qbitai.com/b")],
+                  fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry()], fetched_at=NOW)
+
+    from cablegram.store import cross_counts
+    counts = cross_counts(db, [item_id(GLM), item_id("https://qbitai.com/b")])
+    assert counts == {item_id(GLM): 2, item_id("https://qbitai.com/b"): 1}

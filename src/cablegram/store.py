@@ -24,7 +24,8 @@ from .sources import Source
 from .urls import item_id, normalise
 
 __all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
-           "conditional_headers", "cross_count"]
+           "conditional_headers", "cross_count", "cross_counts",
+           "items_of_source"]
 
 
 class CollisionError(RuntimeError):
@@ -106,11 +107,11 @@ def _store_one(
     with db:
         cur = db.execute(
             "INSERT OR IGNORE INTO item"
-            " (id, url_norm, url, source, lang, title, body, body_kind,"
+            " (id, url_norm, url, first_source, lang, title, body, body_src,"
             "  published, date_exact, fetched_at, target_host)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (iid, url_norm, url, source.id, source.lang, title, entry.body,
-             entry.body_kind, published, date_exact, fetched_at, target_host),
+             entry.body_src, published, date_exact, fetched_at, target_host),
         )
 
         if cur.rowcount:
@@ -142,8 +143,8 @@ def _store_one(
                 )
             if entry.body:
                 db.execute(
-                    "UPDATE item SET body = ?, body_kind = ? WHERE id = ? AND body IS NULL",
-                    (entry.body, entry.body_kind, iid),
+                    "UPDATE item SET body = ?, body_src = ? WHERE id = ? AND body IS NULL",
+                    (entry.body, entry.body_src, iid),
                 )
 
         db.execute(
@@ -163,6 +164,38 @@ def cross_count(db: sqlite3.Connection, iid: str) -> int:
     return db.execute(
         "SELECT COUNT(*) FROM sighting WHERE item_id = ?", (iid,)
     ).fetchone()[0]
+
+
+def cross_counts(db: sqlite3.Connection, ids: list[str]) -> dict[str, int]:
+    """The same, for a whole page of results. One query, not one per item —
+    a normal day's listing is a couple of hundred."""
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    return {
+        row["item_id"]: row["n"]
+        for row in db.execute(
+            f"SELECT item_id, COUNT(*) AS n FROM sighting"
+            f" WHERE item_id IN ({marks}) GROUP BY item_id", ids)
+    }
+
+
+def items_of_source(db: sqlite3.Connection, source_id: str, limit: int = 200) -> list:
+    """What a source carried, with the headline it used.
+
+    Never `WHERE first_source = ?`. That column names whoever archived the story
+    first, so filtering on it drops every source that also carried it — which is
+    exactly the stories that matter, and it fails by returning a shorter list
+    rather than an error.
+    """
+    return db.execute(
+        "SELECT i.id, i.url, i.url_norm, i.lang, i.body, i.body_src, i.published,"
+        "       i.date_exact, i.target_host, i.first_source,"
+        "       s.source, s.title, s.seen_at"
+        " FROM sighting s JOIN item i ON i.id = s.item_id"
+        " WHERE s.source = ? ORDER BY i.published DESC LIMIT ?",
+        (source_id, limit),
+    ).fetchall()
 
 
 def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
