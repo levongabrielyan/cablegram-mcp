@@ -66,17 +66,24 @@ Both are declared in the output rather than explained afterwards.
 
 ## Install
 
-Requires Python 3.12+.
+Requires Python 3.12+. Nothing to clone:
 
 ```bash
-git clone https://github.com/levongabrielyan/cablegram-mcp
-cd cablegram-mcp
-uv sync
+uvx cablegram-mcp poll        # fill the archive
+uvx cablegram-mcp sources     # see what it knows about
 ```
 
 Register it with an MCP client — for Claude Code:
 
 ```bash
+claude mcp add cablegram --scope user -- uvx cablegram-mcp serve
+```
+
+Or from a checkout, if you would rather read it first:
+
+```bash
+git clone https://github.com/levongabrielyan/cablegram-mcp
+cd cablegram-mcp && uv sync
 claude mcp add cablegram --scope user -- \
   /path/to/cablegram-mcp/.venv/bin/python -m cablegram.cli serve
 ```
@@ -84,8 +91,8 @@ claude mcp add cablegram --scope user -- \
 Then fill the archive, and keep filling it:
 
 ```bash
-cablegram poll          # once, now
-cablegram sources       # what it knows about
+uvx cablegram-mcp poll      # once, now
+uvx cablegram-mcp sources   # what it knows about
 ```
 
 Feeds expose a window of days, so put `cablegram poll` on a timer — an hour
