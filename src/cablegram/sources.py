@@ -62,6 +62,8 @@ SOURCES: tuple[Source, ...] = (
         "huggingface", "Hugging Face", "rss",
         "https://huggingface.co/blog/feed.xml", "en",
         ("lab", "community"),
+        "Headlines only: the feed carries no description at all. Verified against "
+        "the raw XML, so an empty body here is the source, not a parser bug.",
     ),
     Source(
         "n8n", "n8n blog", "rss",

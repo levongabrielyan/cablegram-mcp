@@ -36,6 +36,7 @@ class Entry:
     url: str
     published: datetime | None  # None when the feed gave nothing usable
     body: str | None
+    body_kind: str | None = None  # 'full' | 'teaser' | None
 
 
 def _text(node: ET.Element | None) -> str:
@@ -106,6 +107,21 @@ def _reject_entity_bombs(raw: bytes) -> None:
         raise ValueError("feed declares custom XML entities; refusing to expand them")
 
 
+# Where a feed puts the whole article, and where it puts the first paragraph.
+# Only the parser can tell them apart: by the time an item is stored, "full" and
+# "teaser" look alike, and guessing from length gets long teasers wrong.
+_FULL_BODY = (f"{_CONTENT}encoded", f"{_ATOM}content")
+_TEASER_BODY = ("description", f"{_RSS1}description", f"{_ATOM}summary")
+
+
+def _body(item: ET.Element) -> tuple[str | None, str | None]:
+    for paths, kind in ((_FULL_BODY, "full"), (_TEASER_BODY, "teaser")):
+        for path in paths:
+            if text := _strip_html(_text(item.find(path))):
+                return text, kind
+    return None, None
+
+
 def _first(item: ET.Element, *paths: str) -> str:
     for path in paths:
         value = _text(item.find(path))
@@ -153,14 +169,10 @@ def parse_feed(raw: bytes) -> list[Entry]:
         if not title or not url:
             continue
 
-        body = _first(
-            item,
-            f"{_CONTENT}encoded", "description", f"{_RSS1}description",
-            f"{_ATOM}content", f"{_ATOM}summary",
-        )
+        body, body_kind = _body(item)
         published = _parse_date(
             _first(item, "pubDate", f"{_DC}date", f"{_ATOM}published", f"{_ATOM}updated")
         )
-        entries.append(Entry(title, url, published, _strip_html(body) or None))
+        entries.append(Entry(title, url, published, body, body_kind))
 
     return entries

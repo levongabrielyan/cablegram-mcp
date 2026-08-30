@@ -242,3 +242,36 @@ def test_the_word_entity_in_an_article_does_not_kill_the_feed():
             '<title>How an XML &lt;!ENTITY&gt; bomb works</title>'
             '<link>https://e.com/a</link></item></channel></rss>').encode()
     assert parse_feed(feed)[0].title.startswith("How an XML")
+
+
+# ── how much body arrived, which only the parser can know ────────────────────
+
+def test_content_encoded_is_marked_full():
+    """Whether a body is the article or its first paragraph decides if the reader
+    has to open the link. Inferring it later from length is guesswork."""
+    assert parse_feed(RSS2)[1].body_kind == "full"
+
+
+def test_description_is_marked_teaser():
+    assert parse_feed(RSS2)[0].body_kind == "teaser"
+
+
+def test_atom_summary_is_a_teaser():
+    assert parse_feed(ATOM)[0].body_kind == "teaser"
+
+
+def test_no_body_no_kind():
+    feed = b"""<rss version="2.0"><channel><item>
+        <title>T</title><link>https://e.com/a</link></item></channel></rss>"""
+    entry = parse_feed(feed)[0]
+    assert entry.body is None and entry.body_kind is None
+
+
+def test_an_empty_description_does_not_count_as_a_body():
+    """A description of '<p> </p>' strips to nothing. Calling that a teaser
+    tells the reader there is something to read when there is not."""
+    feed = b"""<rss version="2.0"><channel><item>
+        <title>T</title><link>https://e.com/a</link>
+        <description>&lt;p&gt; &lt;/p&gt;</description></item></channel></rss>"""
+    entry = parse_feed(feed)[0]
+    assert entry.body is None and entry.body_kind is None
