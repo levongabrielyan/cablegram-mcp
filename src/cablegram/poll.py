@@ -12,6 +12,7 @@ nothing is indistinguishable from a quiet day.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import xml.etree.ElementTree as ET
@@ -20,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 from .cls import feed_url as cls_feed_url, parse_response as parse_cls
 from .hn import parse_search as parse_hn, search_url as hn_search_url
+from .telegram import channel_url, parse_channel
 from .fetch import fetch_all
 from .rss import parse_feed
 from .sources import SOURCES, Source
@@ -31,7 +33,13 @@ __all__ = ["poll_once"]
 # Kinds with an adapter. The rest are listed and never fetched: handing their
 # URLs to the RSS parser would file every one as a parse failure and bury the
 # real ones among them.
-POLLABLE = ("rss", "cls", "hn")
+POLLABLE = ("rss", "cls", "hn", "telegram")
+
+# t.me resets the connection on the sixth request in a row. Measured: channels
+# 3 to 6 failed with ECONNRESET while 1 and 2 came back fine, and three seconds
+# apart all six succeed. It is not a 429 — the socket simply closes, so a
+# handler reporting what it sees would file four healthy channels as dead.
+TELEGRAM_GAP = 3.0
 
 
 def _request_url(source: Source, since: int) -> str:
@@ -39,6 +47,8 @@ def _request_url(source: Source, since: int) -> str:
         return cls_feed_url()
     if source.kind == "hn":
         return hn_search_url(since=since)
+    if source.kind == "telegram":
+        return channel_url(source.id)
     return source.url
 
 
@@ -59,7 +69,14 @@ async def poll_once(
     if not targets:
         return []
 
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Telegram goes in its own pass, one at a time. Six channels at three
+    # seconds apart is eighteen seconds, which would not fit inside the global
+    # deadline the other sources share — and shortening the gap is what makes
+    # them fail.
+    channels = [s for s in targets if s.kind == "telegram"]
+    targets = [s for s in targets if s.kind != "telegram"]
     # cls.cn needs a signature computed per request, so its URL is built here
     # rather than stored in the catalogue.
     # Both signed and windowed URLs are built per request rather than stored in
@@ -67,8 +84,16 @@ async def poll_once(
     # window in the query, because filtering after the fact would be filtering
     # whatever survived its 1,000-result ceiling.
     since = int((datetime.now(timezone.utc) - timedelta(hours=window_hours)).timestamp())
+    conditional = conditional_headers(db)
     requests = [(s.id, _request_url(s, since)) for s in targets]
-    results = await fetch_all(requests, conditional=conditional_headers(db))
+    results = await fetch_all(requests, conditional=conditional) if targets else []
+
+    for index, channel in enumerate(channels):
+        if index:
+            await asyncio.sleep(TELEGRAM_GAP)
+        results += await fetch_all([(channel.id, _request_url(channel, since))],
+                                   conditional=conditional, deadline=15.0)
+        targets = targets + [channel]
 
     reports: list[StoreReport] = []
     for source, fetched in zip(targets, results, strict=True):
@@ -92,6 +117,9 @@ async def poll_once(
                 entries = parse_cls(json.loads(fetched.body))
             elif source.kind == "hn":
                 entries = parse_hn(json.loads(fetched.body))
+            elif source.kind == "telegram":
+                entries = parse_channel(fetched.body.decode("utf-8", "replace"),
+                                        channel=source.id)
             else:
                 entries = parse_feed(fetched.body)
         except (ValueError, ET.ParseError, json.JSONDecodeError) as exc:

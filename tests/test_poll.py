@@ -111,10 +111,17 @@ def test_a_304_is_not_treated_as_an_empty_feed(db, network):
 
 
 def test_a_source_with_no_adapter_is_never_attempted(db, network):
-    """Handing a Telegram channel to the RSS parser would file it as a parse
-    failure and bury the sources that really did fail among the noise."""
+    """All nineteen have an adapter today, so this uses an invented kind.
+
+    It matters for the next source added: handing an unknown format to the RSS
+    parser would file it as a parse failure rather than as "not built yet", and
+    bury the sources that really did fail among the noise.
+    """
+    from dataclasses import replace
+
     network(lambda request: httpx2.Response(200, content=FEED))
-    reports = asyncio.run(poll_once(db, [by_id("ai_newz"), by_id("qbitai")]))
+    future = replace(by_id("qbitai"), id="futuresource", kind="reddit")
+    reports = asyncio.run(poll_once(db, [future, by_id("qbitai")]))
 
     assert {r.source for r in reports} == {"qbitai"}
 
@@ -146,3 +153,39 @@ def test_a_feed_that_parses_to_nothing_is_not_a_quiet_day(db, network):
     state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
     assert state["last_ok"], "the download worked"
     assert state["wrote_failed"] == 1, "and it yielded nothing, which must be visible"
+
+
+def test_telegram_channels_are_spaced_out(db, network, monkeypatch):
+    """t.me resets the connection on the sixth request in a row — measured, not
+    assumed: channels 3 to 6 failed with ECONNRESET while 1 and 2 came back.
+
+    It is not a 429. The socket closes, so a handler that reports what it sees
+    would file four healthy channels as dead. They go in their own pass, spaced,
+    which is also why they cannot share the global deadline with the rest.
+    """
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr("cablegram.poll.asyncio.sleep", fake_sleep)
+    network(lambda request: httpx2.Response(200, content=b"<html></html>"))
+
+    channels = [by_id(c) for c in ("ai_newz", "denissexy", "data_secrets")]
+    asyncio.run(poll_once(db, channels))
+
+    assert len(waits) >= len(channels) - 1
+    assert all(w >= 2 for w in waits)
+
+
+def test_the_other_sources_are_not_slowed_by_telegram(db, network, monkeypatch):
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr("cablegram.poll.asyncio.sleep", fake_sleep)
+    network(lambda request: httpx2.Response(200, content=FEED))
+    asyncio.run(poll_once(db, [by_id("qbitai"), by_id("n8n")]))
+
+    assert waits == []

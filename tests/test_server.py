@@ -75,12 +75,13 @@ async def test_latest_names_the_failing_source(server):
 
 
 @pytest.mark.anyio
-async def test_a_source_with_no_adapter_is_not_called_broken(server):
-    """Eight PENDING lines under DOWN would bury the one source that is
-    actually failing."""
+async def test_every_source_has_an_adapter_now(server):
+    """PENDING listed the sources with no adapter, separately from DOWN, so that
+    eight not-yet-built ones could not bury the one actually failing. All
+    nineteen have an adapter today, so nothing should be listed as pending —
+    and the machinery stays for the next source added."""
     out = await call(server, "wire_latest", hours=24)
-    assert "PENDING" in out and "ai_newz" in out
-    assert "ai_newz" not in out.split("PENDING")[0]
+    assert "PENDING" not in out
 
 
 @pytest.mark.anyio
