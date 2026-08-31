@@ -156,9 +156,18 @@ def parse_models(payload: list) -> list[Entry]:
         # its own period: `downloads` is the last 30 days and `likes` is every
         # like the repo ever got, and one sentence carrying both under "in the
         # last month" read as though the period applied to the pair.
-        ordering = f"trend {trend}" if trend is not None else "trend not in this response"
-        detail = (f"{ordering} (the ordering), {likes} likes all-time, "
-                  f"{downloads} downloads in 30d")
+        # What ordered this list, which is not the same question for the two
+        # kinds of hub source. The global listing is ranked by trendingScore and
+        # that figure travels with the entry. An author listing is ordered by
+        # date — the figure that ordered it is the timestamp already printed on
+        # the line — and the endpoint sends no trendingScore for it at all:
+        # measured, 0 of 50 rows with `author=`, 50 of 50 without. Printing
+        # "trend not in this response (the ordering)" made two false claims in
+        # one line, on 238 of 271 entries: that a ranking ordered the list, and
+        # that the figure behind it was missing.
+        counts = f"{likes} likes all-time, {downloads} downloads in 30d"
+        detail = (f"trend {trend} (the ordering), {counts}" if trend is not None
+                  else f"newest first, not ranked; {counts}")
         entries.append(Entry(
             title=model_id,
             url=f"{HUB}/{model_id}",

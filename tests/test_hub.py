@@ -193,3 +193,20 @@ def test_every_lab_source_carries_the_namespace_it_asks_for():
             f"{source.id} is catalogued at {source.url} and fetches "
             f"{source.author}; a reader following the catalogue URL lands "
             f"somewhere else")
+
+
+def test_a_lab_listing_does_not_claim_a_ranking_it_does_not_have():
+    """`sort=createdAt` orders an author listing, and the endpoint sends no
+    trendingScore with `author=` at all — measured, 0 of 50 rows, against 50 of
+    50 without it. The body said `trend not in this response (the ordering)`,
+    which made two false claims in one line on 238 of 271 entries: that a
+    ranking ordered the list, and that the figure behind it was missing. The
+    figure that ordered it is the timestamp already printed on the line."""
+    lab = parse_models([{"id": "deepseek-ai/V4", "likes": 279, "downloads": 0,
+                         "createdAt": "2026-08-31T06:16:18.000Z"}])[0]
+    assert "not ranked" in lab.body and "the ordering" not in lab.body
+
+    globally = parse_models([{"id": "Qwen/Q", "likes": 4487, "downloads": 1,
+                              "trendingScore": 4276,
+                              "createdAt": "2026-08-24T08:24:59.000Z"}])[0]
+    assert "trend 4276 (the ordering)" in globally.body
