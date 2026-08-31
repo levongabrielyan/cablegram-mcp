@@ -516,3 +516,27 @@ async def test_every_place_that_states_a_version_states_the_same_one(server):
     out = await call(server, "wire_latest", hours=24)
     assert out.startswith(f"CABLEGRAM v{__version__} ")
 
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("query", ["", "   ", "\t"])
+async def test_an_empty_query_is_refused_rather_than_answered(server, query):
+    """`search_items` returns engine='none' for an empty query and searches
+    nothing. The engine line has two branches and 'none' fell through the else:
+
+        CABLEGRAM search "" | last 7d | 0 shown hits
+        COVER this call fetched 1158 items and kept none, oldest 2015-12-11.
+              ENGINE trigram index over the headlines this call searched.
+
+    A direct claim that 1,158 items were searched. Nothing was. And the fetch
+    happens first, so a query that arrived empty — a variable that came back
+    blank — spent a full sweep to search nothing.
+
+    Every other impossible argument here is refused. This was the one most
+    likely to arrive empty by accident.
+    """
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError) as raised:
+        await call(server, "wire_search", query=query, days=7)
+    assert "query" in str(raised.value) and "wire_latest" in str(raised.value)

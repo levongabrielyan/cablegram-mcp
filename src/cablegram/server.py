@@ -420,6 +420,17 @@ def build(rows_from=None) -> MCPServer:
         limit_per_source: int = 25,
         max_tokens: int = 8000,
     ) -> str:
+        if not query.strip():
+            # Every other impossible argument on this surface is refused —
+            # hours=0, days=-7, limit_per_source=0, detail='Full', a malformed
+            # `since`. The one that was not is the one most likely to arrive
+            # empty by accident, and the one that decides whether anything is
+            # searched at all.
+            raise ToolError(
+                "`query` is empty, so nothing would be searched — and the reply "
+                "would come back `0 shown hits`, which reads as an answer. Pass a "
+                "term, or use wire_latest if what you want is a whole window."
+            )
         start = _iso(_now() - timedelta(days=_positive("days", days, "days")))
         _positive("limit_per_source", limit_per_source, "items per source")
         with closing(opened(sources, days * 24)) as db:
