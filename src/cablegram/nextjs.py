@@ -28,10 +28,13 @@ Two things this is not:
   deploy of anthropic.com. That is what `fragile` is for, and it is why the
   source is marked so: a shape change comes back as `parsed-empty`, which the
   poller reports as a broken source rather than as a quiet week.
-* **It does not reach /engineering.** That section renders from a different
-  template and its payload holds no post records — measured, 0 of 25. Those
-  twenty-five pages are not covered by this, and their dates in the sitemap
-  were wrong anyway.
+* **It is one reader for three sections that do not stamp dates alike.** /news
+  and /research write a full timestamp; /engineering writes the date on its own.
+  A first version required the time and so found nothing there, which was
+  written up as "its payload holds no post records — measured, 0 of 25". The
+  page had all 25. What had been measured was the expression, not the page, and
+  the sentence explaining it away is the expensive part: it tells the next
+  reader not to look.
 """
 
 from __future__ import annotations
@@ -53,7 +56,12 @@ _CHUNK = re.compile(rb'self\.__next_f\.push\(\[1,(".*?")\]\)</script>', re.S)
 # result would be a real date under somebody else's title, which is the one
 # outcome worse than no entry at all.
 _POST = re.compile(
-    r'"publishedOn":"(?P<when>20\d\d-\d\d-\d\dT[^"]*)",'
+    # The time is optional. /news and /research stamp a full timestamp;
+    # /engineering publishes the date alone, `"publishedOn":"2026-05-25"`, and
+    # requiring the T rejected all 25 of its records. That was written up as
+    # "its payload holds no post records — measured, 0 of 25", which was a
+    # measurement of this expression rather than of the page.
+    r'"publishedOn":"(?P<when>20\d\d-\d\d-\d\d[^"]*)",'
     r'"slug":\{"_type":"slug","current":"(?P<slug>[^"]+)"\}'
     r'(?P<mid>(?:(?!"publishedOn")[\s\S]){0,4000}?)'
     r'"title":"(?P<title>(?:[^"\\]|\\.)*)"'
@@ -70,10 +78,21 @@ def _unescape(raw: str) -> str:
 
 
 def _when(raw: str) -> datetime | None:
+    """UTC when the field says nothing about the zone.
+
+    /engineering publishes `2026-05-25` with no time and no offset, and
+    astimezone() on a naive datetime reads it in the machine's local zone: in
+    CEST that lands on 2026-05-24T22:00Z and files the post a day early. The
+    site stamps its other two sections in UTC, so UTC is what the bare date
+    means — and guessing the reader's zone is not a property of the post.
+    """
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc)
+        when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc)
 
 
 def parse_next_payload(raw: bytes, *, base: str) -> list[Entry]:

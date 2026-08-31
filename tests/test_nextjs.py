@@ -8,6 +8,7 @@ counted twice, and a shape change that has to look like a broken source rather
 than a quiet week.
 """
 
+import json
 import pathlib
 
 import pytest
@@ -102,3 +103,17 @@ def test_a_chunk_that_will_not_decode_raises_rather_than_being_skipped():
     with pytest.raises(ValueError):
         parse_next_payload(rb'<script>self.__next_f.push([1,"bad \q escape"])</script>',
                            base=BASE)
+
+
+def test_a_section_that_stamps_a_bare_date_is_still_read():
+    """/news and /research write a full timestamp; /engineering writes the date
+    alone. Requiring the T found nothing there, and that was written up as "its
+    payload holds no post records — measured, 0 of 25". The page had all 25:
+    what had been measured was the expression, not the page."""
+    chunk = json.dumps('[{"_type":"post","publishedOn":"2026-05-25","slug":{"_type":"slug","current":"how-we-contain-claude"},"title":"How we contain Claude"}]')
+    doc = f'<script>self.__next_f.push([1,{chunk}])</script>'.encode()
+    entry = parse_next_payload(doc, base="https://www.anthropic.com/engineering")[0]
+    assert entry.title == "How we contain Claude"
+    # UTC, not the machine's zone: astimezone() on a naive datetime read it as
+    # local time and filed the post a day early under CEST.
+    assert entry.published.isoformat() == "2026-05-25T00:00:00+00:00"

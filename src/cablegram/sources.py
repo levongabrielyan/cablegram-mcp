@@ -109,6 +109,15 @@ SOURCES: tuple[Source, ...] = (
         fragile=True,
     ),
     Source(
+        "anthropic_engineering", "Anthropic — engineering", "nextjs",
+        "https://www.anthropic.com/engineering", "en",
+        ("lab", "official", "technical"),
+        "The engineering section. Same reader, same fragility, and the one that "
+        "publishes a bare date with no time — read as UTC, which is what the "
+        "other two sections stamp.",
+        fragile=True,
+    ),
+    Source(
         "hub", "Hugging Face hub", "hub",
         "https://huggingface.co/api/models", "en",
         ("lab", "launches"),
