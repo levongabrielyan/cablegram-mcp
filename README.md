@@ -79,7 +79,7 @@ adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
 namespaces on it, and three sections of a lab that publishes no feed, read out
-of the data its own pages ship. 382 tests covering 95% of 1,214 statements, on
+of the data its own pages ship. 457 tests covering 97% of 1,214 statements, on
 3.12 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
