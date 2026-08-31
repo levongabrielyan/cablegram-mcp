@@ -1,9 +1,0 @@
-[Unit]
-Description=cablegram: fetch every source once and archive it (uvx install)
-
-[Service]
-Type=oneshot
-# For the install the README leads with, which never clones anything. A full
-# path because systemd's user environment does not include ~/.local/bin.
-Environment=CABLEGRAM_ARCHIVE=1
-ExecStart=%h/.local/bin/uvx cablegram-mcp poll

@@ -1,13 +1,17 @@
-"""The write path: parsed entries in, archived history out.
+"""The write path: parsed entries in, one call's worth of rows out.
 
-This is the only module whose mistakes are permanent. Everything else can be
-rerun — a failed fetch is retried in five minutes, a bad parse is fixed and the
-feed still holds the same forty items. What is not written here is gone: the
-feeds expose a window of days and no archive of their own.
+Nothing here outlives the reply, so a mistake costs an answer rather than a
+history. What it still costs is the answer: an item dropped for tidiness is an
+item the model is never told about, and the model has no second source to notice
+the gap with.
 
 So the bias throughout is towards writing something rather than nothing, and
-towards marking what is uncertain rather than dropping it. An item with a
-doubtful date is archived and flagged; an item skipped for tidiness is lost.
+towards marking what is uncertain rather than discarding it. An item with a
+doubtful date is kept and flagged; an item skipped is silently absent.
+
+Two things here look like storage and are not. `sighting` is what turns "the
+same URL came from three sources" into a count, and `source_state` is what turns
+"this one failed" into a line the reply can carry. Both are about one pass.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from .sources import Source, resolve
 from .urls import item_id, normalise
 
 __all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
-           "conditional_headers", "cross_count", "cross_counts",
+           "cross_count", "cross_counts",
            "items_of_source", "record_write", "source_health",
            "latest_items", "items_by_ids", "search_items"]
 
@@ -40,10 +44,10 @@ class StoreReport:
     'archived 400 items' hides that one source contributed nothing."""
 
     source: str
-    # What happened to this source this pass. A failed or unchanged source keeps
-    # its row rather than vanishing from the list: nine reports for eleven
-    # sources makes two disappear, and nothing downstream can tell.
-    state: str = "ok"  # ok | fetch-failed | unparseable | parsed-empty | unchanged
+    # What happened to this source this pass. A failed source keeps its row
+    # rather than vanishing from the list: nine reports for eleven sources makes
+    # two disappear, and nothing downstream can tell.
+    state: str = "ok"  # ok | fetch-failed | unparseable | parsed-empty
     new: int = 0
     seen: int = 0      # already archived, by this source or another
     skipped: int = 0   # the feed left it unusable: no url, or no title
@@ -79,7 +83,7 @@ def store_entries(
             # meant a failed commit rolled the row back and left the count
             # standing, reporting one entry as both new and failed. The report
             # is the only channel there is — nothing here logs — so it has to
-            # describe what is actually in the archive.
+            # describe what is actually stored.
             outcome, referenced = _store_one(db, source, entry, fetched_at)
             setattr(report, outcome, getattr(report, outcome) + 1)
             report.referenced += referenced
@@ -212,7 +216,7 @@ def _record_reference(
     The article is archived if it is not already there, with the referring
     post's headline standing in until its own feed supplies a better one. That
     placeholder is the point rather than a compromise: it means an article
-    reaches the archive on the strength of somebody linking it, days before the
+    reaches the reply on the strength of somebody linking it, days before the
     outlet's own feed carries it — which is the whole reason these sources are
     in the list.
     """
@@ -316,32 +320,23 @@ def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
       one endpoint's validator to another.
     """
     ok = fetched.ok
-    keep_validators = not ok or fetched.unchanged
     with db:
         db.execute(
-            "INSERT INTO source_state(source, url, last_ok, last_try, last_error,"
-            "                         etag, last_mod)"
+            "INSERT INTO source_state(source, url, last_ok, last_try, last_error)"
             " VALUES (:source, :url,"
             "         CASE WHEN :ok THEN :now END,"
             "         :now,"
-            "         CASE WHEN :ok THEN NULL ELSE :error END,"
-            "         CASE WHEN :keep THEN NULL ELSE :etag END,"
-            "         CASE WHEN :keep THEN NULL ELSE :last_mod END)"
+            "         CASE WHEN :ok THEN NULL ELSE :error END)"
             " ON CONFLICT(source, url) DO UPDATE SET"
-            "   last_ok    = CASE WHEN :ok   THEN :now      ELSE last_ok  END,"
+            "   last_ok    = CASE WHEN :ok THEN :now ELSE last_ok END,"
             "   last_try   = :now,"
-            "   last_error = CASE WHEN :ok   THEN NULL      ELSE :error   END,"
-            "   etag       = CASE WHEN :keep THEN etag      ELSE :etag    END,"
-            "   last_mod   = CASE WHEN :keep THEN last_mod  ELSE :last_mod END",
+            "   last_error = CASE WHEN :ok THEN NULL ELSE :error END",
             {
                 "source": fetched.source_id,
                 "url": fetched.url,
                 "ok": 1 if ok else 0,
-                "keep": 1 if keep_validators else 0,
                 "now": fetched.fetched_at,
                 "error": fetched.error,
-                "etag": fetched.etag,
-                "last_mod": fetched.last_modified,
             },
         )
 
@@ -405,7 +400,7 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
     # question from whether it answered. `last_ok` asks "did the server reply?";
     # a feed frozen for a year replies 200 forever. Measured on the catalogue:
     # productradar answers OK and its newest item is 25 days old, ten items in
-    # 720 days. No column needed — the archive already knows.
+    # 720 days. No column needed — the pass already knows.
     newest = {row["source"]: row["newest"] for row in db.execute(
         "SELECT s.source, MAX(i.published) AS newest"
         " FROM sighting s JOIN item i ON i.id = s.item_id GROUP BY s.source")}
@@ -426,17 +421,6 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
     }
 
 
-def conditional_headers(db: sqlite3.Connection) -> dict[str, tuple[str | None, str | None]]:
-    """The validators to send on the next poll, keyed by URL.
-
-    Most feeds are unchanged between polls; sending these turns those into a 304
-    with no body. Measured on the eleven live feeds: five answered 304 and 670 KB
-    were never transferred.
-    """
-    return {
-        row["url"]: (row["etag"], row["last_mod"])
-        for row in db.execute("SELECT url, etag, last_mod FROM source_state")
-    }
 
 
 # ── reads ───────────────────────────────────────────────────────────────────

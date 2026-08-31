@@ -1,78 +1,69 @@
-"""Command line: poll the sources, or serve them over MCP.
+"""Command line: check that the sources still answer, or serve them over MCP.
 
-Polling has to be runnable without the MCP client, because it has to happen on
-a timer whether or not anyone is talking to the server. The output is for the
-person who set the timer up — the only place in this project written for a human
-to read — so it says which sources answered and which did not.
+There is no `poll` any more. Polling existed to fill a file on a timer, and
+there is no file: every tool call fetches what it needs and keeps nothing. A
+command whose only job was to feed an archive has nothing left to feed.
+
+`check` replaces it and is a different thing. It fetches once and prints what
+each source said, for a person deciding whether the catalogue still works. It
+writes nothing, and it is the only output in this project meant for a human.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 
-from .archive import archive_path, connect
 from .poll import poll_once
+from .schema import connect
 from .sources import SOURCES, resolve
 
 __all__ = ["main"]
 
 
-def _poll(args) -> int:
+def _check(args) -> int:
     selected = list(resolve(args.sources)) if args.sources else None
     if args.sources and not selected:
         # `or None` used to turn the empty tuple a typo produces into "all of
-        # them", so `cablegram poll typo` polled the whole catalogue. sources.py
-        # has a test defending the opposite principle; this line undid it.
+        # them", so a typo swept the whole catalogue. sources.py has a test
+        # defending the opposite principle; this line undid it.
         print(f"  no source, tag or language matches {' '.join(args.sources)}")
         print("  try: cablegram sources")
         return 2
 
     db = connect()
     reports = asyncio.run(poll_once(db, selected))
-    # The reason a source failed is written to source_state and was never
-    # printed: a run of FETCH-FAILED with no explanation is a person guessing
-    # between a dead network, a blocked address and a source that has moved.
-    # This is the one output in the project written for a human to read.
+    # Why a source failed is recorded and was never printed: a run of
+    # FETCH-FAILED with no explanation is a person guessing between a dead
+    # network, a blocked address and a source that has moved.
     why = {row["source"]: row["last_error"] for row in
            db.execute("SELECT source, MAX(last_try), last_error FROM source_state"
                       " WHERE last_error IS NOT NULL GROUP BY source")}
 
-    archived = sum(r.new + r.referenced for r in reports)
-    # `unchanged` is the source answering that nothing is new — a success, and
-    # the most common outcome once the archive is warm. Counting it as broken
-    # would report six failures on a perfectly normal poll.
     broken = [r for r in reports
               if r.state in ("fetch-failed", "unparseable", "parsed-empty")]
 
     for report in reports:
         if report.state == "ok":
-            line = f"{report.new:>4} new  {report.seen:>4} seen"
+            line = f"{report.new:>4} items"
             if report.referenced:
                 line += f"  +{report.referenced} linked"
             if report.failed:
                 line += f"  {report.failed} FAILED"
             if report.at_ceiling:
                 line += "  AT CEILING (there may be more)"
-        elif report.state == "unchanged":
-            line = "     nothing new (304)"
         else:
             line = f"     {report.state.upper()}"
             if reason := why.get(report.source):
                 line += f"  {reason[:60]}"
         print(f"  {report.source:16} {line}")
 
-    print(f"\n{archived} archived · {len(reports) - len(broken)}/{len(reports)} sources ok")
-    print(f"{archive_path()}")
-    if os.environ.get("CABLEGRAM_ARCHIVE", "").strip().lower() not in ("1", "true", "yes"):
-        # Otherwise this fills a file nobody reads: 228 requests a day to other
-        # people's servers, for a server that is fetching live anyway.
-        print("note: the MCP server is not reading this archive. "
-              "Set CABLEGRAM_ARCHIVE=1 for it to.")
-    # A poll where every source failed is worth a non-zero exit: a timer that
-    # never complains is a timer nobody checks.
+    total = sum(r.new + r.referenced for r in reports)
+    print(f"\n{total} items · {len(reports) - len(broken)}/{len(reports)} sources ok "
+          f"· nothing written")
+    # Every source failing is worth a non-zero exit: this is the command a person
+    # runs to find out whether anything still works.
     return 1 if reports and len(broken) == len(reports) else 0
 
 
@@ -98,10 +89,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="command")
 
-    poll = sub.add_parser("poll", help="fetch every source once and archive it")
-    poll.add_argument("sources", nargs="*",
-                      help="ids, tags or languages; default is all of them")
-    poll.set_defaults(run=_poll)
+    check = sub.add_parser("check", help="fetch every source once and say what came "
+                                         "back; stores nothing")
+    check.add_argument("sources", nargs="*",
+                       help="ids, tags or languages; default is all of them")
+    check.set_defaults(run=_check)
 
     listing = sub.add_parser("sources", help="list the sources this build knows")
     listing.set_defaults(run=_sources)

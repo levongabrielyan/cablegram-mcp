@@ -27,7 +27,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from .archive import archive_path, connect
+from .schema import connect
 from .render import render_latest, render_read, render_search, render_sources
 from .poll import POLLABLE, poll_once
 from .sources import SOURCES, resolve
@@ -44,15 +44,6 @@ LIVE_DEADLINE = 45.0
 
 _DETAIL = ("headlines", "full")
 
-
-def _archive_requested() -> bool:
-    """Whether to read the file on disk instead of fetching.
-
-    A separate variable from CABLEGRAM_DB on purpose. That one has always meant
-    "where the file is"; making it also mean "use it" would hand the old
-    behaviour to everyone who set it to move the file somewhere else.
-    """
-    return os.environ.get("CABLEGRAM_ARCHIVE", "").strip().lower() in ("1", "true", "yes")
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
@@ -147,42 +138,14 @@ def _down_sources(health: dict, wanted: set[str]) -> dict[str, str]:
     return down
 
 
-def _unused_archive(what: str = "NOT in use") -> str | None:
-    """A one-line description of an archive on disk that this build is not using.
+def _window_facts(db) -> tuple[int, str]:
+    """How much this fetch pulled in, and how far back it reaches.
 
-    The file is never deleted and CABLEGRAM_ARCHIVE=1 returns it to service, so
-    nothing is lost — but wire_search goes from searching it to searching the
-    live window, and an unannounced "0 hits" is indistinguishable from a quiet
-    day. That is the failure this project exists to prevent, committed by its
-    own migration.
-
-    `what` because the sentence has a different job in each caller. For the
-    catalogue it is a standing notice; inside a search result it is the reason
-    the count came back low, and "not in use" is too mild to be read as one.
-    """
-    path = archive_path()
-    if not path.exists():
-        return None
-    try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as db:
-            items, oldest, newest = db.execute(
-                "SELECT COUNT(*), MIN(published), MAX(published) FROM item"
-            ).fetchone()
-    except sqlite3.Error:
-        return None
-    if not items:
-        return None
-    return (f"{items} items ({(oldest or '?')[:10]} .. {(newest or '?')[:10]}) are on "
-            f"disk and {what}. This build fetches live. "
-            f"Set CABLEGRAM_ARCHIVE=1 to search them again.")
-
-
-def _archive_facts(db) -> tuple[int, str]:
-    """How much is held, and how far back it reaches.
-
-    The oldest item, not when the file was created: an archive holding ten years
-    of a blog announced itself as starting today, so a model asked "since when
-    has X been discussed" had no reason to answer.
+    Both are properties of what the feeds happen to serve today, not of a
+    subject: one pass over openai's feed loads 1,157 items back to 2015 and
+    another source serves ten. The COVER block says so, because the floor read
+    as a statement about the story is the most expensive wrong conclusion this
+    surface can produce.
     """
     items = db.execute("SELECT COUNT(*) FROM item").fetchone()[0]
     oldest = db.execute("SELECT MIN(published) FROM item").fetchone()[0]
@@ -199,17 +162,18 @@ def _unknown_selectors(selectors: list[str] | None) -> list[str]:
     return sorted(s for s in selectors if s.lower() not in known)
 
 
-def build(open_db=None) -> MCPServer:
+def build(rows_from=None) -> MCPServer:
     """Assemble the server.
 
-    `open_db` is a factory, not a connection, and that is not a testing
-    convenience: MCPServer runs a synchronous tool in a worker thread, and a
-    SQLite connection may only be used in the thread that created it. Sharing
-    one would raise ProgrammingError on the first call — from inside the SDK,
-    where it surfaces as "Error executing tool" with nothing to point at.
+    `rows_from` is a seam for the tests and nothing else: a factory returning a
+    database already holding known rows, so the four tools can be exercised
+    without a network. It must be a factory rather than a connection, because
+    MCPServer runs a synchronous tool in a worker thread and a SQLite connection
+    may only be used in the thread that created it — sharing one raises
+    ProgrammingError from inside the SDK, where it surfaces as "Error executing
+    tool" with nothing to point at.
 
-    A connection per call also settles the case the archive was built for: Claude
-    Code and Claude Desktop reading the same file at once.
+    In production it is never passed. Every call fetches.
     """
     server = MCPServer(
         name="cablegram",
@@ -221,21 +185,14 @@ def build(open_db=None) -> MCPServer:
             "language."
         ),
     )
-    # An injected factory means a caller that wants that database — the tests,
-    # and anyone embedding this — so it also means archive mode.
-    archive_mode = open_db is not None or _archive_requested()
-    open_db = open_db or connect
-
-    # What the last live pass in this process saw. In archive mode it stays
-    # empty and nothing reads it; in live mode it is what makes an id from one
-    # reply resolvable in the next, since there is no file to look it up in.
-    # Bounded, because a long-lived server would otherwise grow without limit.
+    # What the last pass in this process saw. Nothing is kept between runs, so
+    # this is the only thing that makes an id from one reply resolvable in the
+    # next. Bounded, because a long-lived server would otherwise grow without
+    # limit.
     seen: dict[str, dict] = {}
     session: dict[str, dict] = {}
 
     def remember(rows: list[dict], health: dict) -> None:
-        if archive_mode:
-            return
         for row in rows:
             seen[row["id"]] = row
         while len(seen) > 4000:
@@ -246,19 +203,14 @@ def build(open_db=None) -> MCPServer:
     def opened(selectors=None, hours: int = 24):
         """The database a call runs against.
 
-        In archive mode it is the file the poller fills. Otherwise it is a
-        throwaway in memory, filled by one pass over the sources asked for and
-        discarded with the call — the same schema, the same queries, the same
-        renderer. What the timer used to do an hour ago now happens here.
+        Built in memory, filled by one pass over the sources asked for, and
+        discarded when the call ends. Nothing is written to disk and nothing
+        survives the reply — the same schema, the same queries and the same
+        renderer as any store, held only long enough to answer.
         """
-        if archive_mode:
-            return open_db()
-        # A fresh database every call, so conditional_headers finds no
-        # validators and every fetch is a full download. Deliberate: a 304 has
-        # no body and there is nowhere here that already holds the items, so
-        # carrying validators across calls would turn "nothing changed since two
-        # minutes ago" into a source with no items, printed as SILENT.
-        db = connect(memory=True)
+        if rows_from is not None:
+            return rows_from()
+        db = connect()
         targets = list(resolve(selectors)) if selectors else None
         if selectors and not targets:
             # "You gave me no selector" and "your selector matched nothing" both
@@ -377,7 +329,6 @@ def build(open_db=None) -> MCPServer:
         silent = sorted((wanted & pollable) - set(down)
                         - {r["source"] for r in rows})
         return render_latest(rows, since=start, until=_iso(until), down=down,
-                             mode="archive" if archive_mode else "live",
                              sources_total=len(wanted), silent=silent,
                              no_adapter=sorted(wanted - pollable), detail=detail,
                              unknown=unknown, limit_per_source=limit_per_source,
@@ -416,36 +367,27 @@ def build(open_db=None) -> MCPServer:
         annotations=READ_ONLY,
     )
     def wire_read(ids: list[str], max_tokens: int = 12000) -> str:
-        if archive_mode:
-            with closing(open_db()) as db:
-                return render_read(items_by_ids(db, ids), requested=ids,
-                                   mode="archive", max_tokens=max_tokens)
-        # Live mode holds no file, so an id can only be resolved against what
-        # this process has already fetched. Anything else is named on the
-        # UNKNOWN line, which already tells the model to re-run the listing —
-        # the recovery path was written for exactly this and needed no change.
+        # Nothing is kept between runs, so an id resolves only against what this
+        # process has already fetched. Anything else is named on the UNKNOWN
+        # line, which tells the model how to get a current one.
         return render_read([seen[i] for i in ids if i in seen], requested=ids,
-                           mode="live", max_tokens=max_tokens)
+                           max_tokens=max_tokens)
 
     @server.tool(
         name="wire_search",
         title="Search the archive",
         description=(
             "Search the headlines of every source that carried a story.\n"
-            "WHAT IS BEING SEARCHED depends on the mode, and the first line of the "
-            "reply names the one that answered:\n"
-            "  live (the default)  each call fetches the sources and searches what "
-            "they serve right now, then throws it away. Coverage is whatever the feeds "
-            "expose today, and it is wildly uneven — one serves its back catalogue to "
-            "2015, another serves ten items. The COVER line gives the real floor.\n"
-            "  archive (CABLEGRAM_ARCHIVE=1)  searches a file a poller has been "
-            "filling since it was first run, which is deeper than any feed and grows "
-            "every hour.\n"
-            "Either way this is NOT the whole internet. '0 hits' means 'not in what we "
-            "can search'. It does NOT mean nobody is talking about it, and must never "
-            "be reported as such — read the DOWN and UNKNOWN SELECTOR lines first, "
-            "because a source that was never searched returns 0 hits exactly like a "
-            "source with nothing to say.\n"
+            "WHAT IS BEING SEARCHED: this call fetches the sources and searches what "
+            "they serve right now, then throws it away. There is no archive and no "
+            "history — coverage is whatever the feeds expose today, and it is wildly "
+            "uneven. One serves its back catalogue to 2015, another serves ten items, "
+            "and the COVER line gives the real floor.\n"
+            "So this is NOT the whole internet and NOT the past. '0 hits' means 'not "
+            "in what we can search'. It does NOT mean nobody is talking about it, and "
+            "must never be reported as such — read the DOWN and UNKNOWN SELECTOR lines "
+            "first, because a source that was never searched returns 0 hits exactly "
+            "like a source with nothing to say.\n"
             "COST: in live mode this fetches, on the same terms as wire_latest — "
             f"~1-2s for any number of non-Telegram sources, ~20-45s once the "
             f"{len(resolve(['telegram']))} Telegram channels are in, which is what "
@@ -469,7 +411,7 @@ def build(open_db=None) -> MCPServer:
         with closing(opened(sources, days * 24)) as db:
             rows, engine = search_items(db, query, since=start, sources=sources,
                                         limit_per_source=limit_per_source)
-            items, began = _archive_facts(db)
+            items, began = _window_facts(db)
             health = source_health(db)
             remember(rows, health)
         # The same four facts wire_latest already carries. A search is the tool
@@ -480,9 +422,6 @@ def build(open_db=None) -> MCPServer:
                              engine=engine,
                              down=_down_sources(health, {s.id for s in resolve(sources)}),
                              unknown=_unknown_selectors(sources),
-                             mode="archive" if archive_mode else "live",
-                             unused=None if archive_mode
-                                    else _unused_archive("were NOT searched"),
                              max_tokens=max_tokens)
 
     @server.tool(
@@ -498,21 +437,11 @@ def build(open_db=None) -> MCPServer:
         annotations=READ_ONLY,
     )
     def wire_sources() -> str:
-        if archive_mode:
-            with closing(open_db()) as db:
-                items, began = _archive_facts(db)
-                health = source_health(db)
-            return render_sources(health=health, archive_items=items,
-                                  archive_start=began,
-                                  archive_path=str(archive_path()))
-        # Health from the last live pass in this process rather than a fresh
-        # thirty-second sweep for a catalogue listing. `unused` is the one thing
-        # this build must not stay quiet about: the file is still on disk and
-        # wire_search no longer reads it, so its absence from an answer would
-        # look like a quiet archive rather than an archive nobody opened.
-        return render_sources(health=dict(session), archive_items=0,
-                              archive_start="-", archive_path=str(archive_path()),
-                              live=True, unused=_unused_archive())
+        # Health from the last pass in this process rather than a fresh
+        # thirty-second sweep for a catalogue listing. A source nobody has asked
+        # for in this session has no state at all, which is a different fact
+        # from a source that failed, and render_sources says so.
+        return render_sources(health=dict(session))
 
     return server
 

@@ -12,7 +12,7 @@ import json
 import httpx2
 import pytest
 
-from cablegram.archive import connect
+from cablegram.schema import connect
 from cablegram.poll import poll_once
 from cablegram.sources import by_id
 
@@ -26,8 +26,8 @@ FEED = b"""<rss version="2.0"><channel>
 
 
 @pytest.fixture
-def db(tmp_path):
-    conn = connect(tmp_path / "a.db")
+def db():
+    conn = connect()
     yield conn
     conn.close()
 
@@ -95,20 +95,6 @@ def test_an_unparseable_feed_is_recorded_not_swallowed(db, network):
     assert state["last_ok"], "the download did work"
     assert state["wrote_failed"] == 1, "and the parse did not — both must be visible"
 
-
-def test_a_304_is_not_treated_as_an_empty_feed(db, network):
-    """Nothing new is not nothing there. Writing a zero over the last real
-    result would erase what the source actually carries."""
-    network(lambda request: httpx2.Response(200, content=FEED))
-    asyncio.run(poll_once(db, [by_id("qbitai")]))
-
-    network(lambda request: httpx2.Response(304))
-    reports = asyncio.run(poll_once(db, [by_id("qbitai")]))
-
-    assert [r.state for r in reports] == ["unchanged"]
-    assert db.execute("SELECT COUNT(*) FROM item").fetchone()[0] == 2
-    state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
-    assert state["last_ok"] and state["wrote_new"] == 2
 
 
 def test_a_source_with_no_adapter_is_never_attempted(db, network):

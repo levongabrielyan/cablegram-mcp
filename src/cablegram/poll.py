@@ -1,12 +1,13 @@
-"""One pass over the sources: fetch, parse, archive, and record what happened.
+"""One pass over the sources: fetch, parse, store, and record what happened.
 
-This is what makes the archive worth having. RSS exposes a window of days and
-no history of its own, and cls.cn's is 3.34 days with no way to page backwards,
-so an hour that is never polled is an hour no endpoint will ever serve again.
+This runs inside a tool call and its results are discarded when the reply is
+sent, so what it costs is one answer rather than a history. That does not make
+it cheap: this is the only chance the reply has to be complete, and there is no
+second pass behind it to fill in what this one missed.
 
 Everything here is built to keep going. A source that times out, a feed that
 will not parse, a batch that half-writes: none of them stops the rest, and each
-one leaves its reason in source_state — because a poll that quietly achieves
+one leaves its reason in source_state — because a pass that quietly achieves
 nothing is indistinguishable from a quiet day.
 """
 
@@ -31,8 +32,7 @@ from .telegram import channel_url, parse_channel
 from .fetch import TOTAL_DEADLINE, Fetched, fetch_all
 from .rss import parse_feed
 from .sources import SOURCES, Source
-from .store import (StoreReport, conditional_headers, record_attempt,
-                    record_write, store_entries)
+from .store import (StoreReport, record_attempt, record_write, store_entries)
 
 __all__ = ["poll_once"]
 
@@ -135,7 +135,6 @@ async def poll_once(
     # window in the query, because filtering after the fact would be filtering
     # whatever survived its 1,000-result ceiling.
     since = int((datetime.now(timezone.utc) - timedelta(hours=window_hours)).timestamp())
-    conditional = conditional_headers(db)
 
     # A bound on the whole pass, not on each fetch. Telegram is given fifteen
     # seconds a channel and they run one at a time, so the theoretical worst
@@ -159,8 +158,8 @@ async def poll_once(
         return min(default, max(0.0, deadline - (time.monotonic() - started)))
 
     requests = [(s.id, _request_url(s, since)) for s in targets]
-    results = (await fetch_all(requests, conditional=conditional,
-                               deadline=left(TOTAL_DEADLINE)) if targets else [])
+    results = (await fetch_all(requests, deadline=left(TOTAL_DEADLINE))
+               if targets else [])
 
     for index, channel in enumerate(channels):
         if index:
@@ -173,7 +172,7 @@ async def poll_once(
                                    error=f"skipped: {deadline:g}s pass deadline reached"))
         else:
             results += await fetch_all([(channel.id, _request_url(channel, since))],
-                                       conditional=conditional, deadline=budget)
+                                       deadline=budget)
         targets = targets + [channel]
 
     reports: list[StoreReport] = []
@@ -183,14 +182,8 @@ async def poll_once(
         # per poll and never match a stored validator.
         record_attempt(db, replace(fetched, url=source.url))
 
-        # 304 means alive with nothing new. record_write is deliberately not
-        # called: writing a zero over the last real result would erase what the
-        # source actually carries.
         if not fetched.ok:
             reports.append(StoreReport(source.id, state="fetch-failed"))
-            continue
-        if fetched.unchanged:
-            reports.append(StoreReport(source.id, state="unchanged"))
             continue
 
         # How many rows the endpoint sent, which is not how many survive parsing.

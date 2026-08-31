@@ -23,7 +23,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .sources import RETIRED, SOURCES, by_id
+from .sources import SOURCES, by_id
 from .store import is_down
 
 __all__ = ["render_latest", "render_read", "render_search", "render_sources",
@@ -44,21 +44,6 @@ def estimate_tokens(text: str) -> int:
     ascii_chars = sum(1 for ch in text if ch.isascii())
     return ascii_chars // 4 + (len(text) - ascii_chars)
 
-
-_HOME_PATTERN = re.compile(r"^(?:/home|/Users|[A-Za-z]:\\Users)[/\\][^/\\]+")
-
-
-def _tilde(path: str) -> str:
-    """Collapse the home directory: this output gets pasted into issues.
-
-    Matched by shape as well as against this process's own home, so a path that
-    came from somewhere else — a test, another machine, an archive moved with
-    CABLEGRAM_DB — does not carry a username through either.
-    """
-    home = str(Path.home())
-    if path.startswith(home):
-        return "~" + path[len(home):]
-    return _HOME_PATTERN.sub("~", path)
 
 
 def _day(published: str) -> str:
@@ -187,7 +172,6 @@ def render_latest(
     no_adapter: list[str] | None = None,
     silent: list[str] | None = None,
     unknown: list[str] | None = None,
-    mode: str = "archive",
     detail: str = "headlines",
     limit_per_source: int | None = None,
     max_tokens: int = 12000,
@@ -206,10 +190,7 @@ def render_latest(
         # every answer built on this.
         answering = sources_total - len(down) - len(no_adapter or ())
         head = [
-            # Which mode answered. The two read the same and are not the same
-            # thing: live is what these sources are serving right now, archive
-            # is whatever the last poll put on disk, however long ago that was.
-            f"CABLEGRAM {VERSION} {mode} | {since}..{until} | {printed} of "
+            f"CABLEGRAM {VERSION} | {since}..{until} | {printed} of "
             f"{window_total} items | {answering}/{sources_total} sources"
         ]
         if down:
@@ -270,7 +251,7 @@ def render_latest(
             f"`sources`.\n" + text)
 
 
-def render_read(rows: list[dict], *, requested: list[str], mode: str = "archive",
+def render_read(rows: list[dict], *, requested: list[str],
                 max_tokens: int = 12000) -> str:
     found = {row["id"] for row in rows}
     missing = [i for i in requested if i not in found]
@@ -284,17 +265,13 @@ def render_read(rows: list[dict], *, requested: list[str], mode: str = "archive"
         # in this project does — there is no retention window and no DELETE
         # outside one trigger; and in live mode it blamed a reinstall while
         # naming an archive that the build is not reading at all.
-        header.append(f"UNKNOWN {' '.join(missing)} -> " + (
-            "not fetched in this session. Live mode keeps no file: an id "
-            "resolves only while it is still in this process's cache, which "
-            "holds the last few thousand items and starts empty."
-            if mode == "live" else
-            "not in this archive. Nothing here prunes, so this is a mistyped id "
-            "or an id from a different archive."))
+        header.append(f"UNKNOWN {' '.join(missing)} -> not fetched in this session. "
+                      f"Nothing is kept between runs: an id resolves only while it "
+                      f"is still in this process's cache, which holds the last few "
+                      f"thousand items and starts empty.")
         header.append("        Re-run wire_latest or wire_search for the same window "
-                      + ("and the same `sources` — an id from a call that asked for "
-                         "other sources will not come back." if mode == "live"
-                         else "to get current ids."))
+                      "and the same `sources` — an id from a call that asked for "
+                      "other sources will not come back.")
     header.append("---")
 
     chunks: list[tuple[str, list[str]]] = []
@@ -366,8 +343,6 @@ def render_search(
     engine: str = "index",
     down: dict[str, str] | None = None,
     unknown: list[str] | None = None,
-    mode: str = "archive",
-    unused: str | None = None,
     max_tokens: int = 8000,
 ) -> str:
     # Declaring the cut matters more here than in the listing. A source holding
@@ -394,7 +369,7 @@ def render_search(
             seen[r["source"]] = seen.get(r["source"], 0) + 1
         cut = [f"{s}={seen[s]}/{totals[s]}" for s in sorted(seen) if totals[s] > seen[s]]
         head = [
-            f'CABLEGRAM search "{query}" {mode} | last {days}d | {len(printed)} shown'
+            f'CABLEGRAM search "{query}" | last {days}d | {len(printed)} shown'
             + (f" of {sum(totals.values())} matching" if cut else " hits")
         ]
         # Before CUT, because the warning has to be read before the number it
@@ -403,51 +378,30 @@ def render_search(
         # naming the wrong conclusion is half of what these lines are for.
         if down:
             head.append("DOWN  " + "  ".join(f"{k}={v}" for k, v in sorted(down.items())))
-            head.append(
-                "      A DOWN SOURCE WAS NOT SEARCHED AT ALL. Its silence here is "
-                'UNKNOWN, not "no match".'
-                if mode == "live" else
-                "      These failed their last poll, so whatever they have published "
-                'since is not in the archive. A miss on them is UNKNOWN, not "no match".')
+            head.append("      A DOWN SOURCE WAS NOT SEARCHED AT ALL. Its silence "
+                        'here is UNKNOWN, not "no match".')
         if unknown:
             head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
                         f"tag or language. NOTHING WAS SEARCHED for it, which is why "
                         f"the count above may be 0. Call wire_sources for the catalogue.")
         if cut:
             head.append("CUT   " + "  ".join(cut) + "   (newest kept)")
-        if mode == "live":
-            # The archive wording below is not merely unhelpful here, it is
-            # false: one live pass over openai's feed loads 1,157 items back to
-            # 2015, and the reply said `COVER local-archive ... oldest
-            # 2015-12-11`. A model reads that as ten years of coverage searched
-            # and nothing found, when what it has is a feed downloaded two
-            # seconds ago and thrown away.
-            head += [
-                f"COVER live window: fetched for this call and discarded, "
-                f"{archive_items} items, oldest {archive_start}.",
-                "      That floor is what these feeds happen to serve TODAY, not how "
-                "far back the subject goes.",
-                "      It is wildly uneven: one source served its whole back catalogue "
-                "to 2015 and another serves",
-                f"      ten items. A feed exposing ten items cannot answer a {days}d "
-                "question, and no line below",
-                "      separates the two — so read this date as a property of the "
-                "feeds, never as one of the subject.",
-            ]
-            if unused:
-                head.append(f"NOTE  {unused}")
-        else:
-            head += [
-                # The oldest item, not when the file was made: an archive holding
-                # ten years of a blog announced itself as starting today, and a
-                # model asked "since when has X been discussed" declined to answer.
-                f"COVER local-archive {archive_items} items, oldest {archive_start}",
-                "      Only what this server has fetched, and coverage is uneven: a few "
-                "feeds served their whole",
-                "      back catalogue on the first poll and most served days, so the "
-                "date above is the oldest item",
-                "      in the archive, not a floor under every source.",
-            ]
+        head += [
+            # The floor is a property of the feeds, and reading it as a
+            # statement about the subject is the most expensive wrong conclusion
+            # this surface can produce. One pass over openai's feed loads 1,157
+            # items back to 2015; another source serves ten.
+            f"COVER this call fetched {archive_items} items and kept none, oldest "
+            f"{archive_start}.",
+            "      That floor is what these feeds happen to serve TODAY, not how "
+            "far back the subject goes.",
+            "      It is wildly uneven: one source served its whole back catalogue "
+            "to 2015 and another serves",
+            f"      ten items. A feed exposing ten items cannot answer a {days}d "
+            "question, and no line below",
+            "      separates the two — so read this date as a property of the "
+            "feeds, never as one of the subject.",
+        ]
         return head + [
             '      "0 hits" = "not in what we can search". It does NOT mean nobody is '
             'talking about it.',
@@ -485,20 +439,14 @@ def render_search(
             f"source. Every source keeps its heading and real total.\n" + text)
 
 
-def render_sources(*, health: dict, archive_items: int, archive_start: str,
-                   archive_path: str, live: bool = False,
-                   unused: str | None = None) -> str:
-    out = [f"CABLEGRAM {VERSION} | {len(SOURCES)} sources"]
-    if live:
-        out.append("MODE   live: each call fetches, nothing is kept. The health below is "
-                   "from the last")
-        out.append("       call in this session, not a standing record.")
-        if unused:
-            out.append(f"NOTE   {unused}")
-            out.append(f"       {_tilde(archive_path)}")
-    else:
-        out.append(f"ARCHIVE {_tilde(archive_path)} | {archive_items} items | "
-                   f"oldest {archive_start}")
+def render_sources(*, health: dict) -> str:
+    out = [
+        f"CABLEGRAM {VERSION} | {len(SOURCES)} sources",
+        "NOTE   each call fetches and keeps nothing, so the health below is from "
+        "the last call in",
+        "       this session and not a standing record. A source with no row has "
+        "not been asked yet.",
+    ]
     out += [
         "",
         "id               lg kind      tags                  last_ok          newest     state",
@@ -517,11 +465,11 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
             hours = int(age.total_seconds() // 3600)
             status = f"STALE {hours}h" if hours >= 6 else "OK"
         else:
-            # In live mode a source has no standing record: it either answered
-            # the last call or was not among the ones that call asked for. Both
-            # print as "-" above, and calling that "never polled" would report
-            # a source nobody happened to want as a source nobody can use.
-            status = "not in last call" if live else "never polled"
+            # A source has no standing record: it either answered the last call
+            # or was not among the ones that call asked for. Both print as "-"
+            # above, and calling that "never polled" would report a source
+            # nobody happened to want as a source nobody can use.
+            status = "not in last call"
         # Both of these were stored by the poller and read by nobody, so a pass
         # that downloaded fine and then archived nothing looked identical to a
         # quiet day. Compared against last_write so the mark is about the most
@@ -561,15 +509,4 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
     if any(s.fragile for s in SOURCES):
         out.append("fragile = reverse-engineered rather than published. It works today "
                    "and may stop without notice; treat its silence as unknown.")
-    if RETIRED:
-        # Named because an archive keeps what the catalogue drops, so their
-        # items still appear in a wide enough window. An item in the payload
-        # that the catalogue cannot explain is an item the model cannot ask
-        # about — and the UNKNOWN SELECTOR line sends it here to find out.
-        out.append("")
-        out.append("Dropped from the catalogue. Not selectable, and still in any archive "
-                   "on disk, so their items")
-        out.append("can appear in a wide window:")
-        for source in RETIRED:
-            out.append(f"  {source.id:16} {source.lang}  {source.note}")
     return "\n".join(out)

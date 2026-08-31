@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from cablegram.archive import connect
+from cablegram.schema import connect
 from cablegram.fetch import Fetched
 from cablegram.rss import Entry
 from cablegram.sources import by_id
-from cablegram.store import (StoreReport, conditional_headers, cross_count,
+from cablegram.store import (StoreReport, cross_count,
                              items_by_ids, latest_items,
                              record_attempt,
                              store_entries)
@@ -26,8 +26,8 @@ GLM = "https://qbitai.com/2026/08/glm5.html"
 
 
 @pytest.fixture
-def db(tmp_path):
-    conn = connect(tmp_path / "a.db")
+def db():
+    conn = connect()
     yield conn
     conn.close()
 
@@ -171,27 +171,12 @@ def test_target_host_is_empty_for_a_source_that_publishes_its_own(db):
 
 # ── source_state: how a dead source stays visible ────────────────────────────
 
-def test_success_records_the_validators_for_next_time(db):
-    record_attempt(db, Fetched("qbitai", ok=True, body=b"x", status=200,
-                               etag='W/"abc"', last_modified="Sat, 30 Aug 2026 06:00:00 GMT",
-                               fetched_at=NOW))
-    state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
-    assert state["last_ok"] == NOW and state["last_error"] is None
-    assert state["etag"] == 'W/"abc"'
 
 
-def test_304_counts_as_alive(db):
-    """Not new content, but proof the source answered. Treating it as a failure
-    would make a quiet week look like an outage."""
-    record_attempt(db, Fetched("n8n", ok=True, status=304, unchanged=True, fetched_at=NOW))
-    state = db.execute("SELECT * FROM source_state WHERE source='n8n'").fetchone()
-    assert state["last_ok"] == NOW and state["last_error"] is None
-
-
-def test_a_failure_keeps_the_last_success_and_the_etag(db):
+def test_a_failure_keeps_the_last_success(db):
     """Overwriting last_ok hides that a source has been mute for days — the one
-    thing wire_sources exists to show. Wiping the etag re-downloads everything."""
-    record_attempt(db, Fetched("habr", ok=True, body=b"x", status=200, etag='W/"v1"',
+    thing wire_sources exists to show."""
+    record_attempt(db, Fetched("habr", ok=True, body=b"x", status=200,
                                fetched_at="2026-08-25T09:00:00Z"))
     record_attempt(db, Fetched("habr", ok=False, error="HTTP 503", fetched_at=NOW))
 
@@ -199,7 +184,6 @@ def test_a_failure_keeps_the_last_success_and_the_etag(db):
     assert state["last_ok"] == "2026-08-25T09:00:00Z"
     assert state["last_try"] == NOW
     assert state["last_error"] == "HTTP 503"
-    assert state["etag"] == 'W/"v1"'
 
 
 def test_recovering_clears_the_error(db):
@@ -210,17 +194,6 @@ def test_recovering_clears_the_error(db):
     assert state["last_error"] is None
 
 
-def test_conditional_headers_are_handed_back_for_the_next_poll(db):
-    """Keyed by URL: that is what fetch_all looks them up by."""
-    url = "https://www.qbitai.com/feed"
-    record_attempt(db, Fetched("qbitai", url=url, ok=True, body=b"x", status=200,
-                               etag='W/"abc"',
-                               last_modified="Sat, 30 Aug 2026 06:00:00 GMT", fetched_at=NOW))
-    assert conditional_headers(db)[url] == ('W/"abc"', "Sat, 30 Aug 2026 06:00:00 GMT")
-
-
-def test_an_unknown_url_asks_for_everything(db):
-    assert conditional_headers(db).get("https://openai.com/news/rss.xml") is None
 
 
 # ── third review, 2026-08-30: one bad entry must not cost the batch ──────────
@@ -362,25 +335,6 @@ def test_cross_counts_come_back_in_one_query(db):
     assert len(statements) == 1, f"one query, got {len(statements)}"
 
 
-def test_a_304_does_not_clear_the_validators(db):
-    """It works today only because fetch_one echoes back the validator it sent.
-
-    Nothing writes that coupling down, so the day a hand-written fetcher — cls
-    or Telegram — reports a 304 without echoing it, record_attempt would null
-    the etag on a *success* path and every poll would re-download the whole feed
-    for good. No error, just a bill.
-    """
-    record_attempt(db, Fetched("qbitai", ok=True, body=b"x", status=200,
-                               etag='W/"v1"', last_modified="Sat, 30 Aug 2026 06:00:00 GMT",
-                               fetched_at="2026-08-30T12:00:00Z"))
-    record_attempt(db, Fetched("qbitai", ok=True, status=304, unchanged=True,
-                               fetched_at="2026-08-30T12:05:00Z"))  # no validators echoed
-
-    state = db.execute("SELECT * FROM source_state WHERE source='qbitai'").fetchone()
-    assert state["etag"] == 'W/"v1"'
-    assert state["last_mod"] == "Sat, 30 Aug 2026 06:00:00 GMT"
-    assert state["last_ok"] == "2026-08-30T12:05:00Z", "still a success"
-
 
 # ── fourth review: the report is the only channel, so it cannot lie ──────────
 
@@ -405,23 +359,6 @@ def test_a_rolled_back_entry_is_not_counted_as_archived(db):
 
 
 # ── fourth review: fetch_all takes two windows per source, state did not ─────
-
-def test_two_windows_of_one_source_keep_separate_validators(db):
-    """fetch_all was fixed to allow this and the state was left keyed by source,
-    so the second endpoint's etag overwrote the first's. The next poll would
-    send 1556's validator to 1321 and read the 304 as "alive, nothing new" —
-    a source going mute with no error anywhere. Half a fix is worse than none:
-    the next person reads the comment and assumes it works."""
-    a = "https://www.cls.cn/api/subject/1321/article"
-    b = "https://www.cls.cn/api/subject/1556/article"
-    record_attempt(db, Fetched("cls", url=a, ok=True, body=b"x", status=200,
-                               etag='W/"1321"', fetched_at=NOW))
-    record_attempt(db, Fetched("cls", url=b, ok=True, body=b"x", status=200,
-                               etag='W/"1556"', fetched_at=NOW))
-
-    headers = conditional_headers(db)
-    assert headers[a] == ('W/"1321"', None)
-    assert headers[b] == ('W/"1556"', None)
 
 
 def test_a_source_is_alive_if_any_of_its_windows_answered(db):

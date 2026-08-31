@@ -10,8 +10,8 @@ Two properties shape this module:
 
 * **rn=100 covers 3.34 days and there is no way to page backwards.** Eighteen
   pagination parameters were tried against the live endpoint and every one is
-  ignored. Miss three days and the gap is permanent — no archive endpoint
-  exists to ask for it later.
+  ignored. Ask for more than three days and the rest is simply not there, and
+  no endpoint anywhere will serve it later.
 * **A rejected signature returns HTTP 200.** The error is inside the envelope,
   so anything built on the status code reads a broken source as a quiet one.
 """

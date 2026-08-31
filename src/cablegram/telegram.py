@@ -172,7 +172,7 @@ def _pick_link(links: list[str]) -> list[str]:
 def _clean(text: str) -> str:
     # No unescape here: HTMLParser(convert_charrefs=True) already did one pass,
     # and a second turned an escaped `&lt;script&gt;` in a post into a literal
-    # tag in the archive.
+    # tag in the reply.
     text = _SPACES.sub(" ", text)
     # The same cap the feed parser applies. The adapters build their Entry by
     # hand, so a 24,000-character post was reaching the title, the body and the
@@ -193,7 +193,7 @@ def parse_channel(page: str, *, channel: str) -> list[Entry]:
         if not text or not when:
             # Two different things produce an empty message — a poll, which the
             # preview cannot render, and a photo with no caption. Neither has a
-            # headline, and inventing one would fill the archive with rows that
+            # headline, and inventing one would fill the reply with rows that
             # say nothing.
             continue
 

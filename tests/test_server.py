@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from cablegram.archive import connect
+from cablegram.schema import connect
 from cablegram.rss import Entry
 from cablegram.server import build
 from cablegram.sources import by_id
@@ -30,42 +30,49 @@ def anyio_backend():
 
 
 @pytest.fixture
-def server(tmp_path):
-    path = tmp_path / "a.db"
-    db = connect(path)
-    store_entries(db, by_id("qbitai"),
-                  [Entry("智谱发布GLM-5", "https://qbitai.example/glm5", NOW, "正文内容", "description")],
-                  fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    store_entries(db, by_id("hn"),
-                  [Entry("Zhipu releases GLM-5", "https://qbitai.example/glm5", NOW, None, None)],
-                  fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    record_attempt(db, Fetched("qbitai", url=by_id("qbitai").url, ok=True, body=b"x",
-                               status=200, fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
-    # hn too, because it has items here. Without it the fixture served a reply
-    # declaring `hn=never polled` directly above hn's own block and headline,
-    # and all twenty-eight tests in this file validated against that payload.
-    # The poller cannot produce that state — record_attempt runs before storing
-    # and nothing deletes source_state — so it was a defect in the test data,
-    # and it kept the one assertion that would have caught it from being
-    # written: it would have been born red.
-    record_attempt(db, Fetched("hn", url=by_id("hn").url, ok=True, body=b"x",
-                               status=200, fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
-    # deepmind, not cls: cls has no adapter in this build, so it is PENDING
-    # rather than DOWN and could never record a fetch error in the first place.
-    #
-    # It succeeded first and fails now, which is the shape a real outage takes.
-    # The fixture used to hold only a source that had never once worked — the
-    # one case the old DOWN logic got right — so a source failing today after
-    # working yesterday appeared in no test at all.
-    record_attempt(db, Fetched("deepmind", url=by_id("deepmind").url, ok=True,
-                               body=b"x", status=200, fetched_at="2026-08-20T09:00:00Z"))
-    record_attempt(db, Fetched("deepmind", url=by_id("deepmind").url, ok=False,
-                               error="timeout8s",
-                               fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
-    db.close()
-    # A factory, not a connection: the SDK runs sync tools in a worker thread and
-    # SQLite refuses a connection created in another one.
-    yield build(lambda: connect(path))
+def server():
+    """Known rows, no network.
+
+    A builder rather than a populated connection: the SDK runs a synchronous
+    tool in a worker thread and SQLite refuses a connection created in another
+    one, and `opened()` closes what it is given. Each call gets its own copy of
+    the same handful of rows, which costs microseconds.
+
+    The fetch path this bypasses is covered by test_live.py, which is the mode
+    that ships.
+    """
+    def rows():
+        db = connect()
+        store_entries(db, by_id("qbitai"),
+                      [Entry("智谱发布GLM-5", "https://qbitai.example/glm5", NOW,
+                             "正文内容", "description")],
+                      fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        store_entries(db, by_id("hn"),
+                      [Entry("Zhipu releases GLM-5", "https://qbitai.example/glm5",
+                             NOW, None, None)],
+                      fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        record_attempt(db, Fetched("qbitai", url=by_id("qbitai").url, ok=True,
+                                   body=b"x", status=200,
+                                   fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
+        # hn too, because it has items here. Without it the fixture served a
+        # reply declaring `hn=never polled` directly above hn's own block and
+        # headline, and every test in this file validated against that payload.
+        record_attempt(db, Fetched("hn", url=by_id("hn").url, ok=True, body=b"x",
+                                   status=200,
+                                   fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
+        # deepmind succeeded first and fails now, which is the shape a real
+        # outage takes. The fixture used to hold only a source that had never
+        # once worked — the one case the old DOWN logic got right — so a source
+        # failing today after working yesterday appeared in no test at all.
+        record_attempt(db, Fetched("deepmind", url=by_id("deepmind").url, ok=True,
+                                   body=b"x", status=200,
+                                   fetched_at="2026-08-20T09:00:00Z"))
+        record_attempt(db, Fetched("deepmind", url=by_id("deepmind").url, ok=False,
+                                   error="timeout8s",
+                                   fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
+        return db
+
+    return build(rows)
 
 
 async def call(server, name, **args):
@@ -106,7 +113,12 @@ async def test_latest_counts_the_cross_source_repeat(server):
 async def test_read_reports_the_element_not_a_verdict(server):
     """The full/teaser judgement was removed from the parser and came back here.
     What is printed now is the element and the size — facts — because whether a
-    feed ships whole articles is a property of the source, not of a tag name."""
+    feed ships whole articles is a property of the source, not of a tag name.
+
+    The listing comes first because nothing is kept between runs: an id is
+    readable only while the call that produced it is still in this process's
+    cache."""
+    await call(server, "wire_latest", hours=24)
     out = await call(server, "wire_read", ids=[item_id("https://qbitai.example/glm5")])
     assert "正文内容" in out
     assert "NOT the full article" not in out
@@ -175,25 +187,21 @@ async def test_a_reasonable_since_is_normalised_rather_than_refused(server, sinc
 
 
 @pytest.mark.anyio
-async def test_a_source_that_worked_and_now_fails_is_reported_down(server, tmp_path):
+async def test_a_source_that_worked_and_now_fails_is_reported_down():
     """DOWN only looked at sources that had never once succeeded, so one failing
     for three days counted as healthy — while wire_sources listed it as FAIL.
     The two tools contradicted each other, and the one called every morning is
     the one that lied."""
-    from cablegram.archive import connect
-    from cablegram.fetch import Fetched
-    from cablegram.sources import by_id
-    from cablegram.store import record_attempt
+    def rows():
+        db = connect()
+        url = by_id("qbitai").url
+        record_attempt(db, Fetched("qbitai", url=url, ok=True, body=b"x", status=200,
+                                   fetched_at="2026-08-27T09:00:00Z"))
+        record_attempt(db, Fetched("qbitai", url=url, ok=False, error="HTTP 403",
+                                   fetched_at="2026-08-30T09:00:00Z"))
+        return db
 
-    db = connect(tmp_path / "a.db")
-    url = by_id("qbitai").url
-    record_attempt(db, Fetched("qbitai", url=url, ok=True, body=b"x", status=200,
-                               fetched_at="2026-08-27T09:00:00Z"))
-    record_attempt(db, Fetched("qbitai", url=url, ok=False, error="HTTP 403",
-                               fetched_at="2026-08-30T09:00:00Z"))
-    db.close()
-
-    out = await call(build(lambda: connect(tmp_path / "a.db")), "wire_latest", hours=24)
+    out = await call(build(rows), "wire_latest", hours=24)
     assert "qbitai=HTTP 403" in out
 
 
@@ -289,46 +297,6 @@ async def test_every_marker_a_description_names_can_actually_be_emitted(server):
                 f"parser can produce. Producible: {sorted(producible)}")
 
 
-@pytest.mark.anyio
-async def test_live_mode_names_the_archive_it_is_no_longer_reading(tmp_path, monkeypatch):
-    """The file is never deleted and CABLEGRAM_ARCHIVE=1 puts it back in
-    service, so nothing is lost on disk. But wire_search goes from searching
-    4,299 items to searching the live window, and an unannounced "0 hits" is
-    indistinguishable from a quiet day — the failure this whole project exists
-    to prevent, committed by its own migration.
-    """
-    from cablegram.render import render_sources
-    from cablegram.server import _unused_archive
-
-    path = tmp_path / "archive.db"
-    monkeypatch.setenv("CABLEGRAM_DB", str(path))
-    assert _unused_archive() is None, "no file, nothing to warn about"
-
-    db = connect(path)
-    store_entries(db, by_id("qbitai"),
-                  [Entry("t", "https://qbitai.example/x", NOW, None, None)],
-                  fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    db.close()
-
-    note = _unused_archive()
-    assert note and "1 items" in note and "CABLEGRAM_ARCHIVE=1" in note
-
-    out = render_sources(health={}, archive_items=0, archive_start="-",
-                         archive_path=str(path), live=True, unused=note)
-    assert "NOTE" in out and "NOT in use" in out
-    assert "not in last call" in out, (
-        '"never polled" in live mode would report a source nobody asked for as '
-        "one nobody can use")
-
-
-@pytest.mark.anyio
-async def test_an_empty_archive_is_not_worth_a_warning(tmp_path, monkeypatch):
-    from cablegram.server import _unused_archive
-
-    path = tmp_path / "archive.db"
-    monkeypatch.setenv("CABLEGRAM_DB", str(path))
-    connect(path).close()
-    assert _unused_archive() is None
 
 
 @pytest.mark.anyio
@@ -431,28 +399,6 @@ async def test_a_search_names_the_selector_that_matched_nothing(server):
     assert "qbitia" in out and "UNKNOWN SELECTOR" in out
     assert "NOTHING WAS SEARCHED" in out
 
-
-@pytest.mark.anyio
-async def test_every_listing_names_a_mode_and_they_name_the_same_one(server):
-    """"searched the archive" and "searched one live fetch and threw it away"
-    are different claims about what a miss means, and only wire_latest stated
-    which one it was — so a search that found nothing gave the model no way to
-    know whether it had looked at 4,936 items or at one download.
-
-    Asserts that both name a mode and that the two agree, rather than that
-    either says "archive": a payload that hardcodes the word passes a test for
-    the word, which is how the sentence and the code came apart everywhere else
-    in this file.
-    """
-    modes = {}
-    for tool, args in (("wire_latest", {"hours": 24}),
-                       ("wire_search", {"query": "GLM"})):
-        out = await call(server, tool, **args)
-        named = re.match(r"CABLEGRAM[^|]*?\b(archive|live)\b", out)
-        assert named, f"{tool} names no mode: {out.splitlines()[0]}"
-        modes[tool] = named.group(1)
-    assert len(set(modes.values())) == 1, (
-        f"one process, one source of rows, two answers: {modes}")
 
 
 _BLOCK = re.compile(r"^## (\S+) ", re.M)

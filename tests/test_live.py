@@ -1,17 +1,20 @@
-"""The mode the published build actually serves in.
+"""The whole path: fetch, parse, store, query, render.
 
-Every other server test injects an `open_db` factory, and a factory means
-archive mode — so the whole suite ran against the file and none of it against
-the default. Measured: `opened()` could be made to return an empty in-memory
-database without ever calling poll_once, and the suite stayed green at 370. The
-server would have answered 0 items and SILENT for every source, on every call,
-for ever.
+Every other server test injects a factory of known rows, which skips the fetch
+entirely — so for a long time nothing exercised the path that ships. Measured
+then: `opened()` could be made to return an empty database without ever calling
+poll_once, and the suite stayed green at 370. The server would have answered 0
+items and SILENT for every source, on every call, for ever.
 
-Five header facts were reachable only from here: the mode marker, the tally of
-sources asked for, `silent`, the "never polled" branch of DOWN, and the process
-cache that makes an id from one reply readable in the next. So were both halves
-of the bug that let a Telegram channel's Russian post be served as that
-channel's own dispatch.
+Several header facts were reachable only from here: the tally of sources asked
+for, `silent`, the "never polled" branch of DOWN, and the process cache that
+makes an id from one reply readable in the next. So were both halves of the bug
+that let a Telegram channel's Russian post be served as that channel's own
+dispatch.
+
+It is now the only mode there is, so this file covers the product rather than
+one half of it — but it is kept separate because it is the only one that goes
+through fetch and parse, with the network answering from a fixture.
 """
 
 import re
@@ -47,8 +50,6 @@ def live(monkeypatch, tmp_path):
     """A server on the default path: no factory, no file, one fetch per call."""
     import cablegram.poll as poll_mod
 
-    monkeypatch.setenv("CABLEGRAM_DB", str(tmp_path / "archive.db"))
-    monkeypatch.delenv("CABLEGRAM_ARCHIVE", raising=False)
     monkeypatch.setattr(poll_mod, "TELEGRAM_GAP", 0.01)
 
     real = httpx2.AsyncClient
@@ -80,8 +81,7 @@ async def test_the_default_build_actually_fetches(live):
     calling poll_once — and every other test in this suite stays green. The
     server would answer 0 items and SILENT for every source on every call."""
     out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
-    assert "GLM-5 released" in out, "an empty in-memory archive is a silent lie"
-    assert re.match(r"CABLEGRAM \S+ live", out), "the mode has to be named"
+    assert "GLM-5 released" in out, "an empty database is a silent lie"
 
 
 @pytest.mark.anyio
@@ -144,40 +144,6 @@ async def test_a_borrowed_headline_is_marked_in_live_mode_too(live):
     body = await call(live, "wire_read", ids=[item_id("https://qbitai.com/glm5")])
     assert "linked it, not from its own feed" in body
 
-
-@pytest.mark.anyio
-async def test_the_two_modes_state_the_same_facts_about_the_same_window(live, tmp_path):
-    """The test that would have caught four of this round's findings at once.
-
-    Archive mode and live mode run the same queries over the same schema and
-    hand the result to the same renderer, so the header of one is the header of
-    the other except for the mode marker. Every difference found so far has been
-    a fact one of them carries and the other silently drops.
-
-    Names no expected value: it compares the two payloads.
-    """
-    from cablegram.archive import connect
-    from cablegram.poll import poll_once
-    from cablegram.sources import by_id
-
-    # The same fetch, kept on disk, read back through the archive path.
-    path = tmp_path / "same.db"
-    db = connect(path)
-    await poll_once(db, [by_id("qbitai")], window_hours=48)
-    db.close()
-
-    live_out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
-    archived = await call(build(lambda: connect(path)), "wire_latest",
-                          hours=48, sources=["qbitai"])
-
-    def facts(text: str) -> list[str]:
-        head = text.split("---", 1)[0].splitlines()
-        # The mode marker is the one difference that is supposed to be there.
-        return [re.sub(r"\b(live|archive)\b", "MODE", line) for line in head]
-
-    assert facts(live_out) == facts(archived), (
-        "live and archive answered the same question over the same items and "
-        "stated different facts about it")
 
 
 @pytest.mark.anyio
@@ -278,15 +244,15 @@ async def test_an_unresolvable_id_is_explained_by_something_that_can_happen(live
 
 
 @pytest.mark.anyio
-async def test_a_not_modified_reply_would_empty_a_live_source(live, monkeypatch):
-    """Why live mode sends no validators, fixed as a test so nobody restores
-    them.
+async def test_a_not_modified_reply_is_a_failure_not_a_quiet_source(live, monkeypatch):
+    """A 304 to a request that sent no validator is reported, not swallowed.
 
-    A 304 carries no body and is only usable by a caller that already holds the
-    items. Live mode builds its archive per call and discards it, so a source
-    answering 304 has nothing — and comes back SILENT, which says "published
-    nothing in this window". That is the lie the whole server is built to avoid,
-    and it would arrive as a politeness improvement.
+    It carries no body and is only usable by a caller that already holds the
+    items. Nothing here does. Treated as "alive, nothing new" — which is what it
+    means when there is an archive behind it — the source would come back SILENT,
+    saying it published nothing, and that is the lie the whole server is built
+    to avoid. No validator is ever sent, so this cannot happen except as a
+    protocol violation, and it is named as one.
     """
     real = httpx2.AsyncClient
 
@@ -299,6 +265,7 @@ async def test_a_not_modified_reply_would_empty_a_live_source(live, monkeypatch)
 
     monkeypatch.setattr(httpx2, "AsyncClient", patched)
     out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
-    assert "SILENT qbitai" in out, (
-        "this is what a 304 looks like with no archive behind it, and it is why "
-        "conditional_headers is left empty in this mode")
+    assert "SILENT qbitai" not in out, (
+        "a 304 with nothing held behind it is not a source that published "
+        "nothing")
+    assert "qbitai=HTTP 304" in out, f"it has to be named as a failure:\n{out}"

@@ -1,9 +1,9 @@
 """The command line is the only output in this project written for a person.
 
-It is read by whoever set the timer up, usually while deciding whether
-something is wrong. Miscounting a healthy source as broken there sends someone
-looking for a fault that does not exist — and, worse, trains them to ignore the
-number that would matter when one does.
+`cablegram check` is read while deciding whether the catalogue still works.
+Miscounting a healthy source as broken there sends someone looking for a fault
+that does not exist — and, worse, trains them to ignore the number that would
+matter when one does.
 """
 
 import pytest
@@ -25,33 +25,30 @@ def reports(monkeypatch):
     return captured
 
 
-def test_unchanged_counts_as_healthy(reports, capsys, tmp_path, monkeypatch):
-    """A 304 is the source answering that nothing is new. Counting it as broken
-    reports six failures on a perfectly normal poll — the exact confusion this
+def test_a_source_with_nothing_new_is_not_broken(reports, capsys):
+    """A source that answered and had nothing to add is healthy. Counting it as
+    broken reports failures on a perfectly normal run — the exact confusion this
     whole project treats as a bug everywhere else."""
-    monkeypatch.setenv("CABLEGRAM_DB", str(tmp_path / "a.db"))
-    reports["reports"] = [StoreReport("qbitai", state="unchanged"),
+    reports["reports"] = [StoreReport("qbitai", state="ok", new=0, seen=3),
                           StoreReport("habr", new=3)]
 
-    assert main(["poll"]) == 0
+    assert main(["check"]) == 0
     assert "2/2 sources ok" in capsys.readouterr().out
 
 
-def test_a_failed_source_is_counted_as_failed(reports, capsys, tmp_path, monkeypatch):
-    monkeypatch.setenv("CABLEGRAM_DB", str(tmp_path / "a.db"))
+def test_a_failed_source_is_counted_as_failed(reports, capsys):
     reports["reports"] = [StoreReport("qbitai", state="fetch-failed"),
                           StoreReport("habr", new=3)]
 
-    assert main(["poll"]) == 0
+    assert main(["check"]) == 0
     assert "1/2 sources ok" in capsys.readouterr().out
 
 
-def test_every_source_failing_exits_non_zero(reports, tmp_path, monkeypatch):
+def test_every_source_failing_exits_non_zero(reports):
     """A timer that never complains is a timer nobody checks."""
-    monkeypatch.setenv("CABLEGRAM_DB", str(tmp_path / "a.db"))
     reports["reports"] = [StoreReport("qbitai", state="fetch-failed")]
 
-    assert main(["poll"]) == 1
+    assert main(["check"]) == 1
 
 
 def test_sources_lists_them_all(capsys):
@@ -61,35 +58,36 @@ def test_sources_lists_them_all(capsys):
     assert f"{len(SOURCES)} sources" in out
 
 
-def test_an_unknown_selector_does_not_poll_everything(reports, capsys, tmp_path, monkeypatch):
+def test_an_unknown_selector_does_not_poll_everything(reports, capsys):
     """`or None` turned the empty tuple from a typo into "all of them".
     sources.py has a test defending exactly the opposite principle, and one line
     in the CLI undid it — so `cablegram poll typo` hit every source."""
-    monkeypatch.setenv("CABLEGRAM_DB", str(tmp_path / "a.db"))
     reports["reports"] = []
 
-    assert main(["poll", "typo"]) == 2
+    assert main(["check", "typo"]) == 2
     assert "typo" in capsys.readouterr().out
 
 
-def test_a_failed_source_says_why(reports, capsys, tmp_path, monkeypatch):
+def test_a_failed_source_says_why(reports, capsys, monkeypatch):
     """A column of FETCH-FAILED with no explanation leaves the person who set
     the timer up guessing between a dead network, a blocked address and a
     source that moved. The reason was already in source_state, and this is the
     one output in the project written for a human to read."""
-    from cablegram.archive import connect
     from cablegram.fetch import Fetched
     from cablegram.sources import by_id
     from cablegram.store import record_attempt
 
-    path = tmp_path / "a.db"
-    monkeypatch.setenv("CABLEGRAM_DB", str(path))
-    db = connect(path)
-    record_attempt(db, Fetched("qbitai", url=by_id("qbitai").url, ok=False,
-                               error="ConnectError: name or service not known",
-                               fetched_at="2026-08-31T12:00:00Z"))
-    db.close()
+    # The reason is written by the pass itself, into the same database the
+    # report comes from — so the double has to write it where `check` reads it.
+    def fake_poll(db, sources=None):
+        record_attempt(db, Fetched("qbitai", url=by_id("qbitai").url, ok=False,
+                                   error="ConnectError: name or service not known",
+                                   fetched_at="2026-08-31T12:00:00Z"))
 
-    reports["reports"] = [StoreReport("qbitai", state="fetch-failed")]
-    main(["poll"])
+        async def run():
+            return [StoreReport("qbitai", state="fetch-failed")]
+        return run()
+
+    monkeypatch.setattr("cablegram.cli.poll_once", fake_poll)
+    main(["check"])
     assert "ConnectError" in capsys.readouterr().out

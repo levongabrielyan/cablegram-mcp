@@ -43,15 +43,13 @@ async def _one(handler, **kwargs):
         return await fetch_one(client, "src", "https://e.com/feed", **kwargs)
 
 
-def test_success_carries_body_and_validators():
+def test_success_carries_the_body():
     def handler(request):
         return httpx2.Response(200, content=b"<rss/>",
                                headers={"ETag": 'W/"abc"', "Last-Modified": "Sat, 30 Aug 2026 06:00:00 GMT"})
 
     result = asyncio.run(_one(handler))
     assert result.ok and result.body == b"<rss/>"
-    assert result.etag == 'W/"abc"'
-    assert result.last_modified.startswith("Sat, 30")
 
 
 def test_browser_user_agent_is_always_sent():
@@ -65,15 +63,6 @@ def test_browser_user_agent_is_always_sent():
     asyncio.run(_one(handler))
     assert seen["ua"] == USER_AGENT
 
-
-def test_304_means_alive_with_nothing_new():
-    """Not a failure and not an empty source: the distinction has to survive."""
-    def handler(request):
-        assert request.headers["if-none-match"] == 'W/"abc"'
-        return httpx2.Response(304)
-
-    result = asyncio.run(_one(handler, etag='W/"abc"'))
-    assert result.ok and result.unchanged and result.body is None
 
 
 def test_failure_is_returned_not_raised():

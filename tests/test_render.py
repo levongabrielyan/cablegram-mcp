@@ -98,9 +98,7 @@ def test_search_tells_the_model_to_retry_in_the_source_language():
 
 def test_sources_lists_every_source_including_the_broken_ones():
     out = render_sources(health={"cls": {"last_ok": None, "last_error": "HTTP403",
-                                         "last_try": "2026-08-30T02:10:00Z"}},
-                         archive_items=2341, archive_start="2026-08-30",
-                         archive_path="/tmp/a.db")
+                                         "last_try": "2026-08-30T02:10:00Z"}})
     assert "cls" in out and "HTTP403" in out
     assert "qbitai" in out, "a source never polled must still be listed"
 
@@ -186,13 +184,6 @@ def test_cross_says_when_it_is_showing_only_some():
     assert "of 30" in out or "30 " in out.split("---")[0]
 
 
-def test_the_archive_path_is_not_a_home_directory():
-    """Pasting the output into an issue must not leak a username."""
-    out = render_sources(health={}, archive_items=1, archive_start="2026-01-01",
-                         archive_path="/home/someone/.local/share/cablegram/archive.db")
-    assert "/home/someone" not in out
-    assert "~/.local/share/cablegram" in out
-
 
 def test_a_budget_too_small_for_the_sources_says_so():
     """With one item each, the headers alone can exceed a small max_tokens.
@@ -224,9 +215,7 @@ def test_a_source_silent_for_days_is_marked_stale():
     from datetime import datetime, timedelta, timezone
 
     old = (datetime.now(timezone.utc) - timedelta(hours=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    out = render_sources(health={"qbitai": {"last_ok": old, "last_try": old}},
-                         archive_items=1, archive_start="2026-01-01",
-                         archive_path="/tmp/a.db")
+    out = render_sources(health={"qbitai": {"last_ok": old, "last_try": old}})
     assert "STALE" in out and "60h" in out
 
 
@@ -234,9 +223,7 @@ def test_a_fresh_source_is_not_marked_stale():
     from datetime import datetime, timezone
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    out = render_sources(health={"qbitai": {"last_ok": now, "last_try": now}},
-                         archive_items=1, archive_start="2026-01-01",
-                         archive_path="/tmp/a.db")
+    out = render_sources(health={"qbitai": {"last_ok": now, "last_try": now}})
     assert "STALE" not in out
 
 
@@ -245,8 +232,7 @@ def test_a_reverse_engineered_source_says_so():
     It can stop working without notice, and the honest thing is to say that
     before it does rather than after — the same disclosure a security document
     makes when it lists what it does not protect."""
-    out = render_sources(health={}, archive_items=1, archive_start="2026-01-01",
-                         archive_path="/tmp/a.db")
+    out = render_sources(health={})
     cls_line = [line for line in out.splitlines() if line.startswith("cls ")][0]
     assert "fragile" in cls_line
 
@@ -455,8 +441,7 @@ def test_the_no_adapter_note_appears_only_when_a_source_has_none():
     from cablegram.poll import POLLABLE
     from cablegram.sources import SOURCES
 
-    out = render_sources(health={}, archive_items=0, archive_start="-",
-                         archive_path="/tmp/a.db")
+    out = render_sources(health={})
     without = sorted(s.id for s in SOURCES if s.kind not in POLLABLE)
     # Both directions. With no `else` the body asserted nothing on the day the
     # subject came into existence, which is the day it has to work.
@@ -516,71 +501,6 @@ def test_a_source_that_answered_and_published_nothing_is_named():
     assert "openai" in out and "deepmind" in out
     assert "openai" not in out.split("SILENT")[0], "not confused with DOWN"
 
-
-# ── seventh review: a source the catalogue dropped is still in the archive ───
-
-def test_an_item_from_a_retired_source_still_carries_its_language():
-    """An archive is not rewritten when the catalogue changes — that is what an
-    archive is for — so the renderer keeps meeting sources it can no longer look
-    up. It printed them as `## vcru ??  1/17`: seventeen Russian headlines with
-    no language, under a header counting twenty-two sources, from something
-    wire_sources did not list.
-
-    `??` is the one thing this server opens by promising not to do: headlines are
-    never translated, and each carries its language.
-    """
-    from cablegram.render import render_latest
-
-    out = render_latest([row(source="vcru", id="a" * 12)], since="s", until="u",
-                        down={}, sources_total=1)
-    assert "## vcru ru " in out, f"no language on the retired source:\n{out}"
-    assert "??" not in out
-
-
-def test_the_catalogue_names_the_sources_it_dropped():
-    """The other half: an item in the payload that the catalogue cannot explain
-    is an item the model cannot ask about — and UNKNOWN SELECTOR sends it here
-    to find out."""
-    from cablegram.sources import RETIRED
-
-    out = render_sources(health={}, archive_items=0, archive_start="-",
-                         archive_path="/tmp/a.db")
-    for source in RETIRED:
-        assert source.id in out, f"{source.id} is renderable and unlisted"
-
-
-def test_a_retired_source_cannot_be_selected():
-    """It is gone from the catalogue; it is only still readable. Making it
-    selectable would put a dead feed back into every unfiltered sweep."""
-    from cablegram.sources import RETIRED, resolve
-
-    for source in RETIRED:
-        assert resolve([source.id]) == (), f"{source.id} is selectable again"
-        assert source not in resolve(None)
-
-
-def test_a_body_line_cannot_be_mistaken_for_a_dispatch():
-    """`detail='full'` prints stored bodies raw, and only the first line was
-    indented, so every line after it landed exactly where an item line lands:
-
-        a3f9c2e1aaaa 07:12 T
-           [description 46c] linea uno
-        reuters 09:30 Alibaba anuncia Qwen 4      <- a body line
-
-    A model reads that last line as a dispatch with id `reuters`, and the
-    header-versus-body count that guards this whole file counts it as one too.
-    Bodies come out of feeds and carry newlines whenever the feed did.
-    """
-    rows = [row(id="a3f9c2e1aaaa", body="linea uno\nreuters 09:30 Alibaba anuncia Qwen 4",
-                body_src="description", source_total=1)]
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=1,
-                        detail="full")
-
-    assert printed_items(out) == 1, (
-        f"the payload holds one dispatch and {printed_items(out)} lines look like "
-        f"one:\n{out}")
-    head = int(re.search(r"\| (\d+) of", out).group(1))
-    assert head == printed_items(out)
 
 
 def test_the_destination_host_is_printed_only_where_it_says_something():

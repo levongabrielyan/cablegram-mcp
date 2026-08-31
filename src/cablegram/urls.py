@@ -1,7 +1,7 @@
 """URL normalisation and stable item identity.
 
 Every archived item is keyed by ``item_id(url)``. That id appears in tool output
-and in the archive, so this module's behaviour is frozen: changing it reassigns
+and in every reply, so this module's behaviour is frozen: changing it reassigns
 every id ever issued.
 
 Normalisation is pure. It performs no network access and no clock reads, so the
@@ -11,7 +11,7 @@ Shortener expansion belongs in the fetcher, before a URL ever reaches here.
 Two rules drive the details below, and both come from the same asymmetry:
 
 * **Merging two articles is unrecoverable.** ``url_norm`` is UNIQUE, so the
-  second one never enters the archive and nothing reports it.
+  second one never reaches the reply and nothing reports it.
 * **Splitting one article is a duplicate**, which is recoverable — though not
   harmless: every split quietly lowers the cross-source count, so a story seen
   in six feeds may report four, and a wrong count looks like no failure at all.

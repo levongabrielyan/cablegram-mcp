@@ -1,7 +1,7 @@
 """Hacker News through the Algolia index. No key, no auth, 10,000 requests an hour.
 
 It earns its place twice over. It is the only source that can be searched at
-its origin instead of in the local archive, and it is the only one that links
+its origin instead of only in what was just fetched, and it is the only one that links
 out — so the same URL arriving here and on a Chinese feed is one story seen
 twice, which is where the cross-source count comes from.
 

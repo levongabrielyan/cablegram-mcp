@@ -7,19 +7,14 @@ Three rules shape everything here:
   instead of silently showing a shorter list.
 * **Every response is capped.** Feeds are third-party input, so a slow or
   enormous one must cost a timeout, not the process.
-* **Conditional requests, when there is an archive to compare against.** Most
-  feeds are unchanged between polls; sending the stored ETag turns those into a
-  304 with no body, which is both faster and the polite way to hammer somebody
-  else's server every few minutes.
-
-  Only in archive mode, and that is not an oversight. A 304 carries no body, so
-  it is only usable by a caller that already has the items somewhere. Live mode
-  builds a fresh in-memory archive per call and throws it away, so a 304 there
-  would produce a source with zero items — reported as SILENT, which reads as
-  "published nothing" and would be the exact lie this project exists to
-  prevent. The default build therefore downloads in full on every call and is
-  heavier on other people's servers than the hourly timer was. Fixing that means
-  caching the responses, not sending the validators.
+* **No conditional requests, and that is a consequence of keeping nothing.** A
+  304 carries no body, so it is only usable by a caller that already holds the
+  items. Nothing here does: the database is built for one call and discarded, so
+  a 304 would produce a source with zero items, reported as having published
+  nothing. Every fetch is therefore a full download, which is heavier on
+  somebody else's server than a poller with an archive behind it — the price of
+  not keeping a copy of their site. A 304 arriving anyway is a protocol
+  violation and is reported as a failure, not as quiet.
 """
 
 from __future__ import annotations
@@ -74,9 +69,6 @@ class Fetched:
     body: bytes | None = None
     status: int | None = None
     error: str | None = None
-    unchanged: bool = False  # 304: the source is alive and has nothing new
-    etag: str | None = None
-    last_modified: str | None = None
     fetched_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -103,16 +95,10 @@ async def fetch_one(
     source_id: str,
     url: str,
     *,
-    etag: str | None = None,
-    last_modified: str | None = None,
     headers: dict[str, str] | None = None,
 ) -> Fetched:
     """Fetch one source. Returns failures as values; raises nothing."""
     request_headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "gzip, deflate"}
-    if etag:
-        request_headers["If-None-Match"] = etag
-    if last_modified:
-        request_headers["If-Modified-Since"] = last_modified
     if headers:
         request_headers.update(headers)
 
@@ -124,8 +110,12 @@ async def fetch_one(
                 follow_redirects=True, timeout=PER_SOURCE_TIMEOUT,
             ) as response:
                 if response.status_code == 304:
-                    return Fetched(source_id, ok=True, url=url, status=304, unchanged=True,
-                                   etag=etag, last_modified=last_modified)
+                    # No validator was sent, so there is nothing this can be a
+                    # reply to — and nothing already held for it to mean "still
+                    # yours". Reported as a failure rather than as a source with
+                    # nothing to say, which is what it would otherwise look like.
+                    return Fetched(source_id, ok=False, url=url, status=304,
+                                   error="HTTP 304 to a request with no validator")
                 if response.status_code != 200:
                     # 4xx is the source's answer, not a glitch: do not retry it.
                     if 400 <= response.status_code < 500:
@@ -140,11 +130,7 @@ async def fetch_one(
                     continue
 
                 body = await _read_capped(response, MAX_BYTES)
-                return Fetched(
-                    source_id, ok=True, url=url, body=body, status=200,
-                    etag=response.headers.get("etag"),
-                    last_modified=response.headers.get("last-modified"),
-                )
+                return Fetched(source_id, ok=True, url=url, body=body, status=200)
         except ValueError as exc:  # over the cap
             return Fetched(source_id, ok=False, url=url, error=str(exc))
         except Exception as exc:
@@ -158,7 +144,6 @@ async def fetch_one(
 async def fetch_all(
     targets: list[tuple[str, str]],
     *,
-    conditional: dict[str, tuple[str | None, str | None]] | None = None,  # by URL
     deadline: float = TOTAL_DEADLINE,
 ) -> list[Fetched]:
     """Fetch every target concurrently, bounded by one global deadline.
@@ -170,7 +155,6 @@ async def fetch_all(
     turn one slow feed into eleven dead ones, and nothing downstream could tell
     that apart from a real outage.
     """
-    conditional = conditional or {}
 
     # HTTP/1.1 on purpose: http2=True needs the `h2` package, and one extra
     # dependency is not worth a few milliseconds on eleven feeds.
@@ -182,9 +166,9 @@ async def fetch_all(
         # client that had already closed underneath it.
         tasks = []
         for source_id, url in targets:
-            etag, last_modified = conditional.get(url, (None, None))
+
             tasks.append(asyncio.create_task(
-                fetch_one(client, source_id, url, etag=etag, last_modified=last_modified)
+                fetch_one(client, source_id, url)
             ))
 
         if tasks:

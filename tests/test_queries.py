@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from cablegram.archive import connect
+from cablegram.schema import connect
 from cablegram.rss import Entry
 from cablegram.sources import by_id
 from cablegram.store import (items_by_ids, latest_items, search_items as _search_items,
@@ -31,8 +31,8 @@ def iso(dt):
 
 
 @pytest.fixture
-def db(tmp_path):
-    conn = connect(tmp_path / "a.db")
+def db():
+    conn = connect()
     for source, titles in (("qbitai", ["智谱发布GLM-5", "阿里开源新模型"]),
                            ("hn", ["Zhipu releases GLM-5", "Show HN: a RAG tool"]),
                            ("habr", ["Вышла Qwen3-Max"])):
@@ -136,13 +136,9 @@ def test_a_query_with_punctuation_does_not_raise(query):
     """FTS5 treats quotes and operators as syntax. An unescaped one raises
     OperationalError, which reaches the model as a tool crash instead of a
     result — for a query a person could plausibly type."""
-    import tempfile
-    from pathlib import Path
-
-    with tempfile.TemporaryDirectory() as tmp:
-        conn = connect(Path(tmp) / "a.db")
-        assert search_items(conn, query, since="2020-01-01T00:00:00Z") == []
-        conn.close()
+    conn = connect()
+    assert search_items(conn, query, since="2020-01-01T00:00:00Z") == []
+    conn.close()
 
 
 def test_search_respects_its_window(db):
