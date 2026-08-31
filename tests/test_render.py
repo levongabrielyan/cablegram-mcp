@@ -287,6 +287,15 @@ _BLOCK = re.compile(r"^## (\S+) .*? (\d+)/(\d+)\s*$", re.M)
 _CUT = re.compile(r"^CUT\s+(.*?)\s\s+\(newest kept\)\s*$", re.M)
 _PAIR = re.compile(r"(\S+)=(\d+)/(\d+)")
 _ALLOWANCE = re.compile(r"at most (\d+) per source")
+# Claims of ABSENCE before a date. The correct sentence in that block says the
+# opposite — that some feeds served their whole back catalogue on the first poll
+# — so banning any mention of the origin would ban the fix itself.
+_ORIGIN_FLOOR = re.compile(
+    r"(?i)(nothing from before|no history (?:before|behind)|"
+    r"(?:archive|it) (?:starts|started|begins|began)|starts the day|"
+    r"since (?:it was |the server was )?(?:installed|first run))")
+# A verdict about the source, from a fact about one item.
+_SOURCE_VERDICT = re.compile(r"(?i)th(is|e) source (publishes|ships|carries|has|provides)")
 
 
 def printed_items(out):
@@ -358,10 +367,17 @@ def test_the_cut_line_agrees_with_the_blocks_it_summarises():
     blocks = block_counts(out)
     declared = _CUT.search(out)
     assert declared, "a payload this heavily cut must declare the cut"
-    for source, shown, total in _PAIR.findall(declared.group(1)):
-        assert blocks[source] == (int(shown), int(total)), (
-            f"CUT says {source}={shown}/{total}, block says "
-            f"{blocks[source][0]}/{blocks[source][1]}")
+    named = {s: (int(shown), int(total))
+             for s, shown, total in _PAIR.findall(declared.group(1))}
+    # Compared as a whole, not walked entry by entry. Iterating what CUT names
+    # can only catch a wrong number in it; a source cut and left out of the line
+    # entirely has no entry to walk, and that is the reading the line exists to
+    # prevent — an undeclared cut is indistinguishable from a source with
+    # little to say.
+    was_cut = {s: (shown, total) for s, (shown, total) in blocks.items()
+               if shown < total}
+    assert named == was_cut, (
+        f"CUT declares {named} and the blocks were cut {was_cut}")
 
 
 def test_the_announced_allowance_is_the_one_actually_applied():
@@ -377,8 +393,13 @@ def test_the_announced_allowance_is_the_one_actually_applied():
     out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
                         max_tokens=50)
 
-    announced = int(_ALLOWANCE.search(out).group(1))
-    applied = max(n for n, _ in block_counts(out).values())
+    announced = _ALLOWANCE.search(out)
+    assert announced, (
+        f"an over-budget payload has to announce the allowance it applied; got:"
+        f"\n{out[:200]}")
+    counts = block_counts(out)
+    assert counts, "every source keeps its heading, whatever the budget"
+    announced, applied = int(announced.group(1)), max(n for n, _ in counts.values())
     assert announced == applied, f"announces {announced}, applies {applied}"
 
 
@@ -392,8 +413,15 @@ def test_the_coverage_note_does_not_contradict_the_date_above_it():
     """
     out = render_search([], query="q", since="s", days=7,
                         archive_start="2015-12-11", archive_items=4242)
-    assert "nothing from before its first run" not in out
-    assert "2015-12-11" in out
+    oldest = re.search(r"oldest (\d{4}-\d{2}-\d{2})", out)
+    assert oldest, "the coverage block must print the date it reaches back to"
+    assert oldest.group(1) == "2015-12-11"
+    claims = _ORIGIN_FLOOR.findall(out)
+    assert not claims, (
+        f"COVER says the archive reaches back to {oldest.group(1)} and another "
+        f"line dates its origin to {claims}. Both cannot be true, and the model "
+        f"gets two bad readings: either this has run since 2015, or the dates "
+        f"are worthless.")
 
 
 def test_an_item_with_no_body_says_nothing_about_its_source():
@@ -404,9 +432,19 @@ def test_an_item_with_no_body_says_nothing_about_its_source():
     openai carries one in 91% of its items, and the line would have appeared 106
     times telling the model openai has none.
     """
-    out = render_read([row(body=None, body_src=None)], requested=["a3f9c2e1"])
-    assert "body=none" in out
-    assert "publishes headlines only" not in out
+    out = render_read([row(id="aaaaaaaaaaaa", body=None, body_src=None),
+                       row(id="bbbbbbbbbbbb", body="texto", body_src="description")],
+                      requested=["aaaaaaaaaaaa", "bbbbbbbbbbbb"])
+    # Two rows, one with a body and one without, so the marker has to land on
+    # the right one. With a single row `"body=none" in out` is true whenever any
+    # item carries it.
+    per_item = dict(re.findall(r"^## (\S+).*? body=(\S+)", out, re.M))
+    assert per_item == {"aaaaaaaaaaaa": "none", "bbbbbbbbbbbb": "description"}, (
+        f"body= has to be a fact about each item; got {per_item}")
+    verdict = _SOURCE_VERDICT.search(out)
+    assert not verdict, (
+        f"{verdict.group(0)!r} turns one item's missing body into a property of "
+        f"its source")
 
 
 def test_the_no_adapter_note_appears_only_when_a_source_has_none():
@@ -419,8 +457,16 @@ def test_the_no_adapter_note_appears_only_when_a_source_has_none():
 
     out = render_sources(health={}, archive_items=0, archive_start="-",
                          archive_path="/tmp/a.db")
-    if all(s.kind in POLLABLE for s in SOURCES):
-        assert "no adapter yet" not in out
+    without = sorted(s.id for s in SOURCES if s.kind not in POLLABLE)
+    # Both directions. With no `else` the body asserted nothing on the day the
+    # subject came into existence, which is the day it has to work.
+    if without:
+        assert "no adapter yet" in out, (
+            f"{without} have no adapter and the line saying so is missing; a "
+            f"model files their real silence under 'that one is never polled'")
+    else:
+        assert "no adapter yet" not in out, (
+            "every kind has an adapter, so the note describes an empty set")
 
 
 def test_reading_many_bodies_defers_rather_than_overruns():
@@ -443,6 +489,9 @@ def test_reading_many_bodies_defers_rather_than_overruns():
     deferred = set(out.split("DEFERRED ")[1].split(" ->")[0].split())
     assert served and deferred, "some served, the rest named"
     assert served | deferred == {r["id"] for r in rows}, "no id vanishes"
+    assert not served & deferred, (
+        f"{sorted(served & deferred)} are both served above and named on the "
+        f"DEFERRED line; the model pays a second call for text it already has")
 
 
 def test_one_body_too_large_is_still_served():
@@ -508,3 +557,27 @@ def test_a_retired_source_cannot_be_selected():
     for source in RETIRED:
         assert resolve([source.id]) == (), f"{source.id} is selectable again"
         assert source not in resolve(None)
+
+
+def test_a_body_line_cannot_be_mistaken_for_a_dispatch():
+    """`detail='full'` prints stored bodies raw, and only the first line was
+    indented, so every line after it landed exactly where an item line lands:
+
+        a3f9c2e1aaaa 07:12 T
+           [description 46c] linea uno
+        reuters 09:30 Alibaba anuncia Qwen 4      <- a body line
+
+    A model reads that last line as a dispatch with id `reuters`, and the
+    header-versus-body count that guards this whole file counts it as one too.
+    Bodies come out of feeds and carry newlines whenever the feed did.
+    """
+    rows = [row(id="a3f9c2e1aaaa", body="linea uno\nreuters 09:30 Alibaba anuncia Qwen 4",
+                body_src="description", source_total=1)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=1,
+                        detail="full")
+
+    assert printed_items(out) == 1, (
+        f"the payload holds one dispatch and {printed_items(out)} lines look like "
+        f"one:\n{out}")
+    head = int(re.search(r"\| (\d+) of", out).group(1))
+    assert head == printed_items(out)

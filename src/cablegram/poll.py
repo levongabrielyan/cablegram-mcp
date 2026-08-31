@@ -228,7 +228,13 @@ async def poll_once(
             # a source answering with broken XML is not a source with no news.
             report = StoreReport(source.id, state="unparseable", failed=1)
             record_write(db, report, url=source.url, at=now)
-            _mark_failed(db, fetched, source, f"unparseable: {exc}")
+            # With the class. Without it `unparseable: 'NoneType' object is not
+            # iterable` reaches wire_sources and the CLI with no way to tell a
+            # TypeError from a ValueError from an AttributeError, and those are
+            # three different diagnoses: a null field, a bad envelope, a shape
+            # that moved.
+            _mark_failed(db, fetched, source,
+                         f"unparseable: {type(exc).__name__}: {exc}")
             reports.append(report)
             continue
 

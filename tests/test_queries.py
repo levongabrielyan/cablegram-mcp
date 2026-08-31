@@ -242,3 +242,25 @@ def test_an_item_only_a_link_reached_is_marked_that_way_by_every_path(db):
     assert borrowed["via"] == "link"
     own = items_by_ids(db, [item_id("https://hn.example/0")])[0]
     assert own["via"] == "feed", "hn published this one itself"
+
+
+def test_the_total_of_each_source_counts_only_that_source(db):
+    """`source_total` is what the whole CUT machinery rests on: the header sums
+    it, and every internal-consistency assertion in test_render compares two
+    readings of it — so a wrong value is invisible there. Both readings are
+    wrong together and agree perfectly, and the reply says `5 of 1000 items` for
+    a window that held 200 while every check passes.
+
+    That is the limit of comparing a payload against itself, and the only way
+    past it is to go down to the rows. Both existing tests of this field ask for
+    one source, where a total over the whole result set and a total per source
+    are the same number.
+    """
+    from collections import Counter
+
+    rows = latest_items(db, since=iso(NOW - timedelta(days=7)))
+    per_source = {r["source"]: r["source_total"] for r in rows}
+    counted = Counter(r["source"] for r in rows)
+    assert len(per_source) > 1, "one source cannot tell the two totals apart"
+    assert per_source == dict(counted), (
+        f"source_total says {per_source}, the rows actually carry {dict(counted)}")

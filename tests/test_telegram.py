@@ -275,3 +275,37 @@ def test_tracking_parameters_still_survive_the_decode_to_be_dropped_later():
             '&amp;amp;fbclid=z">link</a></div></div>')
     assert normalise(parse_channel(page, channel="c")[0].links[0]) == \
         "https://shop.example/x"
+
+
+def _link(escaped, *, params="copy=1"):
+    page = ('<div class="tgme_widget_message" data-post="c/1">'
+            '<time datetime="2026-08-30T10:00:00+00:00">x</time>'
+            '<div class="tgme_widget_message_text js-message_text">see '
+            f'<a href="https://e.example/news?id=42{escaped}{params}">this</a>'
+            '</div></div>')
+    return parse_channel(page, channel="c")[0].links[0]
+
+
+def test_an_href_decodes_to_one_url_whatever_depth_it_was_escaped_at():
+    """Telegram does not escape consistently: three of the six channels send
+    `&amp;amp;` and techsparks sends `&amp;`. Two ids for one URL means those
+    two channels can never cross, in the module whose ids are frozen.
+
+    Every depth, not just one and two. A conditional second unescape passes at
+    depth two and leaves depth three still escaped — and expands HTML5 legacy
+    entities on the way, since `&copy` resolves without a semicolon. One
+    ampersand in a fixture cannot tell a targeted decode from a general one.
+    """
+    from cablegram.urls import item_id
+
+    once, twice, thrice = _link("&amp;"), _link("&amp;amp;"), _link("&amp;amp;amp;")
+    assert once == twice == thrice == "https://e.example/news?id=42&copy=1"
+    assert item_id(once) == item_id(twice) == item_id(thrice), \
+        "one URL, one id, whoever linked it"
+
+
+def test_a_parameter_named_after_an_entity_survives_the_decode():
+    """`&lt`, `&gt`, `&reg` and `&copy` are legacy entities that resolve with no
+    semicolon, so any decode running a general unescaper eats them."""
+    assert _link("&amp;amp;", params="copy=1&amp;amp;lt=2&amp;amp;reg=3") == \
+        "https://e.example/news?id=42&copy=1&lt=2&reg=3"

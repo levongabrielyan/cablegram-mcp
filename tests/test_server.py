@@ -6,6 +6,7 @@ actually kept: a dead source appears, a window means what it says, an unknown id
 comes back named.
 """
 
+import pathlib
 import re
 
 from datetime import datetime, timedelta, timezone
@@ -232,16 +233,28 @@ async def test_every_tool_has_a_readable_title_and_says_it_is_read_only(server):
         assert tool.annotations.open_world_hint is True
 
 
-# Every value the parsers can put in `body_src`, plus the renderer's literal for
-# an item with no body. Written here, beside the assertion, because the point is
-# that a description may only name a marker from THIS set.
-PRODUCIBLE_BODY_SRC = {
-    "content:encoded", "atom:content", "description", "atom:summary",  # rss.py
-    "article_title",                                                   # cls.py
-    "story_text",                                                      # hn.py
-    "message",                                                         # telegram.py
-    "none",                                                            # render.py
-}
+def producible_body_src() -> set[str]:
+    """Every marker a parser can actually emit, read off the parsers.
+
+    This set used to be written out by hand beside the assertion, and it went
+    stale in the same commit that added an adapter: `hub.py` emits
+    `body_src="hub"` and the hand-written set never got it, so the test called a
+    true sentence a lie from the day it shipped. `nextjs.py` added `summary`
+    later and would have done it again.
+
+    The point of the assertion is that a description may only name a marker the
+    code can produce. A list of those markers maintained separately from the
+    code is the same defect the assertion exists to catch.
+    """
+    import cablegram
+    from cablegram import rss
+
+    package = pathlib.Path(cablegram.__file__).parent
+    emitted = {m for path in package.glob("*.py")
+               for m in re.findall(r'body_src\s*=\s*"([^"]+)"', path.read_text())}
+    # plus the elements rss.py names by table, and the renderer's literal for an
+    # item that has no body at all.
+    return emitted | {name for _, name in rss._BODY_ELEMENTS} | {"none"}
 
 
 @pytest.mark.anyio
@@ -261,13 +274,19 @@ async def test_every_marker_a_description_names_can_actually_be_emitted(server):
     in the code and the sentence describing it stays behind. Nothing else in the
     suite compares the two.
     """
-    import re
-
-    for tool in await server.list_tools():
-        for named in re.findall(r"body=(\w+)", tool.description or ""):
-            assert named in PRODUCIBLE_BODY_SRC, (
-                f"{tool.name} tells the model to look for body={named}, which no "
-                f"parser can produce. Producible: {sorted(PRODUCIBLE_BODY_SRC)}")
+    producible = producible_body_src()
+    texts = {t.name: t.description or "" for t in await server.list_tools()}
+    # The instructions too. They are the half a client shows the model before
+    # any description, and the sibling test already covered them: putting
+    # `body=teaser` back into them left the whole suite green.
+    texts["instructions"] = server.instructions or ""
+    for where, text in texts.items():
+        # `[\w:]+` so `body=content:encoded` matches whole, and so the
+        # placeholder `body=<element> <N>c` — which starts with `<` — does not.
+        for named in re.findall(r"body=[`'\"]?([\w:]+)", text):
+            assert named in producible, (
+                f"{where} tells the model to look for body={named}, which no "
+                f"parser can produce. Producible: {sorted(producible)}")
 
 
 @pytest.mark.anyio

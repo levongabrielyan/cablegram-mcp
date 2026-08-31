@@ -259,17 +259,29 @@ def test_an_unforeseen_parser_error_costs_one_source_not_the_pass(db, network):
     """
     from cablegram.store import source_health
 
+    # The payload matters. `{"not": "a feed"}` handed to the RSS parser raises
+    # ET.ParseError, which the narrow tuple already caught — so a test built on
+    # it passes with the fix reverted and defends nothing. `{"hits": null}` from
+    # Algolia is a realistic response and raises TypeError, which is none of the
+    # three.
     def handler(request):
-        if "qbitai" in str(request.url):
-            return httpx2.Response(200, content=b'{"not": "a feed"}')
+        if "algolia" in str(request.url):
+            return httpx2.Response(200, content=b'{"hits": null}')
         return httpx2.Response(200, content=FEED)
 
     network(handler)
-    reports = asyncio.run(poll_once(db, [by_id("qbitai"), by_id("habr")]))
+    reports = asyncio.run(poll_once(db, [by_id("hn"), by_id("habr")]))
 
-    assert [r.source for r in reports] == ["qbitai", "habr"]
+    assert [r.source for r in reports] == ["hn", "habr"], \
+        "an unforeseen error may cost its own source and no other"
+    assert reports[0].state == "unparseable"
     assert reports[1].new > 0, "the source after the broken one still archived"
-    assert source_health(db)["qbitai"]["last_error"]
+    reason = source_health(db)["hn"]["last_error"] or ""
+    assert reason.startswith("unparseable:"), (
+        f"the reason has to survive the except that caught it; got {reason!r}")
+    assert "TypeError" in reason, (
+        f"a TypeError, a ValueError and an AttributeError are three different "
+        f"diagnoses and read identically without the class: {reason!r}")
 
 
 def test_a_pass_deadline_still_reports_every_source(db, network, monkeypatch):
@@ -292,6 +304,17 @@ def test_a_pass_deadline_still_reports_every_source(db, network, monkeypatch):
                                            "data_secrets"]
     skipped = [r for r in reports if r.state == "fetch-failed"]
     assert skipped, "a source that never got its request has to say so"
+    # And say why. "Out of time" and "the network is down" are different facts
+    # and read identically on the DOWN line, which prints last_error[:40], and
+    # in the CLI — where a failure saying nothing was fixed in this same range
+    # of commits.
+    from cablegram.store import source_health
+
+    why = source_health(db)
+    for report in skipped:
+        assert "deadline" in (why[report.source]["last_error"] or ""), (
+            f"{report.source} came back fetch-failed with "
+            f"{why[report.source]['last_error']!r}")
 
 
 # ── seventh review ──────────────────────────────────────────────────────────

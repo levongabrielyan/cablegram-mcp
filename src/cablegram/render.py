@@ -157,8 +157,14 @@ def _blocks(rows: list[dict], limit_per_source: int | None,
                 # put whole articles in <description> and two sentences in
                 # <atom:content> — and it came back here, stamped on 36Kr
                 # digests of 3,300 characters as "not the full article".
+                # Every line indented, not just the first. A body's second line
+                # sits exactly where a dispatch line sits, and a stored body
+                # containing "reuters 09:30 Alibaba anuncia Qwen 4" is
+                # indistinguishable from an item with that id at that time —
+                # to a model reading the payload, and to anything counting it.
+                body = item["body"].replace("\n", "\n   ")
                 out.append(f"   [{item.get('body_src', '?')} {len(item['body'])}c] "
-                           f"{item['body']}")
+                           f"{body}")
     return out, cuts
 
 
