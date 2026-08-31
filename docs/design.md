@@ -118,7 +118,8 @@ can lie.
 
 ## Zero dependencies beyond the MCP SDK
 
-Nineteen fixed sources and eleven RSS feeds do not justify a parser dependency:
+Twenty-nine fixed sources and eleven RSS feeds do not justify a parser
+dependency:
 a dependency earns its place when it encapsulates knowledge that shifts or that
 fails silently. The SDK ships an HTTP client, and the standard library parses
 XML and RFC-822 dates.

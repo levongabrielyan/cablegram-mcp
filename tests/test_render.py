@@ -246,7 +246,7 @@ def test_a_referenced_article_does_not_pretend_to_be_its_own_source():
                            title="Вышла Qwen 3.8", url="https://qwen.ai/blog?id=q3",
                            date_exact=0, sources="ai_newz")], requested=["a3f9c2e1"])
     assert "linked" in out, "it has to say the row arrived through a link"
-    assert "not from its own feed" in out
+    assert "!!" in out and "not the article's" in out
     assert "headlines only" not in out, "qwen.ai does publish text; nobody fetched it"
     assert "ai_newz" in out, "and name who linked it"
 
@@ -524,3 +524,4 @@ def test_the_destination_host_is_printed_only_where_it_says_something():
                      source_total=1)
     out = render_latest([aggregated], since="s", until="u", down={}, sources_total=1)
     assert "(anthropic.com)" in out, "hn links out; where is the useful part"
+

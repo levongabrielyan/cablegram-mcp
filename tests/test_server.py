@@ -492,3 +492,27 @@ async def test_the_headline_read_back_is_the_one_the_named_source_wrote():
         f"the reply names openai/en and prints a headline that is not openai's:\n{out}")
     assert "OpenAI暂停两周强化学习训练" not in out, (
         "qbitai's words, attributed to openai by everything around them")
+
+
+@pytest.mark.anyio
+async def test_every_place_that_states_a_version_states_the_same_one(server):
+    """Three of them, and they disagreed. `serverInfo.version` was empty, so a
+    client could not tell a build serving nineteen sources from one serving
+    twenty-nine; the header of every reply said `v0.1` while the package said
+    0.1.1; and nothing pinned either.
+
+    Compares them against each other and against the installed metadata, so it
+    holds at whatever the version becomes.
+    """
+    from cablegram import __version__
+    from cablegram.render import VERSION
+
+    assert __version__ and __version__ != "0+unknown", (
+        "the test suite runs against an installed package; a checkout on "
+        "PYTHONPATH alone is the one route the README does not offer")
+    assert server.version == __version__, "the handshake states the build"
+    assert VERSION == f"v{__version__}", "and so does every reply"
+
+    out = await call(server, "wire_latest", hours=24)
+    assert out.startswith(f"CABLEGRAM v{__version__} ")
+

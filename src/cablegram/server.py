@@ -27,6 +27,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
+from . import __version__
 from .schema import connect
 from .render import render_latest, render_read, render_search, render_sources
 from .poll import POLLABLE, poll_once
@@ -181,6 +182,9 @@ def build(rows_from=None) -> MCPServer:
     """
     server = MCPServer(
         name="cablegram",
+        # Empty in the handshake until now, so a client could not tell a build
+        # serving nineteen sources from one serving twenty-nine.
+        version=__version__,
         instructions=(
             f"Raw dispatches from {len(SOURCES)} tech, AI and Chinese/Russian sources, "
             "filtered by "
@@ -368,11 +372,11 @@ def build(rows_from=None) -> MCPServer:
             "the handful you actually need, not everything a listing offered. Whatever "
             "will not fit in max_tokens (default 12000) is named on a DEFERRED line "
             "rather than dropped, so a second call can pick it up.\n"
-            "An id that does not resolve is named in the reply rather than dropped, "
-            "with the reason for this mode: against the archive it means a mistyped "
-            "id or a different archive, and in live mode it means this process has "
-            "not fetched it, since nothing is kept between runs. Either way the "
-            "recovery is to re-run wire_latest or wire_search over the same window."
+            "An id that does not resolve is named in the reply rather than dropped. "
+            "Nothing is kept between runs, so an id resolves only while the call that "
+            "produced it is still in this process's cache: re-run wire_latest or "
+            "wire_search over the same window AND the same `sources` to get a current "
+            "one."
         ),
         annotations=READ_ONLY,
     )
@@ -385,7 +389,7 @@ def build(rows_from=None) -> MCPServer:
 
     @server.tool(
         name="wire_search",
-        title="Search the archive",
+        title="Search the sources",
         description=(
             "Search the headlines of every source that carried a story.\n"
             "WHAT IS BEING SEARCHED: this call fetches the sources and searches what "

@@ -1,7 +1,7 @@
 [project]
 name = "cablegram-mcp"
 version = "0.1.1"
-description = "Nineteen AI and tech sources in English, Chinese and Russian, read by a model so it knows what changed after its training cutoff."
+description = "Twenty-nine AI and tech sources in English, Chinese and Russian, read by a model so it knows what changed after its training cutoff."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"

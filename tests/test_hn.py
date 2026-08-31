@@ -110,9 +110,21 @@ def test_only_stories_are_requested():
 
 
 def test_the_page_size_stays_under_the_documented_cap():
-    """hitsPerPage above 1000 is silently capped rather than refused."""
-    assert "hitsPerPage=1000" not in search_url(since=0, rows=5000) or True
-    assert "hitsPerPage=100" in search_url(since=0, rows=100)
+    """Algolia caps hitsPerPage at 1000 silently rather than refusing, so asking
+    for more is asking for a number that will not be honoured — and the request
+    would then be describing a page size it does not get.
+
+    This assertion used to read `assert "hitsPerPage=1000" not in url or True`.
+    The left half claimed the opposite of the property (asking for 5000 does
+    produce hitsPerPage=1000, which is the correct behaviour) and the `or True`
+    meant it could not fail either way.
+    """
+    from cablegram.hn import MAX_ROWS
+
+    assert f"hitsPerPage={MAX_ROWS}" in search_url(since=0, rows=5000), \
+        "over the cap, the request asks for the cap"
+    assert "hitsPerPage=100" in search_url(since=0, rows=100), \
+        "under it, the request asks for what it wants"
 
 
 def test_the_poller_asks_for_the_whole_ceiling():

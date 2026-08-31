@@ -142,7 +142,9 @@ async def test_a_borrowed_headline_is_marked_in_live_mode_too(live):
     """
     await call(live, "wire_search", query="GLM", days=7, sources=["ai_newz"])
     body = await call(live, "wire_read", ids=[item_id("https://qbitai.com/glm5")])
-    assert "linked it, not from its own feed" in body
+    # The claim, not the sentence: an assertion on the exact prose is the
+    # `assert "CUT" in out` disease with better manners.
+    assert "!!" in body and "not the article's" in body
 
 
 

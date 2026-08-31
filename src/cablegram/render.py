@@ -23,13 +23,17 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
 from .sources import SOURCES, by_id
 from .store import is_down
 
 __all__ = ["render_latest", "render_read", "render_search", "render_sources",
            "estimate_tokens"]
 
-VERSION = "v0.1"
+# The build, in the first line of every reply. It was written here by hand and
+# said v0.1 while the package said 0.1.1, and nothing pinned it — so a reader
+# comparing two replies could not tell which build produced which.
+VERSION = f"v{__version__}"
 
 
 def estimate_tokens(text: str) -> int:
@@ -296,10 +300,10 @@ def render_read(rows: list[dict], *, requested: list[str],
             # Everything on the line above is borrowed from whoever linked it.
             # Left unmarked, a model answers "per the Russian channel ai_newz,
             # published on the 26th" about an article that outlet never touched.
-            out.append(f"!! reached the archive because {row.get('first_source')} linked "
-                       f"it, not from its own feed. The headline, language, source and "
-                       f"date are that post's, not the article's. Open `url` for the "
-                       f"real thing.")
+            out.append(f"!! this is here because {row.get('first_source')} linked it, "
+                       f"and nothing published it under its own feed. The headline, "
+                       f"language, source and date are that post's, not the "
+                       f"article's. Open `url` for the real thing.")
         elif not row.get("body"):
             # A fact about this item, which is all the renderer knows. Phrased as
             # a property of the source it was false for eleven of nineteen: openai
@@ -449,7 +453,7 @@ def render_sources(*, health: dict) -> str:
     ]
     out += [
         "",
-        "id               lg kind      tags                  last_ok          newest     state",
+        "id                 lg kind      tags                  last_ok          newest     state",
     ]
     now = datetime.now(timezone.utc)
     for source in SOURCES:
@@ -487,7 +491,7 @@ def render_sources(*, health: dict) -> str:
         # Printed as a fact rather than judged, because the right threshold is
         # per source — deepmind publishes every three days by nature.
         newest = (state.get("newest") or "-")[:10]
-        out.append(f"{source.id:16} {source.lang} {source.kind:9} {tags:21} "
+        out.append(f"{source.id:18} {source.lang} {source.kind:9} {tags:21} "
                    f"{last_ok:17}{newest:11}{status}{mark}")
     out.append("")
     # Imported here rather than at module scope: poll pulls in the HTTP stack,
