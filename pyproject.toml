@@ -1,6 +1,6 @@
 [project]
 name = "cablegram-mcp"
-version = "0.1.1"
+version = "0.2.0"
 description = "Twenty-nine AI and tech sources in English, Chinese and Russian, read by a model so it knows what changed after its training cutoff."
 readme = "README.md"
 requires-python = ">=3.12"

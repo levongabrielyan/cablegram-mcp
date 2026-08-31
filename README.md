@@ -32,12 +32,12 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.1.1 | 2026-08-31T09:43:12Z..2026-08-31T17:43:12Z | 6 of 535 items | 3/3 sources
-CUT   cls=2/16  data_secrets=2/3  hn=2/516   (newest kept)
+CABLEGRAM v0.2.0 | 2026-08-31T10:03:09Z..2026-08-31T18:03:09Z | 6 of 538 items | 3/3 sources
+CUT   cls=2/15  data_secrets=2/3  hn=2/520   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 2/16
+## cls zh early,finance 2/15
 -- 08-31
 f34c19515bb2 14:31 OpenAI广告业务上线约200天 年化营收规模突破10亿美元
 59768dd933bc 14:02 HBM现货价格飙至长协五倍：HBM4良率承压，长协锁产挤压现货供给
@@ -47,14 +47,14 @@ f34c19515bb2 14:31 OpenAI广告业务上线约200天 年化营收规模突破10�
 016ab99e8218 15:56 OpenAI закупает десятки тысяч Mac mini и Mac Studio для RL обучения агентов
 6454c66ae77d 14:03 До отправки рабочего документа в нейросеть 3… 2… 1… клик
 
-## hn en community,searchable 2/516
+## hn en community,searchable 2/520
 -- 08-31
-dac04d44395c 17:42 Agents Need Their Own UI (newsletter.cloudsquid.io)
-e8d75bd41e00 17:42 Maybe Dieting Fails Because Humans Need Fewer Calories Than We Think (greyenlightenment.com)
+d81b8756e5b5 18:00 AGI Society: AI and Labor Market Assessment Quiz (ask.agi-society.de)
+bb5ea2feff52 17:59 Slop: Six centuries, six technologies (pipe0.com)
 ```
 
-*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.2 seconds
-and 296 tokens. `CUT` says what was left out and how much there was — 535 items
+*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.8 seconds
+and 290 tokens. `CUT` says what was left out and how much there was — 538 items
 in that window, six printed; `3/3` is how many answered.*
 
 **What it costs.** A reply is priced by what the sources published, not by this
