@@ -220,8 +220,14 @@ def build(open_db=None) -> MCPServer:
                 not state.get("last_ok") or state["last_try"] >= state["last_ok"]
             ):
                 down[sid] = state["last_error"][:40]
+        # Healthy, polled, and absent from the blocks below because they
+        # published nothing in this window. Neither DOWN nor PENDING covers it,
+        # so seven sources vanished from a payload whose header still said
+        # 19/19 — and "openai was silent for 24h" is information, not a gap.
+        silent = sorted((wanted & pollable) - set(down)
+                        - {r["source"] for r in rows})
         return render_latest(rows, since=start, until=_iso(until), down=down,
-                             sources_total=len(wanted),
+                             sources_total=len(wanted), silent=silent,
                              no_adapter=sorted(wanted - pollable), detail=detail,
                              unknown=unknown, limit_per_source=limit_per_source,
                              max_tokens=max_tokens)

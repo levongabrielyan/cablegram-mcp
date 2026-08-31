@@ -169,6 +169,7 @@ def render_latest(
     down: dict[str, str],
     sources_total: int,
     no_adapter: list[str] | None = None,
+    silent: list[str] | None = None,
     unknown: list[str] | None = None,
     detail: str = "headlines",
     limit_per_source: int | None = None,
@@ -199,6 +200,13 @@ def render_latest(
             # needs attention under the ones that are simply not built yet.
             head.append("PENDING " + " ".join(sorted(no_adapter))
                         + "  (no adapter in this build: never fetched, hold nothing)")
+        if silent:
+            # A third fact, and the daily one. DOWN and PENDING were built for
+            # the rare cases; a healthy source that published nothing simply
+            # stopped appearing, which this module's own docstring says cannot
+            # happen: missing from the list, it cannot be known to exist.
+            head.append("SILENT " + " ".join(silent)
+                        + "  (answered, published nothing in this window)")
         if unknown:
             head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
                         f"tag or language. Call wire_sources for the catalogue.")
@@ -408,7 +416,7 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
         f"CABLEGRAM {VERSION} | {len(SOURCES)} sources",
         f"ARCHIVE {_tilde(archive_path)} | {archive_items} items | oldest {archive_start}",
         "",
-        "id               lg kind      tags                     last_ok        state",
+        "id               lg kind      tags                  last_ok          newest     state",
     ]
     now = datetime.now(timezone.utc)
     for source in SOURCES:
@@ -437,8 +445,15 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
             status += f"  {state['wrote_failed']} entries unarchived"
         tags = ",".join(source.tags)
         mark = "  fragile" if source.fragile else ""
-        out.append(f"{source.id:16} {source.lang} {source.kind:9} {tags:24} "
-                   f"{last_ok:14} {status}{mark}")
+        # The date of the newest item held, beside the date the server last
+        # answered. They are different facts and only both together separate a
+        # quiet source from a dead one: a frozen feed answers 200 forever, so OK
+        # with an old `newest` is the shape of a source nobody has noticed died.
+        # Printed as a fact rather than judged, because the right threshold is
+        # per source — deepmind publishes every three days by nature.
+        newest = (state.get("newest") or "-")[:10]
+        out.append(f"{source.id:16} {source.lang} {source.kind:9} {tags:21} "
+                   f"{last_ok:17}{newest:11}{status}{mark}")
     out.append("")
     # Imported here rather than at module scope: poll pulls in the HTTP stack,
     # and rendering has no business depending on it.
@@ -450,6 +465,12 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
     if any(s.kind not in POLLABLE for s in SOURCES):
         out.append("Sources with no adapter yet are listed and never polled: they are "
                    "known to exist, and known to be empty.")
+    out.append("last_ok is when the server answered; newest is the date of the most "
+               "recent item it holds.")
+    out.append("A source can answer for months after it stopped publishing: OK beside "
+               "an old newest is")
+    out.append("unknown, not calm. Rates differ — some of these publish twice a week by "
+               "nature.")
     if any(s.fragile for s in SOURCES):
         out.append("fragile = reverse-engineered rather than published. It works today "
                    "and may stop without notice; treat its silence as unknown.")

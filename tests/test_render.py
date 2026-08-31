@@ -450,3 +450,19 @@ def test_one_body_too_large_is_still_served():
     out = render_read([row(body="x" * 40000)], requested=["a3f9c2e1"], max_tokens=100)
     assert "a3f9c2e1" in out
     assert "DEFERRED" not in out
+
+
+def test_a_source_that_answered_and_published_nothing_is_named():
+    """DOWN and PENDING were built for the rare cases. The daily one — healthy,
+    polled, nothing to say — had no line at all, so seven sources vanished from
+    a payload whose header still read 19/19. This module's own docstring says
+    that cannot happen: missing from the list, a source cannot be known to
+    exist, and its absence reads as nothing having happened there.
+
+    "openai was silent for 24 hours" is information about openai. It was thrown
+    away."""
+    out = render_latest([row(source="qbitai")], since="s", until="u", down={},
+                        sources_total=19, silent=["deepmind", "openai"])
+    assert "SILENT" in out
+    assert "openai" in out and "deepmind" in out
+    assert "openai" not in out.split("SILENT")[0], "not confused with DOWN"

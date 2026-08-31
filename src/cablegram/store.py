@@ -378,8 +378,17 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
     # disk. meta is (k, v) and cannot change shape.
     ceilings = {row["k"].split(":", 1)[1]: row["v"] for row in
                 db.execute("SELECT k, v FROM meta WHERE k LIKE 'ceiling:%'")}
+    # The newest thing each source has actually published, which is a different
+    # question from whether it answered. `last_ok` asks "did the server reply?";
+    # a feed frozen for a year replies 200 forever. Measured on the catalogue:
+    # productradar answers OK and its newest item is 25 days old, ten items in
+    # 720 days. No column needed — the archive already knows.
+    newest = {row["source"]: row["newest"] for row in db.execute(
+        "SELECT s.source, MAX(i.published) AS newest"
+        " FROM sighting s JOIN item i ON i.id = s.item_id GROUP BY s.source")}
     return {
-        row["source"]: dict(row, at_ceiling=ceilings.get(row["source"]))
+        row["source"]: dict(row, at_ceiling=ceilings.get(row["source"]),
+                            newest=newest.get(row["source"]))
         for row in db.execute(
             "SELECT source,"
             "       MAX(last_ok)    AS last_ok,"
