@@ -21,6 +21,7 @@ import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from math import ceil
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -325,8 +326,19 @@ def build(open_db=None) -> MCPServer:
     ) -> str:
         """since: ISO-8601 UTC, wins over hours. sources: ids, tags or languages."""
         until = _now()
-        start = (_parse_since(since) if since
-                 else _iso(until - timedelta(hours=_positive("hours", hours, "hours"))))
+        if since:
+            start = _parse_since(since)
+            # The window the caller asked for, not the default. Hacker News puts
+            # the window in its query and serves up to a thousand rows, so
+            # `since` reaching thirty days back while 24 was handed to the
+            # poller answered one day and printed a thirty-day header over it:
+            # both calls came back with the same 906 items. wire_search already
+            # derives this; wire_latest is where `since` lives.
+            span = until - datetime.strptime(start, "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=timezone.utc)
+            hours = max(hours, ceil(span.total_seconds() / 3600))
+        else:
+            start = _iso(until - timedelta(hours=_positive("hours", hours, "hours")))
         if detail not in _DETAIL:
             # The only failure on this surface that disguises itself as a
             # better answer: detail="Full" fell through to headlines, so the

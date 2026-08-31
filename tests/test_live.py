@@ -225,3 +225,34 @@ async def test_a_search_with_a_bad_selector_fetches_nothing_either(live, monkeyp
     out = await call(live, "wire_search", query="GLM", sources=["qbitia"])
     assert "UNKNOWN SELECTOR" in out
     assert fetched == []
+
+
+@pytest.mark.anyio
+async def test_since_widens_the_window_that_is_asked_for(live, monkeypatch):
+    """The header printed the window the caller asked for and the poller was
+    handed the default. Measured live against Hacker News, which takes the
+    window in its query and serves up to a thousand rows:
+
+        since=2026-08-01  ->  header 2026-08-01..2026-08-31 | 906 items
+        hours=24          ->  header 2026-08-30..2026-08-31 | 906 items
+
+    The same 906. A thirty-day header over one day of data, and nothing in the
+    reply distinguishes the two. wire_search already derived this from `days`;
+    wire_latest is the tool `since` belongs to.
+    """
+    import cablegram.server as server_mod
+
+    asked = []
+    real = server_mod.poll_once
+
+    async def spy(db, sources, **kwargs):
+        asked.append(kwargs.get("window_hours"))
+        return await real(db, sources, **kwargs)
+
+    monkeypatch.setattr(server_mod, "poll_once", spy)
+
+    await call(live, "wire_latest", since="2026-08-01T00:00:00Z", sources=["qbitai"])
+    assert asked, "the call has to have polled"
+    assert asked[0] >= 24 * 25, (
+        f"a window reaching back to 2026-08-01 asked the sources for "
+        f"{asked[0]}h; the header will claim the whole span either way")
