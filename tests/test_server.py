@@ -40,6 +40,15 @@ def server(tmp_path):
                   fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
     record_attempt(db, Fetched("qbitai", url=by_id("qbitai").url, ok=True, body=b"x",
                                status=200, fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
+    # hn too, because it has items here. Without it the fixture served a reply
+    # declaring `hn=never polled` directly above hn's own block and headline,
+    # and all twenty-eight tests in this file validated against that payload.
+    # The poller cannot produce that state — record_attempt runs before storing
+    # and nothing deletes source_state — so it was a defect in the test data,
+    # and it kept the one assertion that would have caught it from being
+    # written: it would have been born red.
+    record_attempt(db, Fetched("hn", url=by_id("hn").url, ok=True, body=b"x",
+                               status=200, fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
     # deepmind, not cls: cls has no adapter in this build, so it is PENDING
     # rather than DOWN and could never record a fetch error in the first place.
     #
@@ -425,3 +434,52 @@ async def test_every_listing_names_a_mode_and_they_name_the_same_one(server):
         modes[tool] = named.group(1)
     assert len(set(modes.values())) == 1, (
         f"one process, one source of rows, two answers: {modes}")
+
+
+_BLOCK = re.compile(r"^## (\S+) ", re.M)
+# Absolute claims: "hold nothing", "published nothing in this window", "never
+# polled". DOWN-with-a-reason is deliberately excluded — "failed today" and
+# "holds items from yesterday that are inside the window" are both true at once,
+# every day.
+_ABSOLUTE = re.compile(r"^(PENDING|SILENT) +(\S.*?)  \(", re.M)
+_NEVER = re.compile(r"(\S+)=never polled")
+
+
+@pytest.mark.anyio
+async def test_a_source_the_header_says_is_holding_nothing_has_no_block(server):
+    """The one header-versus-body contradiction the internal-consistency block
+    claims to cover and does not.
+
+    The false conclusion it stops: a model reads `SILENT openai`, reports that
+    OpenAI published nothing today, and OpenAI's headlines are printed six lines
+    below in the same reply. Both halves came from one call and only one can be
+    true.
+
+    Nothing exercised the expression that builds `silent`. render_latest takes
+    it as a parameter, so every test of it hands over a list already known to be
+    right; dropping a term from the set in server.py left the whole suite green.
+
+    Names no expected value — it compares one region of the payload against
+    another — so it cannot go stale, and it covers PENDING and never-polled on
+    the same terms.
+    """
+    out = await call(server, "wire_latest", hours=24)
+
+    printed = set(_BLOCK.findall(out))
+    claimed = {name: label for label, ids in _ABSOLUTE.findall(out)
+               for name in ids.split()}
+    claimed.update({name: "never polled" for name in _NEVER.findall(out)})
+    clash = {s: claimed[s] for s in printed & claimed.keys()}
+    assert not clash, (
+        f"the header files {clash} as holding nothing in this window, and the "
+        f"body prints a block of dispatches for each of them")
+
+
+@pytest.mark.anyio
+async def test_a_source_with_no_recorded_attempt_is_named_as_never_polled(server):
+    """The other half. A source nobody has fetched holds nothing, which is a
+    different fact from a source that holds nothing, and the branch that says so
+    fires for most sources in most replies — twenty of twenty-two here. Deleting
+    it left the suite green."""
+    out = await call(server, "wire_latest", hours=24)
+    assert "openai=never polled" in out
