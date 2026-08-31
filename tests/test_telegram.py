@@ -233,3 +233,45 @@ def test_a_very_long_post_is_capped_like_a_feed_entry():
             + "x" * (MAX_FIELD * 4) + '</div></div>')
     entry = parse_channel(html, channel="ai_newz")[0]
     assert len(entry.body) <= MAX_FIELD and len(entry.title) <= MAX_FIELD
+
+
+def test_a_singly_escaped_href_is_not_expanded_into_an_entity():
+    """Telegram does not escape consistently: three of the six channels send
+    `&amp;amp;` and techsparks sends `&amp;`.
+
+    HTMLParser undoes one level, so a second html.unescape was added to finish
+    the job — and on the singly-escaped one it expands HTML5 legacy entities
+    that need no semicolon. `?id=42&copy=1` became `?id=42©=1`: a different id
+    for the same URL, so the two channels can never cross. That is the defect
+    the escaping fix existed to remove, in the other direction, in the module
+    whose ids are frozen.
+    """
+    from cablegram.urls import item_id
+
+    def link(escaped):
+        page = ('<div class="tgme_widget_message" data-post="c/1">'
+                '<time datetime="2026-08-30T10:00:00+00:00">x</time>'
+                '<div class="tgme_widget_message_text js-message_text">see '
+                f'<a href="https://e.example/news?id=42{escaped}copy=1">this</a>'
+                '</div></div>')
+        return parse_channel(page, channel="c")[0].links[0]
+
+    once = link("&amp;")
+    twice = link("&amp;amp;")
+    assert once == twice == "https://e.example/news?id=42&copy=1"
+    assert item_id(once) == item_id(twice), "one URL, one id, whoever linked it"
+
+
+def test_tracking_parameters_still_survive_the_decode_to_be_dropped_later():
+    """The decode has to leave a real `&` behind, or normalise() sees one giant
+    parameter and the denylist never matches: `amp;utm_medium` does not start
+    with `utm_`, so every campaign produced a different id."""
+    from cablegram.urls import normalise
+
+    page = ('<div class="tgme_widget_message" data-post="c/2">'
+            '<time datetime="2026-08-30T10:00:00+00:00">x</time>'
+            '<div class="tgme_widget_message_text js-message_text">'
+            '<a href="https://shop.example/x?utm_campaign=c1&amp;amp;utm_content=v2'
+            '&amp;amp;fbclid=z">link</a></div></div>')
+    assert normalise(parse_channel(page, channel="c")[0].links[0]) == \
+        "https://shop.example/x"

@@ -52,6 +52,32 @@ def channel_url(channel: str, before: int | None = None) -> str:
     return f"{url}?before={before}" if before else url
 
 
+def _decode_href(href: str) -> str:
+    """Undo Telegram's ampersand escaping without touching anything else.
+
+    Telegram does not escape consistently: measured across the six channels,
+    three hrefs arrive double-escaped (`&amp;amp;`) and one — techsparks —
+    escaped once. HTMLParser undoes one level, so a second `html.unescape` was
+    added to finish the job. On the singly-escaped one that second pass expands
+    HTML5 legacy entities that need no semicolon, and `?id=42&copy=1` becomes
+    `?id=42©=1`:
+
+        double-escaped channel -> ...?id=42&copy=1   id 1ddc73399ca4
+        singly-escaped channel -> ...?id=42©=1       id 76ead8237461
+
+    Two ids for one URL, so the two channels never cross — the exact defect the
+    escaping fix was written to remove, reappearing in the other direction, in
+    the module whose ids are frozen. `rss._text` documents this danger and
+    refuses to unescape at all for the same reason.
+
+    Collapsing `&amp;` to `&` until it stops changing handles any depth of
+    escaping and can expand nothing else.
+    """
+    while "&amp;" in href:
+        href = href.replace("&amp;", "&")
+    return href
+
+
 class _ChannelParser(HTMLParser):
     """Pulls out (post_id, iso_datetime, text) for each message on the page.
 
@@ -94,10 +120,7 @@ class _ChannelParser(HTMLParser):
             self._chunks.append("\n")
 
         elif tag == "a" and self._text_depth is not None and self._current is not None:
-            # Telegram escapes ampersands twice, so one more pass is needed
-            # here — the opposite of the rule in rss._text, and for the opposite
-            # reason: unescape as many times as the producer escaped.
-            href = html_module.unescape((attributes.get("href") or "").strip())
+            href = _decode_href((attributes.get("href") or "").strip())
             if href.startswith("http") and "t.me/" not in href:
                 self._current.setdefault("links", []).append(href)
 
