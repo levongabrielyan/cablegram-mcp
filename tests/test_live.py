@@ -256,3 +256,22 @@ async def test_since_widens_the_window_that_is_asked_for(live, monkeypatch):
     assert asked[0] >= 24 * 25, (
         f"a window reaching back to 2026-08-01 asked the sources for "
         f"{asked[0]}h; the header will claim the whole span either way")
+
+
+@pytest.mark.anyio
+async def test_an_unresolvable_id_is_explained_by_something_that_can_happen(live):
+    """Both causes the message named were impossible in this mode. There is no
+    archive to prune from — live mode holds no file — and nothing in this
+    project prunes anything in either mode: no retention window, and the only
+    DELETE is a trigger. Nobody had reinstalled the server either.
+
+    It is the one message a model has to act on alone, and it was describing
+    machinery that does not exist while withholding the condition that does:
+    the id is not in this process's cache. The recovery step also needs the same
+    `sources`, not just the same window, because a live call only caches what it
+    was asked to fetch.
+    """
+    out = await call(live, "wire_read", ids=["deadbeef0000"])
+    assert "pruned" not in out and "reinstalled" not in out
+    assert "this session" in out and "cache" in out
+    assert "`sources`" in out, "re-running with a different selection will not help"

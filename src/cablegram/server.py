@@ -400,8 +400,11 @@ def build(open_db=None) -> MCPServer:
             "the handful you actually need, not everything a listing offered. Whatever "
             "will not fit in max_tokens (default 12000) is named on a DEFERRED line "
             "rather than dropped, so a second call can pick it up.\n"
-            "Ids not in the archive are named in the reply rather than dropped: "
-            "re-run wire_latest or wire_search for the same window to get current ones."
+            "An id that does not resolve is named in the reply rather than dropped, "
+            "with the reason for this mode: against the archive it means a mistyped "
+            "id or a different archive, and in live mode it means this process has "
+            "not fetched it, since nothing is kept between runs. Either way the "
+            "recovery is to re-run wire_latest or wire_search over the same window."
         ),
         annotations=READ_ONLY,
     )
@@ -409,13 +412,13 @@ def build(open_db=None) -> MCPServer:
         if archive_mode:
             with closing(open_db()) as db:
                 return render_read(items_by_ids(db, ids), requested=ids,
-                                   max_tokens=max_tokens)
+                                   mode="archive", max_tokens=max_tokens)
         # Live mode holds no file, so an id can only be resolved against what
         # this process has already fetched. Anything else is named on the
         # UNKNOWN line, which already tells the model to re-run the listing —
         # the recovery path was written for exactly this and needed no change.
         return render_read([seen[i] for i in ids if i in seen], requested=ids,
-                           max_tokens=max_tokens)
+                           mode="live", max_tokens=max_tokens)
 
     @server.tool(
         name="wire_search",

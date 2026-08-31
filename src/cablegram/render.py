@@ -255,7 +255,7 @@ def render_latest(
             f"`sources`.\n" + text)
 
 
-def render_read(rows: list[dict], *, requested: list[str],
+def render_read(rows: list[dict], *, requested: list[str], mode: str = "archive",
                 max_tokens: int = 12000) -> str:
     found = {row["id"] for row in rows}
     missing = [i for i in requested if i not in found]
@@ -263,12 +263,23 @@ def render_read(rows: list[dict], *, requested: list[str],
     header = [f"CABLEGRAM read | {len(requested)} requested | {len(rows)} resolved "
               f"| {len(missing)} unknown"]
     if missing:
-        # The only route to autonomous recovery, so it must name something that
-        # exists: it used to suggest urls=[...], which wire_read does not accept.
-        header.append(f"UNKNOWN {' '.join(missing)} -> not in the archive (pruned, "
-                      f"or server reinstalled).")
+        # The only route to autonomous recovery, so every clause has to be
+        # something that can actually happen. It used to suggest urls=[...],
+        # which wire_read does not accept; then it blamed pruning, which nothing
+        # in this project does — there is no retention window and no DELETE
+        # outside one trigger; and in live mode it blamed a reinstall while
+        # naming an archive that the build is not reading at all.
+        header.append(f"UNKNOWN {' '.join(missing)} -> " + (
+            "not fetched in this session. Live mode keeps no file: an id "
+            "resolves only while it is still in this process's cache, which "
+            "holds the last few thousand items and starts empty."
+            if mode == "live" else
+            "not in this archive. Nothing here prunes, so this is a mistyped id "
+            "or an id from a different archive."))
         header.append("        Re-run wire_latest or wire_search for the same window "
-                      "to get current ids.")
+                      + ("and the same `sources` — an id from a call that asked for "
+                         "other sources will not come back." if mode == "live"
+                         else "to get current ids."))
     header.append("---")
 
     chunks: list[tuple[str, list[str]]] = []
