@@ -88,9 +88,18 @@ def _header_cross(rows: list[dict]) -> list[str]:
     return lines
 
 
-def _item_line(row: dict) -> str:
+def _item_line(row: dict, links_out: bool = False) -> str:
+    """One dispatch. The destination host only where it says something.
+
+    `target_host` is written by whoever archived the item first, and a linked
+    article keeps it after its own source publishes it — so `Previewing the
+    Model Hardware Standard (anthropic.com)` appeared under anthropic's own
+    block. Measured: 71 sightings carry a host from a source that does not link
+    out. Whether it is worth printing is a property of the source doing the
+    listing, which is what the field was added for.
+    """
     mark = "" if row.get("date_exact", 1) else "~"
-    host = f" ({row['target_host']})" if row.get("target_host") else ""
+    host = f" ({row['target_host']})" if links_out and row.get("target_host") else ""
     return f"{mark}{row['id']} {_time(row['published'])} {row['title']}{host}"
 
 
@@ -149,7 +158,7 @@ def _blocks(rows: list[dict], limit_per_source: int | None,
             if _day(item["published"]) != day:
                 day = _day(item["published"])
                 out.append(f"-- {day}")
-            out.append(_item_line(item))
+            out.append(_item_line(item, links_out=bool(source and source.aggregator)))
             if detail == "full" and item.get("body"):
                 # The element and the size, never a verdict. Deciding "full" or
                 # "teaser" from the tag name was removed from the parser in an

@@ -581,3 +581,26 @@ def test_a_body_line_cannot_be_mistaken_for_a_dispatch():
         f"one:\n{out}")
     head = int(re.search(r"\| (\d+) of", out).group(1))
     assert head == printed_items(out)
+
+
+def test_the_destination_host_is_printed_only_where_it_says_something():
+    """`target_host` is written by whoever archived the item first, and
+    _record_reference writes it for every linked article regardless of whether
+    the source links out. The improving UPDATE that hands the item to its own
+    feed does not clear it, so `Previewing the Model Hardware Standard
+    (anthropic.com)` came out under anthropic's own block — 71 such sightings in
+    the archive.
+
+    Hacker News is the source the field exists for: every one of its headlines
+    points somewhere else, and where is the useful part.
+    """
+    linked = row(id="a" * 12, source="anthropic", target_host="anthropic.com",
+                 source_total=1)
+    out = render_latest([linked], since="s", until="u", down={}, sources_total=1)
+    assert "(anthropic.com)" not in out, (
+        f"anthropic does not link out; the host repeats its own name:\n{out}")
+
+    aggregated = row(id="b" * 12, source="hn", target_host="anthropic.com",
+                     source_total=1)
+    out = render_latest([aggregated], since="s", until="u", down={}, sources_total=1)
+    assert "(anthropic.com)" in out, "hn links out; where is the useful part"
