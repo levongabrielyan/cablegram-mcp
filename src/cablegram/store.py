@@ -372,8 +372,14 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
     with five endpoints is alive if any of them answered, and its most recent
     error is worth showing even when another endpoint is fine.
     """
+    # `at_ceiling` lives in meta rather than in a column of its own: _seal
+    # compares the shape of the schema and refuses an archive whose columns
+    # moved, so adding one to report a flag would kill every archive already on
+    # disk. meta is (k, v) and cannot change shape.
+    ceilings = {row["k"].split(":", 1)[1]: row["v"] for row in
+                db.execute("SELECT k, v FROM meta WHERE k LIKE 'ceiling:%'")}
     return {
-        row["source"]: dict(row)
+        row["source"]: dict(row, at_ceiling=ceilings.get(row["source"]))
         for row in db.execute(
             "SELECT source,"
             "       MAX(last_ok)    AS last_ok,"

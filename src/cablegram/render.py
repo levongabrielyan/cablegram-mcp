@@ -415,7 +415,7 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
         state = health.get(source.id, {})
         last_ok = (state.get("last_ok") or "-")[:16].replace("T", " ")
         if state.get("last_error") and (
-            not state.get("last_ok") or (state.get("last_try") or "") > state["last_ok"]
+            not state.get("last_ok") or (state.get("last_try") or "") >= state["last_ok"]
         ):
             status = f"FAIL {state['last_error'][:28]}"
         elif state.get("last_ok"):
@@ -427,6 +427,14 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
             status = f"STALE {hours}h" if hours >= 6 else "OK"
         else:
             status = "never polled"
+        # Both of these were stored by the poller and read by nobody, so a pass
+        # that downloaded fine and then archived nothing looked identical to a
+        # quiet day. Compared against last_write so the mark is about the most
+        # recent pass rather than a permanent tombstone.
+        if state.get("at_ceiling") and state["at_ceiling"] == state.get("last_write"):
+            status += "  AT CEILING (returned all it can; there may be more)"
+        if state.get("wrote_failed"):
+            status += f"  {state['wrote_failed']} entries unarchived"
         tags = ",".join(source.tags)
         mark = "  fragile" if source.fragile else ""
         out.append(f"{source.id:16} {source.lang} {source.kind:9} {tags:24} "

@@ -69,6 +69,23 @@ def _request_url(source: Source, since: int) -> str:
     return source.url
 
 
+def _mark_failed(db: sqlite3.Connection, fetched, source: Source, why: str) -> None:
+    """Record a failure that happened after the download succeeded.
+
+    Everything past the fetch — a rejected signature, a document that will not
+    parse, a batch that half-writes — was stored in `wrote_failed` and read by
+    nobody. cls.cn answers a bad signature with HTTP 200 and errno in the
+    envelope, exactly as its own module documents, and the result was
+    `wire_sources: cls … OK` beside `wire_latest: 1/1 sources | 0 items`. A
+    model reads that as a quiet source.
+
+    record_attempt(ok=False) already does the right thing: it leaves `last_ok`
+    alone so the silence stays visible, keeps the validators, and writes the
+    reason — which until now was caught and discarded.
+    """
+    record_attempt(db, replace(fetched, ok=False, url=source.url, error=why[:200]))
+
+
 async def poll_once(
     db: sqlite3.Connection,
     sources: list[Source] | None = None,
@@ -139,11 +156,18 @@ async def poll_once(
                                         channel=source.id)
             else:
                 entries = parse_feed(fetched.body)
-        except (ValueError, ET.ParseError, json.JSONDecodeError) as exc:
+        except Exception as exc:
+            # Every exception, not the three that were foreseen. A float
+            # `article_time` raises OverflowError, a null one TypeError, a hits
+            # object that is not a list AttributeError — and any of them tore
+            # down the whole pass: measured, nineteen pollable sources left
+            # eight with recorded state and eleven with no trace at all.
+            #
             # The download worked and the parse did not. Both facts matter, and
             # a source answering with broken XML is not a source with no news.
             report = StoreReport(source.id, state="unparseable", failed=1)
             record_write(db, report, url=source.url, at=now)
+            _mark_failed(db, fetched, source, f"unparseable: {exc}")
             reports.append(report)
             continue
 
@@ -154,11 +178,25 @@ async def poll_once(
             # prevent, in the case most likely to occur.
             report = StoreReport(source.id, state="parsed-empty", failed=1)
             record_write(db, report, url=source.url, at=now)
+            _mark_failed(db, fetched, source,
+                         "parsed-empty: valid document, no entries")
             reports.append(report)
             continue
 
         report = store_entries(db, source, entries, fetched_at=now)
         report.at_ceiling = len(entries) >= _ceiling(source)
+        if report.at_ceiling:
+            # Recorded in `meta`, which is (k, v) and cannot change shape.
+            # source_state has no room for it and _seal refuses an archive whose
+            # columns moved, so a new column would kill every archive in
+            # existence to report one flag.
+            with db:
+                db.execute("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)",
+                           (f"ceiling:{source.id}", now))
+        if report.failed:
+            _mark_failed(db, fetched, source,
+                         f"{report.failed} of {len(entries)} entries could not be "
+                         f"archived")
         record_write(db, report, url=source.url, at=now)
         reports.append(report)
 

@@ -222,3 +222,50 @@ def test_a_source_at_its_ceiling_says_so(db, network):
 
     reports = asyncio.run(poll_once(db, [by_id("cls")]))
     assert reports[0].at_ceiling is True
+
+
+# ── what happens after the download has to reach the tools ───────────────────
+
+def test_a_source_that_answered_and_then_failed_to_parse_is_reported_down(db, network):
+    """cls.cn answers a rejected signature with HTTP 200 and errno in the
+    envelope — its own module documents exactly this — so the download succeeds
+    and everything after it fails.
+
+    `unparseable`, `parsed-empty` and `failed` were written to source_state and
+    read by no renderer, and the exception message was caught and discarded. The
+    result was `wire_sources: cls … OK` beside `wire_latest: 1/1 sources | 0
+    items`, which a model reads as a quiet source. This is the failure the whole
+    project is built to prevent, in the one source most likely to break.
+    """
+    from cablegram.store import source_health
+
+    network(lambda request: httpx2.Response(200, content=b"not xml at all"))
+    reports = asyncio.run(poll_once(db, [by_id("qbitai")]))
+
+    assert reports[0].state == "unparseable"
+    state = source_health(db)["qbitai"]
+    assert state["last_error"], "the reason has to survive the except that caught it"
+    assert state["last_try"] >= state["last_ok"] or not state["last_ok"], (
+        "a failure recorded in the same pass as its download must still register")
+
+
+def test_an_unforeseen_parser_error_costs_one_source_not_the_pass(db, network):
+    """Only ValueError, ParseError and JSONDecodeError were caught. A float
+    `article_time` raises OverflowError, a null one TypeError, a hits object
+    that is not a list AttributeError — and any of them tore the pass down:
+    measured, nineteen pollable sources left eight with recorded state and
+    eleven with no trace at all, which is worse than the bug it hid.
+    """
+    from cablegram.store import source_health
+
+    def handler(request):
+        if "qbitai" in str(request.url):
+            return httpx2.Response(200, content=b'{"not": "a feed"}')
+        return httpx2.Response(200, content=FEED)
+
+    network(handler)
+    reports = asyncio.run(poll_once(db, [by_id("qbitai"), by_id("habr")]))
+
+    assert [r.source for r in reports] == ["qbitai", "habr"]
+    assert reports[1].new > 0, "the source after the broken one still archived"
+    assert source_health(db)["qbitai"]["last_error"]

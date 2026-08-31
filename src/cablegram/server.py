@@ -212,7 +212,12 @@ def build(open_db=None) -> MCPServer:
             if not state:
                 down[sid] = "never polled"
             elif state.get("last_error") and (
-                not state.get("last_ok") or state["last_try"] > state["last_ok"]
+                # `>=`, not `>`: a pass that downloads and then fails records
+                # both attempts with the same `fetched_at`, so a strict compare
+                # never fired and the failure stayed invisible. Safe, because a
+                # success clears `last_error`, so this can only be true after
+                # one.
+                not state.get("last_ok") or state["last_try"] >= state["last_ok"]
             ):
                 down[sid] = state["last_error"][:40]
         return render_latest(rows, since=start, until=_iso(until), down=down,
