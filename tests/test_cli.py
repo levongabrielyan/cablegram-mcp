@@ -57,13 +57,14 @@ def test_every_source_failing_exits_non_zero(reports, tmp_path, monkeypatch):
 def test_sources_lists_them_all(capsys):
     assert main(["sources"]) == 0
     out = capsys.readouterr().out
-    assert "19 sources" in out
+    from cablegram.sources import SOURCES
+    assert f"{len(SOURCES)} sources" in out
 
 
 def test_an_unknown_selector_does_not_poll_everything(reports, capsys, tmp_path, monkeypatch):
     """`or None` turned the empty tuple from a typo into "all of them".
     sources.py has a test defending exactly the opposite principle, and one line
-    in the CLI undid it — so `cablegram poll typo` hit all nineteen."""
+    in the CLI undid it — so `cablegram poll typo` hit every source."""
     monkeypatch.setenv("CABLEGRAM_DB", str(tmp_path / "a.db"))
     reports["reports"] = []
 

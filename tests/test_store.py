@@ -257,10 +257,11 @@ def test_a_failed_entry_is_counted_not_hidden(db):
 # ── the first sighting should not freeze a worse version of the item ─────────
 
 def test_a_real_date_replaces_a_guessed_one(db):
-    """productradar carries no date, HN carries the real one, same URL. First-in
+    """A sitemap entry under a build stamp carries no date, HN carries the
+    real one, same URL. First-in
     wins means the item keeps '~approximate' for life and hours= filtering stays
     wrong — with the exact date sitting right there, never to be served again."""
-    store_entries(db, by_id("productradar"), [entry(published=None)], fetched_at=NOW)
+    store_entries(db, by_id("anthropic"), [entry(published=None)], fetched_at=NOW)
     store_entries(db, by_id("hn"), [entry(published=PUB)], fetched_at=NOW)
 
     row = rows(db)[0]
@@ -269,7 +270,7 @@ def test_a_real_date_replaces_a_guessed_one(db):
 
 
 def test_a_body_fills_in_where_there_was_none(db):
-    store_entries(db, by_id("productradar"), [entry(body=None, body_src=None)], fetched_at=NOW)
+    store_entries(db, by_id("anthropic"), [entry(body=None, body_src=None)], fetched_at=NOW)
     store_entries(db, by_id("hn"), [entry(body="the whole article", body_src="content:encoded")],
                   fetched_at=NOW)
     row = rows(db)[0]
@@ -471,7 +472,7 @@ def test_a_healthy_poll_clears_a_previous_write_failure(db):
 
 def test_a_linked_article_is_archived_and_credited_to_the_channel(db):
     """The decision this implements: a channel that links an article has carried
-    that story. Without it, six of nineteen sources can never cross with
+    that story. Without it, the six Telegram channels can never cross with
     anything, because their own URL is the permalink of the post."""
     linked = "https://openai.com/index/glm5"
     post = Entry("GLM-5 вышла", "https://t.me/ai_newz/1", PUB, "текст", "message",

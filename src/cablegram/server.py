@@ -36,7 +36,7 @@ __all__ = ["build", "serve", "main"]
 
 # One pass has to finish inside a tool call, and the theoretical worst case
 # without a bound is 130s. Forty-five is comfortably above the ~30s a full
-# nineteen-source pass measures, and whatever has not answered by then is
+# full pass measures, and whatever has not answered by then is
 # reported DOWN rather than waited for.
 LIVE_DEADLINE = 45.0
 
@@ -182,7 +182,8 @@ def build(open_db=None) -> MCPServer:
     server = MCPServer(
         name="cablegram",
         instructions=(
-            "Raw dispatches from 19 tech, AI and Chinese/Russian sources, filtered by "
+            f"Raw dispatches from {len(SOURCES)} tech, AI and Chinese/Russian sources, "
+            "filtered by "
             "date and never ranked. You are the editor: this server brings the cables, "
             "you decide what matters. Headlines are never translated — each carries its "
             "language."
@@ -236,7 +237,8 @@ def build(open_db=None) -> MCPServer:
         name="wire_latest",
         title="Latest dispatches",
         description=(
-            "What 19 tech/AI sources published in a time window, grouped by source, "
+            f"What {len(SOURCES)} tech/AI sources published in a time window, grouped "
+            "by source, "
             "newest first within each. English, Chinese and Russian, untranslated.\n"
             "Filtered by DATE ONLY — never ranked, never scored. The order says "
             "nothing about importance.\n"
@@ -249,12 +251,12 @@ def build(open_db=None) -> MCPServer:
             "COST, and it decides how to call this. Fetching happens per source:\n"
             "  2-3 sources    ~1s     the ordinary move for 'anything new?'\n"
             "  one language   ~4s\n"
-            "  all nineteen   ~30s    Telegram is half of that on its own: six "
+            f"  all {len(SOURCES)}      ~30s    Telegram is half of that on its own: six "
             "channels 3s apart, because t.me drops the sixth request in a row\n"
             "Ask before spending the expensive one. 'A proper sweep, or a quick look?' "
             "is a fair question and costs a second; thirty seconds nobody asked for is "
             "not. Either way, say what you did NOT read: 'nothing new' after three "
-            "sources and 'nothing new' after nineteen are different claims, and only "
+            "sources and 'nothing new' after all of them are different claims, and only "
             "one of them is an answer. Name what you looked at, and offer the rest.\n"
             "detail='headlines' (the default) returns titles and ids; pass those ids to "
             "wire_read for the text. detail='full' includes each stored body inline and "

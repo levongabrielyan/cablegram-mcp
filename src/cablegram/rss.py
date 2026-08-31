@@ -49,6 +49,13 @@ class Entry:
     # how much of the article it holds is a property of the source, checked
     # against its real feed, and belongs where that check lives.
     body_src: str | None = None
+    # Whether `published` is this item's own publication time or an
+    # approximation. A sitemap dates twenty-two articles to one instant, which
+    # is a bulk edit and not twenty-two publications: throwing that away leaves
+    # the capture time, which is the newest moment there is, so undated items
+    # take over the top of every listing. Keeping it and marking it puts them
+    # roughly where they belong and says the date cannot be leaned on.
+    date_exact: bool = True
     # An article this entry points at, when the entry is a post about something
     # rather than the thing itself. A Telegram channel's own URL is its
     # permalink, so without this it could never appear in the cross-source

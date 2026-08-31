@@ -19,7 +19,7 @@ __all__ = ["Source", "SOURCES", "by_id", "resolve"]
 class Source:
     id: str
     name: str
-    kind: str  # rss | hn | telegram | cls
+    kind: str  # rss | hn | telegram | cls | hub | sitemap
     url: str
     lang: str  # en | zh | ru
     tags: tuple[str, ...] = ()
@@ -73,6 +73,36 @@ SOURCES: tuple[Source, ...] = (
         "https://blog.n8n.io/rss/", "en",
         ("automation", "official"),
     ),
+    Source(
+        "mcp", "Model Context Protocol", "rss",
+        "https://blog.modelcontextprotocol.io/index.xml", "en",
+        ("official", "technical"),
+        "The protocol this server speaks. /rss.xml, /atom.xml and /feed.xml all "
+        "404 — /index.xml is the one that answers.",
+    ),
+    Source(
+        "producthunt", "Product Hunt", "rss",
+        "https://www.producthunt.com/feed", "en",
+        ("launches",),
+        "What shipped and is being charged for, which no other source here "
+        "covers. Not AI-only: most of a day is not about this.",
+    ),
+    Source(
+        "anthropic", "Anthropic", "sitemap",
+        "https://www.anthropic.com/sitemap.xml", "en",
+        ("lab", "official"),
+        "No feed exists, so this reads the sitemap. Headlines are derived from "
+        "the URL slug and are not the page's own words.",
+    ),
+    Source(
+        "hub", "Hugging Face hub", "hub",
+        "https://huggingface.co/api/models", "en",
+        ("lab", "launches"),
+        "Where open weights land, as opposed to the blog about them. Ordered by "
+        "trend and not by date, because both date orderings return the firehose "
+        "of every repo anyone touched. Somebody else's ranking, accepted "
+        "knowingly: the like count travels with each entry.",
+    ),
 
     # ── Chinese ──────────────────────────────────────────────────────────────
     Source(
@@ -102,17 +132,6 @@ SOURCES: tuple[Source, ...] = (
         "habr", "Habr — AI hub", "rss",
         "https://habr.com/ru/rss/hub/artificial_intelligence/all/", "ru",
         ("community", "technical"),
-    ),
-    Source(
-        "vcru", "vc.ru", "rss",
-        "https://vc.ru/rss", "ru",
-        ("startups",),
-        "General feed only; the /ai/ variant 404s.",
-    ),
-    Source(
-        "productradar", "Product Radar", "rss",
-        "https://productradar.ru/rss/", "ru",
-        ("launches",),
     ),
 
     # ── Telegram: public HTML, no account, no API ─────────────────────────────

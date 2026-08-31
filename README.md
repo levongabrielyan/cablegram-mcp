@@ -1,13 +1,13 @@
 # cablegram-mcp
 
-Nineteen sources on AI and tech — English, Chinese and Russian — written to be
+Twenty-one sources on AI and tech — English, Chinese and Russian — written to be
 read by a model rather than by a person.
 
 A model's knowledge ends at its training cutoff, and it has no way to notice
 that it has ended. It will recommend the tool that was superseded last month and
 say nothing at all about the release that changes the answer. This server is
-where it goes to find out what it missed: what nineteen sources published in the
-last N hours, the stored text of whichever dispatches it wants to read, and a
+where it goes to find out what it missed: what twenty-one sources published in
+the last N hours, the stored text of whichever dispatches it wants to read, and a
 search over what it has fetched.
 
 Dispatches arrive raw. They are filtered by date and never ranked, because
@@ -19,7 +19,7 @@ your model is the editor.
 **The point is the cable, not the news.** A launch discussed in Chinese or
 Russian today reaches English-language coverage days later, filtered through
 whoever decided it was worth translating — and often it never arrives at all.
-Nineteen sources in three languages, read directly, put a reader in California
+Twenty-one sources in three languages, read directly, put a reader in California
 in the same week as a reader in Shanghai or Moscow.
 
 Headlines are never translated. Each dispatch carries its language, and the
@@ -54,16 +54,17 @@ f94e8c31521b 12:03 Novo Mundo (news.ycombinator.com)
 *Eight hours of three sources at `limit_per_source=2`, verbatim. `CUT` says what
 was left out and how much there was; `3/3` is how many answered.*
 
-**What it costs**, measured rather than estimated: a full day of all nineteen at
+**What it costs**, measured rather than estimated: a full day of all twenty-one at
 the defaults is about **5,000 tokens**; six hours is about **4,000**; six hours
 of three sources is **under 700**. Lower `limit_per_source` and it drops fast.
 
 ## Status
 
-v0.1 — the nineteen sources work; the tool API may still move. All nineteen have
-an adapter and were verified against the live endpoints: eleven RSS feeds,
-Hacker News through its search index, a signed Chinese financial API, and six
-public Telegram channels. 352 tests, 95% of 1,193 statements, on 3.12 and 3.14.
+v0.1 — the sources work; the tool API may still move. All twenty-one have an
+adapter and were verified against the live endpoints: thirteen RSS feeds, Hacker
+News through its search index, a signed Chinese financial API, six public
+Telegram channels, the Hugging Face model hub, and one sitemap for a lab that
+publishes no feed. 370 tests, 95% of statements, on 3.12 and 3.14.
 
 Two sources are worth knowing about before you rely on them:
 
@@ -108,7 +109,7 @@ All four are read-only and return plain text. The same information as JSON with
 indent costs roughly six times the tokens and truncates.
 
 **Fetching is per source, so the cost is whatever you ask for**: two or three
-sources answer in about a second, one language in four, all nineteen in about
+sources answer in about a second, one language in four, all twenty-one in about
 thirty. Half of that thirty is Telegram — six channels three seconds apart,
 because `t.me` drops the sixth request in a row. The tool description says so,
 so a model can ask before spending it.

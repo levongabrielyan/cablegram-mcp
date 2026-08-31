@@ -78,7 +78,7 @@ async def test_latest_names_the_failing_source(server):
 async def test_every_source_has_an_adapter_now(server):
     """PENDING listed the sources with no adapter, separately from DOWN, so that
     eight not-yet-built ones could not bury the one actually failing. All
-    nineteen have an adapter today, so nothing should be listed as pending —
+    every kind has an adapter today, so nothing should be listed as pending —
     and the machinery stays for the next source added."""
     out = await call(server, "wire_latest", hours=24)
     assert "PENDING" not in out
@@ -120,7 +120,7 @@ async def test_search_says_zero_hits_is_not_silence(server):
 
 
 @pytest.mark.anyio
-async def test_sources_lists_all_nineteen(server):
+async def test_sources_lists_every_one_of_them(server):
     out = await call(server, "wire_sources")
     from cablegram.sources import SOURCES
     for source in SOURCES:
@@ -299,3 +299,27 @@ async def test_an_empty_archive_is_not_worth_a_warning(tmp_path, monkeypatch):
     monkeypatch.setenv("CABLEGRAM_DB", str(path))
     connect(path).close()
     assert _unused_archive() is None
+
+
+@pytest.mark.anyio
+async def test_no_description_carries_a_source_count_of_its_own(server):
+    """The catalogue was 19 and the descriptions said 19, in two places, by
+    hand. Adding two sources and removing two made all three numbers disagree
+    with each other and with the catalogue — and a model told there are
+    nineteen has no way to notice it was given twenty-one.
+
+    The same shape as every other defect in this file: a figure written down
+    once, beside a value that moves. This asserts that any count a description
+    names is the count the catalogue actually has.
+    """
+    import re
+
+    from cablegram.sources import SOURCES
+
+    texts = {t.name: t.description or "" for t in await server.list_tools()}
+    texts["instructions"] = server.instructions or ""
+    for where, text in texts.items():
+        for count in re.findall(r"\b(\d+)\s+tech", text):
+            assert int(count) == len(SOURCES), (
+                f"{where} tells the model there are {count} sources; "
+                f"the catalogue has {len(SOURCES)}")

@@ -13,7 +13,7 @@ def test_ids_are_unique():
 
 @pytest.mark.parametrize("source", SOURCES, ids=lambda s: s.id)
 def test_every_source_is_well_formed(source):
-    assert source.kind in {"rss", "hn", "telegram", "cls"}
+    assert source.kind in {"rss", "hn", "telegram", "cls", "hub", "sitemap"}
     assert source.lang in {"en", "zh", "ru"}
     assert source.url.startswith("https://")
     assert source.name
@@ -25,7 +25,7 @@ def test_the_three_languages_are_all_present():
 
 
 def test_selectors_accept_ids_tags_and_languages_together():
-    """Nobody remembers nineteen ids; asking for a theme is the common case."""
+    """Nobody remembers twenty-one ids; asking for a theme is the common case."""
     assert {s.id for s in resolve(["hn"])} == {"hn"}
     assert {s.id for s in resolve(["zh"])} == {"cls", "qbitai", "kr36"}
     assert len(resolve(["telegram"])) == 6

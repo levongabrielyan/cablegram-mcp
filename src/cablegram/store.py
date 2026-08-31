@@ -114,7 +114,7 @@ def _store_one(
     # time keeps the item inside every time window; date_exact is what stops
     # that convenience from becoming a claim.
     published = _utc_iso(entry.published) if entry.published else fetched_at
-    date_exact = 1 if entry.published else 0
+    date_exact = 1 if entry.published and entry.date_exact else 0
 
     # Only for sources that link elsewhere. On qbitai the host is always qbitai:
     # printing it would cost tokens on every line and say nothing.
