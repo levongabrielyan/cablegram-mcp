@@ -325,6 +325,13 @@ async def test_no_description_carries_a_source_count_of_its_own(server):
             assert int(count) == len(SOURCES), (
                 f"{where} tells the model there are {count} sources; "
                 f"the catalogue has {len(SOURCES)}")
+        # The cost table prices a sweep with the figure and no noun after it
+        # ("all 21, and a slow pass..."), which the pattern above cannot see —
+        # so a hand-written 19 sat there through a catalogue change of two.
+        for priced in re.findall(r"\ball (\d+)\b", text):
+            assert int(priced) == len(SOURCES), (
+                f"{where} prices a sweep of {priced} sources; there are "
+                f"{len(SOURCES)}")
 
 
 # ── seventh review ──────────────────────────────────────────────────────────
