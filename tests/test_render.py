@@ -525,3 +525,21 @@ def test_the_destination_host_is_printed_only_where_it_says_something():
     out = render_latest([aggregated], since="s", until="u", down={}, sources_total=1)
     assert "(anthropic.com)" in out, "hn links out; where is the useful part"
 
+
+def test_the_catalogue_hands_over_what_it_knows_about_each_source():
+    """`Source.note` had no reader anywhere: seventeen sources carry one, 2,081
+    characters that never reached the model, while hub.py said in as many words
+    "the `note` on the source says so".
+
+    What was withheld is what a reply cannot show. cls.cn holds 3.34 days and
+    cannot page backwards, so its silence past that is unknown and not calm.
+    huggingface ships no bodies at all, so `body=none` there is the source
+    rather than a parser fault. This is the tool a model is told to read before
+    concluding a topic is quiet, and those are the facts that decide it.
+    """
+    from cablegram.sources import SOURCES
+
+    out = render_sources(health={})
+    for source in SOURCES:
+        if source.note:
+            assert source.note in out, f"{source.id} knows something and says nothing"

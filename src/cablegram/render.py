@@ -493,6 +493,17 @@ def render_sources(*, health: dict) -> str:
         newest = (state.get("newest") or "-")[:10]
         out.append(f"{source.id:18} {source.lang} {source.kind:9} {tags:21} "
                    f"{last_ok:17}{newest:11}{status}{mark}")
+        # The catalogue's note, which nothing read. Seventeen sources carry one
+        # — 2,081 characters that never reached the model — and hub.py said in
+        # as many words "the `note` on the source says so", of a field with no
+        # reader. What was being withheld is what a reply cannot show: that
+        # cls.cn holds 3.34 days and cannot page backwards, so its silence past
+        # that is not calm; that huggingface ships no bodies at all, so
+        # `body=none` there is the source and not a parser fault; that Product
+        # Hunt is not AI-only. This is the tool a model is told to read before
+        # concluding a topic is quiet, and those are the facts that decide it.
+        if source.note:
+            out.append(f"{'':18} {source.note}")
     out.append("")
     # Imported here rather than at module scope: poll pulls in the HTTP stack,
     # and rendering has no business depending on it.
