@@ -31,6 +31,8 @@ from .store import (items_by_ids, latest_items, search_items, source_health)
 
 __all__ = ["build", "serve", "main"]
 
+_DETAIL = ("headlines", "full")
+
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
 
@@ -79,6 +81,23 @@ def _parse_since(raw: str) -> str:
         f"would have returned an empty result that looks like a quiet day. "
         f"Use `hours` instead if you want a relative window."
     )
+
+
+def _positive(name: str, value: int, unit: str) -> int:
+    """Refuse a window that cannot exist, instead of quietly making one up.
+
+    `max(1, hours)` turned hours=0 into an hour and said nothing, so a model
+    that meant "everything" got sixty minutes and could not tell. In search it
+    was worse: the header printed the *requested* days, so days=-7 came back as
+    `last -7d | 55 shown`, which describes no operation at all.
+    """
+    if value < 1:
+        raise ToolError(
+            f"`{name}` must be 1 or more; got {value}. A window of {value} {unit} "
+            f"is not a window, and silently using 1 would have answered a "
+            f"different question than the one asked."
+        )
+    return value
 
 
 def _archive_facts(db) -> tuple[int, str]:
@@ -158,7 +177,19 @@ def build(open_db=None) -> MCPServer:
     ) -> str:
         """since: ISO-8601 UTC, wins over hours. sources: ids, tags or languages."""
         until = _now()
-        start = _parse_since(since) if since else _iso(until - timedelta(hours=max(1, hours)))
+        start = (_parse_since(since) if since
+                 else _iso(until - timedelta(hours=_positive("hours", hours, "hours"))))
+        if detail not in _DETAIL:
+            # The only failure on this surface that disguises itself as a
+            # better answer: detail="Full" fell through to headlines, so the
+            # reply came back 6/6 with no CUT where the correct call returns
+            # 5/6 with one. The model asked for bodies, got none, and the
+            # wrong reply looked healthier than the right one.
+            raise ToolError(
+                f"`detail` must be exactly one of {sorted(_DETAIL)}, lowercase; "
+                f"got {detail!r}. Anything else would have returned headlines "
+                f"while looking like a complete answer."
+            )
         if limit_per_source is None:
             limit_per_source = 5 if detail == "full" else 25
 
@@ -207,14 +238,20 @@ def build(open_db=None) -> MCPServer:
             "`body=none` means nothing was stored for THAT item; most sources ship "
             "bodies for some items and not others, so it says nothing about the "
             "source.\n"
+            "COST: bodies are the expensive path — forty long ones run to roughly "
+            "40,000 tokens, eight times the listing that handed you the ids. Ask for "
+            "the handful you actually need, not everything a listing offered. Whatever "
+            "will not fit in max_tokens (default 12000) is named on a DEFERRED line "
+            "rather than dropped, so a second call can pick it up.\n"
             "Ids not in the archive are named in the reply rather than dropped: "
             "re-run wire_latest or wire_search for the same window to get current ones."
         ),
         annotations=READ_ONLY,
     )
-    def wire_read(ids: list[str]) -> str:
+    def wire_read(ids: list[str], max_tokens: int = 12000) -> str:
         with closing(open_db()) as db:
-            return render_read(items_by_ids(db, ids), requested=ids)
+            return render_read(items_by_ids(db, ids), requested=ids,
+                               max_tokens=max_tokens)
 
     @server.tool(
         name="wire_search",
@@ -238,7 +275,7 @@ def build(open_db=None) -> MCPServer:
         limit_per_source: int = 25,
         max_tokens: int = 8000,
     ) -> str:
-        start = _iso(_now() - timedelta(days=max(1, days)))
+        start = _iso(_now() - timedelta(days=_positive("days", days, "days")))
         with closing(open_db()) as db:
             rows, engine = search_items(db, query, since=start, sources=sources,
                                         limit_per_source=limit_per_source)

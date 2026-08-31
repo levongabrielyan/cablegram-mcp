@@ -421,3 +421,32 @@ def test_the_no_adapter_note_appears_only_when_a_source_has_none():
                          archive_path="/tmp/a.db")
     if all(s.kind in POLLABLE for s in SOURCES):
         assert "no adapter yet" not in out
+
+
+def test_reading_many_bodies_defers_rather_than_overruns():
+    """The listing that hands over the ids drops to five per source because
+    bodies are expensive; the path that actually serves them had no limit at
+    all. Forty long ones measured 41,272 tokens — eight times the listing — and
+    the cost depends on data the model cannot see before calling, so it could
+    not budget for it either.
+
+    Whole items are deferred and named, never bodies truncated: a cut body is
+    the excerpt problem again, and a dropped id is invisible.
+    """
+    rows = [row(id=f"{i:012x}", body="x" * 4000, body_src="description")
+            for i in range(40)]
+    out = render_read(rows, requested=[r["id"] for r in rows], max_tokens=2000)
+
+    assert estimate_tokens(out) <= 2000 * 1.1
+    assert "DEFERRED" in out
+    served = {line.split()[1] for line in out.splitlines() if line.startswith("## ")}
+    deferred = set(out.split("DEFERRED ")[1].split(" ->")[0].split())
+    assert served and deferred, "some served, the rest named"
+    assert served | deferred == {r["id"] for r in rows}, "no id vanishes"
+
+
+def test_one_body_too_large_is_still_served():
+    """Going over beats returning nothing, exactly as the listing does."""
+    out = render_read([row(body="x" * 40000)], requested=["a3f9c2e1"], max_tokens=100)
+    assert "a3f9c2e1" in out
+    assert "DEFERRED" not in out

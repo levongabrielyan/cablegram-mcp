@@ -242,21 +242,23 @@ def render_latest(
             f"`sources`.\n" + text)
 
 
-def render_read(rows: list[dict], *, requested: list[str]) -> str:
+def render_read(rows: list[dict], *, requested: list[str],
+                max_tokens: int = 12000) -> str:
     found = {row["id"] for row in rows}
     missing = [i for i in requested if i not in found]
 
-    out = [f"CABLEGRAM read | {len(requested)} requested | {len(rows)} resolved "
-           f"| {len(missing)} unknown"]
+    header = [f"CABLEGRAM read | {len(requested)} requested | {len(rows)} resolved "
+              f"| {len(missing)} unknown"]
     if missing:
         # The only route to autonomous recovery, so it must name something that
         # exists: it used to suggest urls=[...], which wire_read does not accept.
-        out.append(f"UNKNOWN {' '.join(missing)} -> not in the archive (pruned, or "
-                   f"server reinstalled).")
-        out.append("        Re-run wire_latest or wire_search for the same window to "
-                   "get current ids.")
-    out.append("---")
+        header.append(f"UNKNOWN {' '.join(missing)} -> not in the archive (pruned, "
+                      f"or server reinstalled).")
+        header.append("        Re-run wire_latest or wire_search for the same window "
+                      "to get current ids.")
+    header.append("---")
 
+    chunks: list[tuple[str, list[str]]] = []
     for row in rows:
         sources = row.get("sources") or row.get("source", "")
         cross = f" x{row['cross']}[{sources}]" if row.get("cross", 1) > 1 else ""
@@ -267,6 +269,7 @@ def render_read(rows: list[dict], *, requested: list[str]) -> str:
                 else " body=none")
         borrowed = row.get("via") == "link"
         mark = "~" if borrowed or not row.get("date_exact", 1) else ""
+        out = []
         out.append(f"\n## {row['id']} {row.get('first_source', '')} {row.get('lang','')} "
                    f"{mark}{row['published']}{body}{cross}")
         out.append(f"url {row['url']}")
@@ -288,7 +291,29 @@ def render_read(rows: list[dict], *, requested: list[str]) -> str:
             # 106 times telling the model openai has none. It is the same mistake
             # the full/teaser verdict was removed from the parser for, twice.
             out.append("!! no stored body for this item. Open `url` for the text.")
-    return "\n".join(out)
+        chunks.append((row["id"], out))
+
+    # Bodies are the expensive path, and this is the one that serves them: forty
+    # long ones measured 41,272 tokens, eight times the listing that handed over
+    # the ids, with no line saying so. The cost depends on data the model cannot
+    # see before calling, so it cannot budget for it either. Whole items are
+    # deferred rather than bodies truncated — a cut body is the excerpt problem
+    # again — and one is always served, because going over beats returning
+    # nothing.
+    head = "\n".join(header)
+    served, used = [], estimate_tokens(head)
+    for index, (_, chunk) in enumerate(chunks):
+        cost = estimate_tokens("\n".join(chunk))
+        if served and used + cost > max_tokens:
+            deferred = [iid for iid, _ in chunks[index:]]
+            header.insert(1, f"DEFERRED {' '.join(deferred)} -> would have exceeded "
+                             f"max_tokens={max_tokens}. Ask for them in a second call, "
+                             f"or raise max_tokens.")
+            break
+        served.append(chunk)
+        used += cost
+
+    return "\n".join(header + [line for chunk in served for line in chunk])
 
 
 def render_search(
