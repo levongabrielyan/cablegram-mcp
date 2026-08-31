@@ -269,3 +269,25 @@ async def test_a_not_modified_reply_is_a_failure_not_a_quiet_source(live, monkey
         "a 304 with nothing held behind it is not a source that published "
         "nothing")
     assert "qbitai=HTTP 304" in out, f"it has to be named as a failure:\n{out}"
+
+
+@pytest.mark.anyio
+async def test_a_call_bigger_than_the_cache_keeps_its_newest_dispatches(live, monkeypatch):
+    """Rows arrive newest-first and eviction popped whatever went in first, so a
+    single call larger than the cache evicted the top of its own reply.
+
+    Measured with 5,000 rows: the first dispatch printed no longer resolved and
+    the last one did — exactly inverted. Those are the ones a model reads first,
+    and with nothing kept between runs this cache is the only thing that
+    resolves an id at all.
+    """
+    import cablegram.server as server_mod
+
+    monkeypatch.setattr(server_mod, "SEEN_LIMIT", 1)
+    out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
+    ids = re.findall(r"^(\w{12}) \d{2}:\d{2} ", out, re.M)
+    assert len(ids) >= 2
+
+    body = await call(live, "wire_read", ids=[ids[0]])
+    assert "UNKNOWN" not in body, (
+        f"{ids[0]} is the first dispatch of the reply that just produced it")

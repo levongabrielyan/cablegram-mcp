@@ -42,6 +42,10 @@ __all__ = ["build", "serve", "main"]
 # reported DOWN rather than waited for.
 LIVE_DEADLINE = 45.0
 
+# Dispatches this process can still resolve an id for. Nothing is kept between
+# runs, so this is the whole of wire_read's reach.
+SEEN_LIMIT = 4000
+
 _DETAIL = ("headlines", "full")
 
 
@@ -193,9 +197,15 @@ def build(rows_from=None) -> MCPServer:
     session: dict[str, dict] = {}
 
     def remember(rows: list[dict], health: dict) -> None:
-        for row in rows:
+        # Oldest first, so the newest survive. The rows arrive newest-first and
+        # eviction pops whatever went in first, so a single call larger than the
+        # cache evicted the top of its own reply — measured with 5,000 rows: the
+        # first dispatch printed no longer resolved and the last one did. Those
+        # are the ones a model reads first, and with nothing kept between runs
+        # this cache is the only thing that resolves an id at all.
+        for row in reversed(rows):
             seen[row["id"]] = row
-        while len(seen) > 4000:
+        while len(seen) > SEEN_LIMIT:
             seen.pop(next(iter(seen)))
         session.clear()
         session.update(health)
