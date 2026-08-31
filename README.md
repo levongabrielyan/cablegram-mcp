@@ -60,17 +60,22 @@ of three sources is **under 700**. Lower `limit_per_source` and it drops fast.
 
 ## Status
 
-v0.1 — the sources work; the tool API may still move. All twenty-one have an
-adapter and were verified against the live endpoints: thirteen RSS feeds, Hacker
+v0.1 — the sources work; the tool API may still move. All twenty-two have an
+adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
-Telegram channels, the Hugging Face model hub, and one sitemap for a lab that
-publishes no feed. 370 tests, 95% of statements, on 3.12 and 3.14.
+Telegram channels, the Hugging Face model hub, and two sections of a lab that
+publishes no feed, read out of the data its own pages ship. 381 tests, 95% of
+statements, on 3.12 and 3.14.
 
-Two sources are worth knowing about before you rely on them:
+Three sources are worth knowing about before you rely on them:
 
 * **cls.cn is reverse-engineered.** An undocumented internal API with a signed
   request. It holds 3.34 days at most and cannot page backwards, so a gap is
   permanent. `wire_sources` marks it `fragile`.
+* **Anthropic has no feed at all.** Its two sections are read out of the data
+  its own pages ship inline, which is an internal Next.js format with no
+  contract. Also marked `fragile`. A shape change comes back as a broken
+  source, never as a quiet week.
 * **Telegram is HTML with no contract.** The public preview view can change
   without a version number to notice it by.
 

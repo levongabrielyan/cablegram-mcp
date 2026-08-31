@@ -1,4 +1,4 @@
-"""The nineteen sources, as data.
+"""The sources, as data.
 
 The set is fixed on purpose. A configurable aggregator is a different product:
 this one is tuned for one question — what is happening in tech and AI today,
@@ -19,7 +19,7 @@ __all__ = ["Source", "SOURCES", "by_id", "resolve"]
 class Source:
     id: str
     name: str
-    kind: str  # rss | hn | telegram | cls | hub | sitemap
+    kind: str  # rss | hn | telegram | cls | hub | nextjs
     url: str
     lang: str  # en | zh | ru
     tags: tuple[str, ...] = ()
@@ -88,11 +88,22 @@ SOURCES: tuple[Source, ...] = (
         "covers. Not AI-only: most of a day is not about this.",
     ),
     Source(
-        "anthropic", "Anthropic", "sitemap",
-        "https://www.anthropic.com/sitemap.xml", "en",
+        "anthropic", "Anthropic — news", "nextjs",
+        "https://www.anthropic.com/news", "en",
         ("lab", "official"),
-        "No feed exists, so this reads the sitemap. Headlines are derived from "
-        "the URL slug and are not the page's own words.",
+        "No feed exists, so this reads the data its own page ships inline: the "
+        "CMS fields, with the real publication date and the headline Anthropic "
+        "wrote. An internal Next.js format, so it can change without notice — "
+        "which comes back as a broken source, not as a quiet week.",
+        fragile=True,
+    ),
+    Source(
+        "anthropic_research", "Anthropic — research", "nextjs",
+        "https://www.anthropic.com/research", "en",
+        ("lab", "official", "technical"),
+        "The research section, which is a separate page and a separate request. "
+        "Same reader as the news section, same fragility.",
+        fragile=True,
     ),
     Source(
         "hub", "Hugging Face hub", "hub",
@@ -181,7 +192,7 @@ def by_id(source_id: str) -> Source | None:
 def resolve(selectors: list[str] | None) -> tuple[Source, ...]:
     """Accept ids and tags in the same list: ``["early", "hn"]``.
 
-    Nobody remembers nineteen ids. Asking for a theme is the common case, so both
+    Nobody remembers twenty-two ids. Asking for a theme is the common case, so both
     resolve through one argument instead of two.
     """
     if not selectors:

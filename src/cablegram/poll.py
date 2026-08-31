@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from .cls import MAX_ROWS as CLS_MAX, feed_url as cls_feed_url, parse_response as parse_cls
 from .hn import MAX_ROWS as HN_MAX, parse_search as parse_hn, search_url as hn_search_url
 from .hub import models_url, parse_models
-from .sitemap import parse_sitemap
+from .nextjs import parse_next_payload
 from .telegram import channel_url, parse_channel
 from .fetch import TOTAL_DEADLINE, Fetched, fetch_all
 from .rss import parse_feed
@@ -36,7 +36,7 @@ __all__ = ["poll_once"]
 # Kinds with an adapter. The rest are listed and never fetched: handing their
 # URLs to the RSS parser would file every one as a parse failure and bury the
 # real ones among them.
-POLLABLE = ("rss", "cls", "hn", "telegram", "hub", "sitemap")
+POLLABLE = ("rss", "cls", "hn", "telegram", "hub", "nextjs")
 
 # t.me resets the connection on the sixth request in a row. Measured: channels
 # 3 to 6 failed with ECONNRESET while 1 and 2 came back fine, and three seconds
@@ -189,8 +189,11 @@ async def poll_once(
                 entries = parse_hn(json.loads(fetched.body))
             elif source.kind == "hub":
                 entries = parse_models(json.loads(fetched.body))
-            elif source.kind == "sitemap":
-                entries = parse_sitemap(fetched.body)
+            elif source.kind == "nextjs":
+                # The section URL, because the payload carries a slug and not a
+                # link. One request per section, which is why /news and
+                # /research are two sources rather than one with two URLs.
+                entries = parse_next_payload(fetched.body, base=source.url)
             elif source.kind == "telegram":
                 entries = parse_channel(fetched.body.decode("utf-8", "replace"),
                                         channel=source.id)

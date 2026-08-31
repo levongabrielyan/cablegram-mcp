@@ -13,7 +13,16 @@ def test_ids_are_unique():
 
 @pytest.mark.parametrize("source", SOURCES, ids=lambda s: s.id)
 def test_every_source_is_well_formed(source):
-    assert source.kind in {"rss", "hn", "telegram", "cls", "hub", "sitemap"}
+    # Read off the poller rather than written out here. The hand-written set
+    # went stale the moment a kind was added, which is the drift this file
+    # exists to catch, committed by the file itself.
+    from cablegram.poll import POLLABLE
+
+    assert source.kind in POLLABLE, (
+        f"{source.id} is kind {source.kind!r} and no adapter handles it, so it "
+        f"would be listed and never fetched. That state is legal — render_latest "
+        f"prints it as PENDING — so widen this only for a source deliberately "
+        f"added ahead of its adapter.")
     assert source.lang in {"en", "zh", "ru"}
     assert source.url.startswith("https://")
     assert source.name
