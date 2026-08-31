@@ -257,3 +257,45 @@ async def test_every_marker_a_description_names_can_actually_be_emitted(server):
             assert named in PRODUCIBLE_BODY_SRC, (
                 f"{tool.name} tells the model to look for body={named}, which no "
                 f"parser can produce. Producible: {sorted(PRODUCIBLE_BODY_SRC)}")
+
+
+@pytest.mark.anyio
+async def test_live_mode_names_the_archive_it_is_no_longer_reading(tmp_path, monkeypatch):
+    """The file is never deleted and CABLEGRAM_ARCHIVE=1 puts it back in
+    service, so nothing is lost on disk. But wire_search goes from searching
+    4,299 items to searching the live window, and an unannounced "0 hits" is
+    indistinguishable from a quiet day — the failure this whole project exists
+    to prevent, committed by its own migration.
+    """
+    from cablegram.render import render_sources
+    from cablegram.server import _unused_archive
+
+    path = tmp_path / "archive.db"
+    monkeypatch.setenv("CABLEGRAM_DB", str(path))
+    assert _unused_archive() is None, "no file, nothing to warn about"
+
+    db = connect(path)
+    store_entries(db, by_id("qbitai"),
+                  [Entry("t", "https://qbitai.example/x", NOW, None, None)],
+                  fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    db.close()
+
+    note = _unused_archive()
+    assert note and "1 items" in note and "CABLEGRAM_ARCHIVE=1" in note
+
+    out = render_sources(health={}, archive_items=0, archive_start="-",
+                         archive_path=str(path), live=True, unused=note)
+    assert "NOTE" in out and "NOT in use" in out
+    assert "not in last call" in out, (
+        '"never polled" in live mode would report a source nobody asked for as '
+        "one nobody can use")
+
+
+@pytest.mark.anyio
+async def test_an_empty_archive_is_not_worth_a_warning(tmp_path, monkeypatch):
+    from cablegram.server import _unused_archive
+
+    path = tmp_path / "archive.db"
+    monkeypatch.setenv("CABLEGRAM_DB", str(path))
+    connect(path).close()
+    assert _unused_archive() is None

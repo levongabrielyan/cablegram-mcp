@@ -269,3 +269,25 @@ def test_an_unforeseen_parser_error_costs_one_source_not_the_pass(db, network):
     assert [r.source for r in reports] == ["qbitai", "habr"]
     assert reports[1].new > 0, "the source after the broken one still archived"
     assert source_health(db)["qbitai"]["last_error"]
+
+
+def test_a_pass_deadline_still_reports_every_source(db, network, monkeypatch):
+    """One pass has to finish inside a tool call, and the unbounded worst case
+    is 130 seconds: fifteen per Telegram channel, one at a time, plus the gaps.
+
+    Running out of time may not turn into a shorter list. A channel that was
+    never asked is not a channel with nothing to say, so it comes back as a
+    failure with the reason on it.
+    """
+    import cablegram.poll as poll_mod
+
+    monkeypatch.setattr(poll_mod, "TELEGRAM_GAP", 0.01)
+    network(lambda request: httpx2.Response(200, content=FEED))
+
+    channels = [by_id(c) for c in ("ai_newz", "denissexy", "data_secrets")]
+    reports = asyncio.run(poll_once(db, [by_id("qbitai")] + channels, deadline=0.0))
+
+    assert [r.source for r in reports] == ["qbitai", "ai_newz", "denissexy",
+                                           "data_secrets"]
+    skipped = [r for r in reports if r.state == "fetch-failed"]
+    assert skipped, "a source that never got its request has to say so"

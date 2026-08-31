@@ -168,8 +168,22 @@ def archive_path() -> Path:
     return Path(base) / "cablegram" / "archive.db"
 
 
-def connect(path: Path | str | None = None) -> sqlite3.Connection:
-    """Open the archive, creating it on first run. No setup step for the user."""
+def connect(path: Path | str | None = None, *,
+            memory: bool = False) -> sqlite3.Connection:
+    """Open the archive, creating it on first run. No setup step for the user.
+
+    `memory=True` builds the same schema in a database that never touches disk.
+    It is what the live mode runs on: one pass fills it, the queries and the
+    renderer work on it unchanged, and it is discarded with the call. The seal
+    is skipped because there is no file to have been written by another build,
+    and the WAL pragmas because they describe a file.
+    """
+    if memory:
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        db.executescript(_SCHEMA)
+        return db
+
     path = Path(path) if path else archive_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 

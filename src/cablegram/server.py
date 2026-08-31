@@ -16,6 +16,9 @@ watching.
 
 from __future__ import annotations
 
+import asyncio
+import os
+import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
@@ -25,13 +28,29 @@ from mcp.types import ToolAnnotations
 
 from .archive import archive_path, connect
 from .render import render_latest, render_read, render_search, render_sources
-from .poll import POLLABLE
+from .poll import POLLABLE, poll_once
 from .sources import SOURCES, resolve
 from .store import (items_by_ids, latest_items, search_items, source_health)
 
 __all__ = ["build", "serve", "main"]
 
+# One pass has to finish inside a tool call, and the theoretical worst case
+# without a bound is 130s. Forty-five is comfortably above the ~30s a full
+# nineteen-source pass measures, and whatever has not answered by then is
+# reported DOWN rather than waited for.
+LIVE_DEADLINE = 45.0
+
 _DETAIL = ("headlines", "full")
+
+
+def _archive_requested() -> bool:
+    """Whether to read the file on disk instead of fetching.
+
+    A separate variable from CABLEGRAM_DB on purpose. That one has always meant
+    "where the file is"; making it also mean "use it" would hand the old
+    behaviour to everyone who set it to move the file somewhere else.
+    """
+    return os.environ.get("CABLEGRAM_ARCHIVE", "").strip().lower() in ("1", "true", "yes")
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
@@ -100,6 +119,32 @@ def _positive(name: str, value: int, unit: str) -> int:
     return value
 
 
+def _unused_archive() -> str | None:
+    """A one-line description of an archive on disk that this build is not using.
+
+    The file is never deleted and CABLEGRAM_ARCHIVE=1 returns it to service, so
+    nothing is lost — but wire_search goes from searching it to searching the
+    live window, and an unannounced "0 hits" is indistinguishable from a quiet
+    day. That is the failure this project exists to prevent, committed by its
+    own migration.
+    """
+    path = archive_path()
+    if not path.exists():
+        return None
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as db:
+            items, oldest, newest = db.execute(
+                "SELECT COUNT(*), MIN(published), MAX(published) FROM item"
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    if not items:
+        return None
+    return (f"{items} items ({(oldest or '?')[:10]} .. {(newest or '?')[:10]}) are on "
+            f"disk and NOT in use. This build fetches live. "
+            f"Set CABLEGRAM_ARCHIVE=1 to search them again.")
+
+
 def _archive_facts(db) -> tuple[int, str]:
     """How much is held, and how far back it reaches.
 
@@ -143,7 +188,49 @@ def build(open_db=None) -> MCPServer:
             "language."
         ),
     )
+    # An injected factory means a caller that wants that database — the tests,
+    # and anyone embedding this — so it also means archive mode.
+    archive_mode = open_db is not None or _archive_requested()
     open_db = open_db or connect
+
+    # What the last live pass in this process saw. In archive mode it stays
+    # empty and nothing reads it; in live mode it is what makes an id from one
+    # reply resolvable in the next, since there is no file to look it up in.
+    # Bounded, because a long-lived server would otherwise grow without limit.
+    seen: dict[str, dict] = {}
+    session: dict[str, dict] = {}
+
+    def remember(rows: list[dict], health: dict) -> None:
+        if archive_mode:
+            return
+        for row in rows:
+            seen[row["id"]] = row
+        while len(seen) > 4000:
+            seen.pop(next(iter(seen)))
+        session.clear()
+        session.update(health)
+
+    def opened(selectors=None, hours: int = 24):
+        """The database a call runs against.
+
+        In archive mode it is the file the poller fills. Otherwise it is a
+        throwaway in memory, filled by one pass over the sources asked for and
+        discarded with the call — the same schema, the same queries, the same
+        renderer. What the timer used to do an hour ago now happens here.
+        """
+        if archive_mode:
+            return open_db()
+        db = connect(memory=True)
+        try:
+            asyncio.run(poll_once(db, list(resolve(selectors)) or None,
+                                  window_hours=max(hours, 24),
+                                  deadline=LIVE_DEADLINE))
+        except Exception:
+            # A pass that failed outright still returns the empty database: the
+            # source health it recorded on the way down is what the reply needs
+            # in order to say DOWN instead of showing a short list.
+            pass
+        return db
 
     @server.tool(
         name="wire_latest",
@@ -203,10 +290,11 @@ def build(open_db=None) -> MCPServer:
         if limit_per_source is None:
             limit_per_source = 5 if detail == "full" else 25
 
-        with closing(open_db()) as db:
+        with closing(opened(sources, hours)) as db:
             rows = latest_items(db, since=start, sources=sources,
                                 limit_per_source=limit_per_source)
             health = source_health(db)
+        remember(rows, health)
 
         wanted = {s.id for s in resolve(sources)}
         unknown = _unknown_selectors(sources)
@@ -237,6 +325,7 @@ def build(open_db=None) -> MCPServer:
         silent = sorted((wanted & pollable) - set(down)
                         - {r["source"] for r in rows})
         return render_latest(rows, since=start, until=_iso(until), down=down,
+                             mode="archive" if archive_mode else "live",
                              sources_total=len(wanted), silent=silent,
                              no_adapter=sorted(wanted - pollable), detail=detail,
                              unknown=unknown, limit_per_source=limit_per_source,
@@ -270,9 +359,16 @@ def build(open_db=None) -> MCPServer:
         annotations=READ_ONLY,
     )
     def wire_read(ids: list[str], max_tokens: int = 12000) -> str:
-        with closing(open_db()) as db:
-            return render_read(items_by_ids(db, ids), requested=ids,
-                               max_tokens=max_tokens)
+        if archive_mode:
+            with closing(open_db()) as db:
+                return render_read(items_by_ids(db, ids), requested=ids,
+                                   max_tokens=max_tokens)
+        # Live mode holds no file, so an id can only be resolved against what
+        # this process has already fetched. Anything else is named on the
+        # UNKNOWN line, which already tells the model to re-run the listing —
+        # the recovery path was written for exactly this and needed no change.
+        return render_read([seen[i] for i in ids if i in seen], requested=ids,
+                           max_tokens=max_tokens)
 
     @server.tool(
         name="wire_search",
@@ -297,10 +393,11 @@ def build(open_db=None) -> MCPServer:
         max_tokens: int = 8000,
     ) -> str:
         start = _iso(_now() - timedelta(days=_positive("days", days, "days")))
-        with closing(open_db()) as db:
+        with closing(opened(sources, days * 24)) as db:
             rows, engine = search_items(db, query, since=start, sources=sources,
                                         limit_per_source=limit_per_source)
             items, began = _archive_facts(db)
+            remember(rows, source_health(db))
         return render_search(rows, query=query, since=start, days=days,
                              archive_start=began, archive_items=items,
                              engine=engine, max_tokens=max_tokens)
@@ -318,11 +415,21 @@ def build(open_db=None) -> MCPServer:
         annotations=READ_ONLY,
     )
     def wire_sources() -> str:
-        with closing(open_db()) as db:
-            items, began = _archive_facts(db)
-            health = source_health(db)
-        return render_sources(health=health, archive_items=items,
-                              archive_start=began, archive_path=str(archive_path()))
+        if archive_mode:
+            with closing(open_db()) as db:
+                items, began = _archive_facts(db)
+                health = source_health(db)
+            return render_sources(health=health, archive_items=items,
+                                  archive_start=began,
+                                  archive_path=str(archive_path()))
+        # Health from the last live pass in this process rather than a fresh
+        # thirty-second sweep for a catalogue listing. `unused` is the one thing
+        # this build must not stay quiet about: the file is still on disk and
+        # wire_search no longer reads it, so its absence from an answer would
+        # look like a quiet archive rather than an archive nobody opened.
+        return render_sources(health=dict(session), archive_items=0,
+                              archive_start="-", archive_path=str(archive_path()),
+                              live=True, unused=_unused_archive())
 
     return server
 

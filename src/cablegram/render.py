@@ -171,6 +171,7 @@ def render_latest(
     no_adapter: list[str] | None = None,
     silent: list[str] | None = None,
     unknown: list[str] | None = None,
+    mode: str = "archive",
     detail: str = "headlines",
     limit_per_source: int | None = None,
     max_tokens: int = 12000,
@@ -189,8 +190,11 @@ def render_latest(
         # every answer built on this.
         answering = sources_total - len(down) - len(no_adapter or ())
         head = [
-            f"CABLEGRAM {VERSION} | {since}..{until} | {printed} of {window_total} "
-            f"items | {answering}/{sources_total} sources"
+            # Which mode answered. The two read the same and are not the same
+            # thing: live is what these sources are serving right now, archive
+            # is whatever the last poll put on disk, however long ago that was.
+            f"CABLEGRAM {VERSION} {mode} | {since}..{until} | {printed} of "
+            f"{window_total} items | {answering}/{sources_total} sources"
         ]
         if down:
             head.append("DOWN  " + "  ".join(f"{k}={v}" for k, v in sorted(down.items())))
@@ -411,10 +415,20 @@ def render_search(
 
 
 def render_sources(*, health: dict, archive_items: int, archive_start: str,
-                   archive_path: str) -> str:
-    out = [
-        f"CABLEGRAM {VERSION} | {len(SOURCES)} sources",
-        f"ARCHIVE {_tilde(archive_path)} | {archive_items} items | oldest {archive_start}",
+                   archive_path: str, live: bool = False,
+                   unused: str | None = None) -> str:
+    out = [f"CABLEGRAM {VERSION} | {len(SOURCES)} sources"]
+    if live:
+        out.append("MODE   live: each call fetches, nothing is kept. The health below is "
+                   "from the last")
+        out.append("       call in this session, not a standing record.")
+        if unused:
+            out.append(f"NOTE   {unused}")
+            out.append(f"       {_tilde(archive_path)}")
+    else:
+        out.append(f"ARCHIVE {_tilde(archive_path)} | {archive_items} items | "
+                   f"oldest {archive_start}")
+    out += [
         "",
         "id               lg kind      tags                  last_ok          newest     state",
     ]
@@ -434,7 +448,11 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
             hours = int(age.total_seconds() // 3600)
             status = f"STALE {hours}h" if hours >= 6 else "OK"
         else:
-            status = "never polled"
+            # In live mode a source has no standing record: it either answered
+            # the last call or was not among the ones that call asked for. Both
+            # print as "-" above, and calling that "never polled" would report
+            # a source nobody happened to want as a source nobody can use.
+            status = "not in last call" if live else "never polled"
         # Both of these were stored by the poller and read by nobody, so a pass
         # that downloaded fine and then archived nothing looked identical to a
         # quiet day. Compared against last_write so the mark is about the most

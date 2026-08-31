@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from .cls import MAX_ROWS as CLS_MAX, feed_url as cls_feed_url, parse_response as parse_cls
 from .hn import MAX_ROWS as HN_MAX, parse_search as parse_hn, search_url as hn_search_url
 from .telegram import channel_url, parse_channel
-from .fetch import fetch_all
+from .fetch import TOTAL_DEADLINE, Fetched, fetch_all
 from .rss import parse_feed
 from .sources import SOURCES, Source
 from .store import (StoreReport, conditional_headers, record_attempt,
@@ -91,6 +92,7 @@ async def poll_once(
     sources: list[Source] | None = None,
     *,
     window_hours: int = 48,
+    deadline: float | None = None,
 ) -> list[StoreReport]:
     """Fetch every source once and archive what came back.
 
@@ -119,14 +121,35 @@ async def poll_once(
     # whatever survived its 1,000-result ceiling.
     since = int((datetime.now(timezone.utc) - timedelta(hours=window_hours)).timestamp())
     conditional = conditional_headers(db)
+
+    # A bound on the whole pass, not on each fetch. Telegram is given fifteen
+    # seconds a channel and they run one at a time, so the theoretical worst
+    # case was 25s for the main batch plus five 3s gaps plus six 15s channels =
+    # 130s. Unbounded that is fine for a timer and unusable inside a tool call.
+    started = time.monotonic()
+
+    def left(default: float) -> float:
+        if deadline is None:
+            return default
+        return max(0.0, deadline - (time.monotonic() - started))
+
     requests = [(s.id, _request_url(s, since)) for s in targets]
-    results = await fetch_all(requests, conditional=conditional) if targets else []
+    results = (await fetch_all(requests, conditional=conditional,
+                               deadline=left(TOTAL_DEADLINE)) if targets else [])
 
     for index, channel in enumerate(channels):
         if index:
-            await asyncio.sleep(TELEGRAM_GAP)
-        results += await fetch_all([(channel.id, _request_url(channel, since))],
-                                   conditional=conditional, deadline=15.0)
+            await asyncio.sleep(min(TELEGRAM_GAP, left(TELEGRAM_GAP)))
+        budget = left(15.0)
+        if deadline is not None and budget <= 0:
+            # Out of time, and saying so beats a shorter list: a channel that
+            # was never asked is not a channel with nothing to say.
+            results.append(Fetched(channel.id, ok=False, url=_request_url(channel, since),
+                                   error=f"skipped: {deadline:g}s pass deadline reached"))
+        else:
+            results += await fetch_all([(channel.id, _request_url(channel, since))],
+                                       conditional=conditional,
+                                       deadline=min(15.0, budget))
         targets = targets + [channel]
 
     reports: list[StoreReport] = []

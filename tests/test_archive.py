@@ -181,3 +181,21 @@ def test_the_english_headline_of_a_chinese_story_is_searchable(tmp_path):
         " JOIN sighting s ON s.rowid = f.rowid WHERE sighting_fts MATCH ?", ('"Zhipu"',))]
     assert found == [iid]
     conn.close()
+
+
+def test_an_in_memory_archive_builds_the_same_schema_and_writes_no_file(tmp_path):
+    """What the live mode runs on: one pass fills it, the same queries and the
+    same renderer read it, and it goes away with the call.
+
+    The seal is skipped because there is no file that another build could have
+    written, and the WAL pragmas because they describe a file.
+    """
+    conn = connect(memory=True)
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"item", "sighting", "source_state", "meta"} <= tables
+    conn.execute("INSERT INTO item(id, url_norm, url, first_source, lang, title,"
+                 " fetched_at, date_exact) VALUES ('a','u','u','s','en','t','n',1)")
+    assert conn.execute("SELECT COUNT(*) FROM item").fetchone()[0] == 1
+    conn.close()
+    assert not list(tmp_path.iterdir()), "nothing on disk"
