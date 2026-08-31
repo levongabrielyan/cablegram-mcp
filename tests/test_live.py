@@ -275,3 +275,30 @@ async def test_an_unresolvable_id_is_explained_by_something_that_can_happen(live
     assert "pruned" not in out and "reinstalled" not in out
     assert "this session" in out and "cache" in out
     assert "`sources`" in out, "re-running with a different selection will not help"
+
+
+@pytest.mark.anyio
+async def test_a_not_modified_reply_would_empty_a_live_source(live, monkeypatch):
+    """Why live mode sends no validators, fixed as a test so nobody restores
+    them.
+
+    A 304 carries no body and is only usable by a caller that already holds the
+    items. Live mode builds its archive per call and discards it, so a source
+    answering 304 has nothing — and comes back SILENT, which says "published
+    nothing in this window". That is the lie the whole server is built to avoid,
+    and it would arrive as a politeness improvement.
+    """
+    real = httpx2.AsyncClient
+
+    def handler(request):
+        return httpx2.Response(304)
+
+    def patched(*args, **kwargs):
+        kwargs["transport"] = httpx2.MockTransport(handler)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(httpx2, "AsyncClient", patched)
+    out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
+    assert "SILENT qbitai" in out, (
+        "this is what a 304 looks like with no archive behind it, and it is why "
+        "conditional_headers is left empty in this mode")

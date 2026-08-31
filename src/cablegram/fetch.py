@@ -7,9 +7,19 @@ Three rules shape everything here:
   instead of silently showing a shorter list.
 * **Every response is capped.** Feeds are third-party input, so a slow or
   enormous one must cost a timeout, not the process.
-* **Conditional requests.** Most feeds are unchanged between polls; sending the
-  stored ETag turns those into a 304 with no body, which is both faster and
-  the polite way to hammer someone else's server every few minutes.
+* **Conditional requests, when there is an archive to compare against.** Most
+  feeds are unchanged between polls; sending the stored ETag turns those into a
+  304 with no body, which is both faster and the polite way to hammer somebody
+  else's server every few minutes.
+
+  Only in archive mode, and that is not an oversight. A 304 carries no body, so
+  it is only usable by a caller that already has the items somewhere. Live mode
+  builds a fresh in-memory archive per call and throws it away, so a 304 there
+  would produce a source with zero items — reported as SILENT, which reads as
+  "published nothing" and would be the exact lie this project exists to
+  prevent. The default build therefore downloads in full on every call and is
+  heavier on other people's servers than the hourly timer was. Fixing that means
+  caching the responses, not sending the validators.
 """
 
 from __future__ import annotations

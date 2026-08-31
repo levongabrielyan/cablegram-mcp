@@ -6,7 +6,7 @@ read by a model rather than by a person.
 A model's knowledge ends at its training cutoff, and it has no way to notice
 that it has ended. It will recommend the tool that was superseded last month and
 say nothing at all about the release that changes the answer. This server is
-where it goes to find out what it missed: what twenty-one sources published in
+where it goes to find out what it missed: what twenty-two sources published in
 the last N hours, the stored text of whichever dispatches it wants to read, and a
 search over what it has fetched.
 
@@ -54,9 +54,10 @@ f94e8c31521b 12:03 Novo Mundo (news.ycombinator.com)
 *Eight hours of three sources at `limit_per_source=2`, verbatim. `CUT` says what
 was left out and how much there was; `3/3` is how many answered.*
 
-**What it costs**, measured rather than estimated: a full day of all twenty-one at
-the defaults is about **5,000 tokens**; six hours is about **4,000**; six hours
-of three sources is **under 700**. Lower `limit_per_source` and it drops fast.
+**What it costs**, measured rather than estimated: a full day of all twenty-two
+at the defaults is about **5,000 tokens**; six hours is about **3,400**; six
+hours of three sources is **under 800**, and **under 200** at
+`limit_per_source=2`.
 
 ## Status
 
@@ -64,8 +65,8 @@ v0.1 — the sources work; the tool API may still move. All twenty-two have an
 adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub, and two sections of a lab that
-publishes no feed, read out of the data its own pages ship. 381 tests, 95% of
-statements, on 3.12 and 3.14.
+publishes no feed, read out of the data its own pages ship. 409 tests covering
+96% of 1,341 statements, on 3.12 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
 
@@ -113,11 +114,14 @@ That is the whole setup. Each call fetches what it needs and keeps nothing.
 All four are read-only and return plain text. The same information as JSON with
 indent costs roughly six times the tokens and truncates.
 
-**Fetching is per source, so the cost is whatever you ask for**: two or three
-sources answer in about a second, one language in four, all twenty-one in about
-thirty. Half of that thirty is Telegram — six channels three seconds apart,
-because `t.me` drops the sixth request in a row. The tool description says so,
-so a model can ask before spending it.
+**Fetching is per source, and what it costs is Telegram**: those six channels
+go one at a time, three seconds apart, because `t.me` drops the sixth request in
+a row. Everything else is fetched in parallel, so the eleven English sources
+together cost what two do — one to two seconds. Bring the channels in and it is
+twenty to forty-five, which is also what `sources=["ru"]` costs, since six of
+the seven Russian sources are channels. Language is not the axis; channel count
+is. The tool description carries the same table, so a model can ask before
+spending it.
 
 ## Keeping an archive (optional)
 

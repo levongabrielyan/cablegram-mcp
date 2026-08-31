@@ -253,6 +253,11 @@ def build(open_db=None) -> MCPServer:
         """
         if archive_mode:
             return open_db()
+        # A fresh database every call, so conditional_headers finds no
+        # validators and every fetch is a full download. Deliberate: a 304 has
+        # no body and there is nowhere here that already holds the items, so
+        # carrying validators across calls would turn "nothing changed since two
+        # minutes ago" into a source with no items, printed as SILENT.
         db = connect(memory=True)
         targets = list(resolve(selectors)) if selectors else None
         if selectors and not targets:
