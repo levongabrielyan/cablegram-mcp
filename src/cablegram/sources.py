@@ -101,7 +101,8 @@ SOURCES: tuple[Source, ...] = (
         "Where open weights land, as opposed to the blog about them. Ordered by "
         "trend and not by date, because both date orderings return the firehose "
         "of every repo anyone touched. Somebody else's ranking, accepted "
-        "knowingly: the like count travels with each entry.",
+        "knowingly: the score it was ordered on travels with each entry, beside "
+        "the all-time like count, which is a different number and not sorted.",
     ),
 
     # ── Chinese ──────────────────────────────────────────────────────────────

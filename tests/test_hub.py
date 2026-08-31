@@ -32,6 +32,40 @@ def test_the_counts_the_ordering_was_made_of_travel_with_the_entry():
     assert "likes" in body and "downloads" in body
 
 
+def test_the_figure_labelled_as_the_ordering_is_the_one_that_orders():
+    """`sort=likes7d` names a sort, not the field it sorts on. The entries
+    carried `likes`, described as what the ordering was made of, and likes are
+    not what this list is ordered by: measured over the live top fifty,
+    trendingScore is monotone in 50 rows of 50 and likes is monotone in none —
+    position 3 shows 13,421 likes above position 0's 4,473.
+
+    A model reading a bigger number three lines below a smaller one has two
+    conclusions available and both are false: the list is sorted wrong, or the
+    count means nothing.
+
+    Names no expected value: whatever figure the body calls the ordering must
+    fall down the list the endpoint returned, which is the only property that
+    makes it the ordering.
+    """
+    import re
+
+    printed = [re.search(r"trend (\d+) \(the ordering\)", e.body)
+               for e in parse_models(SAMPLE)]
+    assert all(printed), "every entry has to carry the figure it was ordered on"
+    values = [int(m.group(1)) for m in printed]
+    assert values == sorted(values, reverse=True), (
+        f"the entries print {values} as the ordering, in the order the endpoint "
+        f"returned them; a figure that does not descend is not what ordered it")
+
+
+def test_the_two_counts_are_labelled_with_their_own_periods():
+    """`downloads` is thirty days and `likes` is every like the repo ever got.
+    One sentence carrying both under "in the last month" read as though the
+    period applied to the pair."""
+    body = parse_models(SAMPLE)[0].body
+    assert "likes all-time" in body and "downloads in 30d" in body
+
+
 def test_the_url_asks_for_the_only_ordering_that_returns_anything_real():
     """Measured against the live endpoint: sort=createdAt returns
     `bboeun/Mistral-7B-v0.1-SD-S-reffix-30k-merged`, sort=lastModified returns

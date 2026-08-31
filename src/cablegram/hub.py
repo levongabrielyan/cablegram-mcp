@@ -17,8 +17,15 @@ One property shapes the module, and it is a deviation worth stating plainly:
   all. `likes7d` is the only ordering that returns the list a person would
   recognise. This server ranks nothing itself, and here it accepts somebody
   else's ranking to get usable data. The `note` on the source says so, and the
-  like count travels with each entry so the reader can see what the ordering
-  was made of.
+  figure that ordering was made of travels with each entry.
+
+  That figure is `trendingScore`, and it is not `likes`. `sort=likes7d` names a
+  sort, not the field it sorts on: measured over the live top fifty,
+  trendingScore is monotone in 50 rows of 50 and likes is not monotone at all —
+  position 3 carries 13,421 likes above position 0's 4,473. Sending likes as
+  "what the ordering was made of" printed a bigger number three lines below a
+  smaller one, leaving one of two conclusions available, both false: that the
+  list is sorted wrong, or that the count means nothing.
 """
 
 from __future__ import annotations
@@ -76,10 +83,16 @@ def parse_models(payload: list) -> list[Entry]:
             continue
 
         likes, downloads = item.get("likes") or 0, item.get("downloads") or 0
+        trend = item.get("trendingScore")
         pipeline = item.get("pipeline_tag") or ""
-        # The counts are what the ordering was made of, so they travel with the
-        # entry rather than being folded into a position in a list.
-        detail = f"{likes} likes, {downloads} downloads in the last month"
+        # What the ordering was made of, travelling with the entry rather than
+        # being folded into a position in a list. Each count is labelled with
+        # its own period: `downloads` is the last 30 days and `likes` is every
+        # like the repo ever got, and one sentence carrying both under "in the
+        # last month" read as though the period applied to the pair.
+        ordering = f"trend {trend}" if trend is not None else "trend not in this response"
+        detail = (f"{ordering} (the ordering), {likes} likes all-time, "
+                  f"{downloads} downloads in 30d")
         entries.append(Entry(
             title=model_id,
             url=f"{HUB}/{model_id}",
