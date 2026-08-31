@@ -219,3 +219,41 @@ async def test_every_tool_has_a_readable_title_and_says_it_is_read_only(server):
         assert tool.title, f"{tool.name} has no title"
         assert tool.annotations.read_only_hint is True
         assert tool.annotations.open_world_hint is True
+
+
+# Every value the parsers can put in `body_src`, plus the renderer's literal for
+# an item with no body. Written here, beside the assertion, because the point is
+# that a description may only name a marker from THIS set.
+PRODUCIBLE_BODY_SRC = {
+    "content:encoded", "atom:content", "description", "atom:summary",  # rss.py
+    "article_title",                                                   # cls.py
+    "story_text",                                                      # hn.py
+    "message",                                                         # telegram.py
+    "none",                                                            # render.py
+}
+
+
+@pytest.mark.anyio
+async def test_every_marker_a_description_names_can_actually_be_emitted(server):
+    """wire_read's central instruction was "Read body=teaser literally: the text
+    you get is NOT the article".
+
+    The full/teaser verdict had been removed from the parser and then from the
+    renderer two rounds earlier — deliberately, because it is wrong in both
+    directions — so `teaser` could no longer appear anywhere. A model told to
+    distrust an excerpt only when it sees a marker that cannot appear will trust
+    every excerpt it is ever given, and report a 36-character Chinese fragment
+    as the article. The instruction was built so that its absence reads as
+    approval.
+
+    This is the shape of nearly every defect this file has caught: a fix lands
+    in the code and the sentence describing it stays behind. Nothing else in the
+    suite compares the two.
+    """
+    import re
+
+    for tool in await server.list_tools():
+        for named in re.findall(r"body=(\w+)", tool.description or ""):
+            assert named in PRODUCIBLE_BODY_SRC, (
+                f"{tool.name} tells the model to look for body={named}, which no "
+                f"parser can produce. Producible: {sorted(PRODUCIBLE_BODY_SRC)}")

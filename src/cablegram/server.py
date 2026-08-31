@@ -142,8 +142,9 @@ def build(open_db=None) -> MCPServer:
             "is the earliest signal this server can give you.\n"
             "detail='headlines' (the default) returns titles and ids; pass those ids to "
             "wire_read for the text. detail='full' includes each stored body inline and "
-            "drops to 5 per source, because bodies are expensive — a teaser is marked as "
-            "one, and is NOT the article."
+            "drops to 5 per source, because bodies are expensive. Each body is prefixed "
+            "[element Nc] — the feed element it came from and its length. Judge from N: "
+            "under a few hundred characters it is an excerpt, whatever the element."
         ),
         annotations=READ_ONLY,
     )
@@ -195,9 +196,17 @@ def build(open_db=None) -> MCPServer:
         description=(
             "The stored text of specific dispatches, by the ids wire_latest or "
             "wire_search returned.\n"
-            "Read body=teaser literally: that feed ships a truncated excerpt, and the "
-            "text you get is NOT the article. Do not draw conclusions from it — open "
-            "the url or say the full text was not available.\n"
+            "Read `body=<element> <N>c` before drawing any conclusion from the text. "
+            "Those are facts — the feed element the text came from, and its length — "
+            "not a verdict: this server refuses to judge whether a body is a whole "
+            "article, because feeds put full articles in <description> and two "
+            "sentences in <atom:content>. You make that call, and N is the evidence. "
+            "`body=description 36c` is a fragment and supports no conclusion at all; "
+            "`body=description 3300c` is a full digest. Under a few hundred characters, "
+            "cite it as an excerpt or open the url — never as the article. "
+            "`body=none` means nothing was stored for THAT item; most sources ship "
+            "bodies for some items and not others, so it says nothing about the "
+            "source.\n"
             "Ids not in the archive are named in the reply rather than dropped: "
             "re-run wire_latest or wire_search for the same window to get current ones."
         ),

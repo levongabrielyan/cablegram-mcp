@@ -380,3 +380,44 @@ def test_the_announced_allowance_is_the_one_actually_applied():
     announced = int(_ALLOWANCE.search(out).group(1))
     applied = max(n for n, _ in block_counts(out).values())
     assert announced == applied, f"announces {announced}, applies {applied}"
+
+
+def test_the_coverage_note_does_not_contradict_the_date_above_it():
+    """"oldest 2015-12-11" with "It holds nothing from before its first run" one
+    line below it.
+
+    Deep feeds carry their own history into the first fetch — 2,094 of 4,242
+    archived items predate the server. The model got two readings and both were
+    bad: either it has been running since 2015, or the dates cannot be trusted.
+    """
+    out = render_search([], query="q", since="s", days=7,
+                        archive_start="2015-12-11", archive_items=4242)
+    assert "nothing from before its first run" not in out
+    assert "2015-12-11" in out
+
+
+def test_an_item_with_no_body_says_nothing_about_its_source():
+    """`!! this source publishes headlines only` fired on a per-ITEM fact and
+    asserted a per-SOURCE property.
+
+    Eleven of nineteen sources ship bodies for some items and not others —
+    openai carries one in 91% of its items, and the line would have appeared 106
+    times telling the model openai has none.
+    """
+    out = render_read([row(body=None, body_src=None)], requested=["a3f9c2e1"])
+    assert "body=none" in out
+    assert "publishes headlines only" not in out
+
+
+def test_the_no_adapter_note_appears_only_when_a_source_has_none():
+    """Printed unconditionally while every kind was already in POLLABLE, so it
+    described an empty set on every call. The `fragile` note directly below it
+    is guarded; this one was not, and a model can file a real silence under
+    "that one is never polled"."""
+    from cablegram.poll import POLLABLE
+    from cablegram.sources import SOURCES
+
+    out = render_sources(health={}, archive_items=0, archive_start="-",
+                         archive_path="/tmp/a.db")
+    if all(s.kind in POLLABLE for s in SOURCES):
+        assert "no adapter yet" not in out

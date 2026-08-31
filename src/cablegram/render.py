@@ -282,7 +282,12 @@ def render_read(rows: list[dict], *, requested: list[str]) -> str:
                        f"date are that post's, not the article's. Open `url` for the "
                        f"real thing.")
         elif not row.get("body"):
-            out.append("!! this source publishes headlines only. Open `url` for the text.")
+            # A fact about this item, which is all the renderer knows. Phrased as
+            # a property of the source it was false for eleven of nineteen: openai
+            # carries a body in 91% of its items, and the line would have appeared
+            # 106 times telling the model openai has none. It is the same mistake
+            # the full/teaser verdict was removed from the parser for, twice.
+            out.append("!! no stored body for this item. Open `url` for the text.")
     return "\n".join(out)
 
 
@@ -331,8 +336,11 @@ def render_search(
             # ten years of a blog announced itself as starting today, and a
             # model asked "since when has X been discussed" declined to answer.
             f"COVER local-archive {archive_items} items, oldest {archive_start}",
-            "      Only what this server archived. It holds nothing from before its "
-            "first run.",
+            "      Only what this server has fetched, and coverage is uneven: a few "
+            "feeds served their whole",
+            "      back catalogue on the first poll and most served days, so the date "
+            "above is the oldest item",
+            "      in the archive, not a floor under every source.",
             '      "0 hits" = "not in what we can search". It does NOT mean nobody is '
             'talking about it.',
             "      zh/ru sources index the native term: a Chinese company is 智谱 here "
@@ -399,8 +407,16 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
         out.append(f"{source.id:16} {source.lang} {source.kind:9} {tags:24} "
                    f"{last_ok:14} {status}{mark}")
     out.append("")
-    out.append("Sources with no adapter yet are listed and never polled: they are known "
-               "to exist, and known to be empty.")
+    # Imported here rather than at module scope: poll pulls in the HTTP stack,
+    # and rendering has no business depending on it.
+    from .poll import POLLABLE
+
+    # Guarded like the fragile note below it. Printed unconditionally once every
+    # kind had an adapter, it described an empty set on every call — and a model
+    # can file a real silence under "that one is never polled".
+    if any(s.kind not in POLLABLE for s in SOURCES):
+        out.append("Sources with no adapter yet are listed and never polled: they are "
+                   "known to exist, and known to be empty.")
     if any(s.fragile for s in SOURCES):
         out.append("fragile = reverse-engineered rather than published. It works today "
                    "and may stop without notice; treat its silence as unknown.")
