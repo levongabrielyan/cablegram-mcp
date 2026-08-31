@@ -601,3 +601,38 @@ def test_a_reference_reports_a_collision_like_the_main_path_does(db):
     assert report.new == 1, "the post itself is archived"
     assert not db.execute("SELECT 1 FROM sighting WHERE item_id = ? AND source = 'ai_newz'"
                           " AND via = 'link'", (item_id(linked),)).fetchall()
+
+
+def test_a_publisher_takes_over_from_the_aggregator_that_saw_it_first(db):
+    """`first_source` is printed by wire_read where a reader looks for "the
+    source", and it means whoever archived the item first. hn is source three in
+    the catalogue and every publisher it aggregates comes after, so a story
+    submitted to Hacker News before its own outlet's feed arrived came out as:
+
+        ## 44f61163770f hn en ... x2[hn,openai]
+        A milestone in expanding access to AI
+        ChatGPT Ads reaches $1 billion in annualized revenue...
+
+    naming hn above OpenAI's own headline, date and body — all of which the
+    other updates had already corrected to OpenAI's. Nothing there is false, and
+    the cross list names both; it is the position that reads as authorship.
+
+    An aggregator is where a story was seen, not where it was published, and the
+    catalogue already says which sources are which.
+    """
+    url = "https://openai.com/index/milestone"
+    store_entries(db, by_id("hn"),
+                  [Entry("A milestone", url, PUB, None, None)], fetched_at=NOW)
+    assert rows(db)[0]["first_source"] == "hn"
+
+    store_entries(db, by_id("openai"),
+                  [Entry("A milestone in expanding access to AI", url, PUB,
+                         "body", "description")], fetched_at=NOW)
+    assert rows(db)[0]["first_source"] == "openai", \
+        "the outlet that published it outranks the one that submitted it"
+
+    # And it does not keep changing hands: a second publisher does not displace
+    # the first, so the answer does not depend on poll order.
+    store_entries(db, by_id("qbitai"),
+                  [Entry("智谱", url, PUB, None, None)], fetched_at=NOW)
+    assert rows(db)[0]["first_source"] == "openai"

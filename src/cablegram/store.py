@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 
 from .fetch import Fetched
 from .rss import Entry
-from .sources import Source, resolve
+from .sources import SOURCES, Source, resolve
 from .urls import item_id, normalise
 
 __all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
@@ -57,6 +57,11 @@ class StoreReport:
     # distinguish "there were 100" from "there were more, unreachable" — and for
     # cls.cn, which cannot page backwards, what is beyond the ceiling is gone.
     at_ceiling: bool = False
+
+
+# Sources whose every headline points somewhere else. Read once: it is the
+# catalogue, and the catalogue does not move while the process runs.
+_AGGREGATORS = tuple(s.id for s in SOURCES if s.aggregator)
 
 
 def _utc_iso(dt) -> str:
@@ -151,11 +156,10 @@ def _store_one(
             outcome = "seen"
 
             # Only ever improve, never overwrite. The same story reaches several
-            # feeds and the first to arrive is often the poorest: Product Radar
-            # carries no date, Hacker News carries the real one. First-in-wins
-            # would keep the '~approximate' mark for life and leave wire_read
-            # with nothing to serve, while the feed that had both moves on.
-            # Only ever improve — and for a date, better means earlier as well
+            # feeds and the first to arrive is often the poorest: a channel
+            # carries no date, the outlet's own feed carries the real one.
+            #
+            # For a date, better means earlier as well
             # as more certain. wire_read prints this one, and an article is
             # published once: every later sighting is somebody noticing it, so
             # a submission cannot precede the thing submitted. Two feeds
@@ -183,6 +187,29 @@ def _store_one(
             "   (SELECT 1 FROM sighting WHERE item_id = ? AND via = 'feed')",
             (title, source.lang, source.id, published, date_exact, iid, iid),
         )
+
+        # And a publisher outranks an aggregator that got there first. wire_read
+        # prints `first_source` where a reader looks for "the source", so an
+        # article Hacker News submitted before its own outlet's feed arrived
+        # came out as:
+        #
+        #   ## 44f61163770f hn en ... x2[hn,openai]
+        #   A milestone in expanding access to AI
+        #   ChatGPT Ads reaches $1 billion in annualized revenue...
+        #
+        # naming hn above OpenAI's own headline, date and body — every one of
+        # which the updates above had already corrected to OpenAI's. hn is where
+        # it was seen first, which is what the field means and why nothing here
+        # is false; it is not who published it, which is what the position
+        # reads as. The cross list beside it is unaffected: both still appear
+        # there, in the order they were seen.
+        if not source.aggregator and _AGGREGATORS:
+            marks = ",".join("?" * len(_AGGREGATORS))
+            db.execute(
+                f"UPDATE item SET first_source = ?, lang = ?"
+                f" WHERE id = ? AND first_source IN ({marks})",
+                (source.id, source.lang, iid, *_AGGREGATORS),
+            )
 
         db.execute(
             "INSERT OR IGNORE INTO sighting"
