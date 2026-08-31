@@ -323,3 +323,29 @@ async def test_no_description_carries_a_source_count_of_its_own(server):
             assert int(count) == len(SOURCES), (
                 f"{where} tells the model there are {count} sources; "
                 f"the catalogue has {len(SOURCES)}")
+
+
+# ── seventh review ──────────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool,args", [("wire_latest", {"hours": 24}),
+                                       ("wire_search", {"query": "GLM", "days": 7})])
+async def test_a_limit_of_zero_is_refused_rather_than_answered(server, tool, args):
+    """`hours` and `days` were guarded and `limit_per_source` was not, though it
+    produces the worse reply of the two: it empties the payload and leaves the
+    header claiming full coverage.
+
+    Measured against a 24h window of the real archive, holding 966 items from 14
+    sources: `limit_per_source=0` returned `0 of 0 items | 21/21 sources` above
+    a SILENT line naming all twenty-one as having answered and published nothing
+    in it. A window of zero hours at least prints a window of zero hours; this
+    one reads as a quiet day across every source at once, and there is no second
+    figure anywhere in the reply to check the first against.
+    """
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError) as raised:
+        await call(server, tool, limit_per_source=0, **args)
+    assert "limit_per_source" in str(raised.value)
+    assert "0 items per source" in str(raised.value), (
+        "the message has to name what was asked for, not just refuse it")

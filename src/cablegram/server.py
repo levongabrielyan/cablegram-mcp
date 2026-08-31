@@ -103,18 +103,26 @@ def _parse_since(raw: str) -> str:
 
 
 def _positive(name: str, value: int, unit: str) -> int:
-    """Refuse a window that cannot exist, instead of quietly making one up.
+    """Refuse an argument that describes no possible request.
 
     `max(1, hours)` turned hours=0 into an hour and said nothing, so a model
     that meant "everything" got sixty minutes and could not tell. In search it
     was worse: the header printed the *requested* days, so days=-7 came back as
     `last -7d | 55 shown`, which describes no operation at all.
+
+    `limit_per_source` was left out of that round and is the worst of the three,
+    because it empties the payload without emptying the header. Measured against
+    a 24h window holding 966 items from 14 sources, limit_per_source=0 returned
+    `0 of 0 items | 21/21 sources` above a SILENT line naming all twenty-one as
+    having answered and published nothing. Every clause of that is false, the
+    reply is perfectly well formed, and nothing in it can be checked against
+    anything else in it.
     """
     if value < 1:
         raise ToolError(
-            f"`{name}` must be 1 or more; got {value}. A window of {value} {unit} "
-            f"is not a window, and silently using 1 would have answered a "
-            f"different question than the one asked."
+            f"`{name}` must be 1 or more; got {value}. {value} {unit} is not a "
+            f"request that can be answered, and silently using 1 would have "
+            f"answered a different question than the one asked."
         )
     return value
 
@@ -291,6 +299,8 @@ def build(open_db=None) -> MCPServer:
             )
         if limit_per_source is None:
             limit_per_source = 5 if detail == "full" else 25
+        else:
+            _positive("limit_per_source", limit_per_source, "items per source")
 
         with closing(opened(sources, hours)) as db:
             rows = latest_items(db, since=start, sources=sources,
@@ -395,6 +405,7 @@ def build(open_db=None) -> MCPServer:
         max_tokens: int = 8000,
     ) -> str:
         start = _iso(_now() - timedelta(days=_positive("days", days, "days")))
+        _positive("limit_per_source", limit_per_source, "items per source")
         with closing(opened(sources, days * 24)) as db:
             rows, engine = search_items(db, query, since=start, sources=sources,
                                         limit_per_source=limit_per_source)
