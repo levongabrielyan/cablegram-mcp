@@ -1,14 +1,15 @@
 # cablegram-mcp
 
-Twenty-one sources on AI and tech — English, Chinese and Russian — written to be
-read by a model rather than by a person.
+Twenty-eight sources on AI and tech — English, Chinese and Russian — written to
+be read by a model rather than by a person. Nothing is stored: each call fetches
+what it needs, answers, and discards it.
 
 A model's knowledge ends at its training cutoff, and it has no way to notice
 that it has ended. It will recommend the tool that was superseded last month and
 say nothing at all about the release that changes the answer. This server is
-where it goes to find out what it missed: what twenty-eight sources published in
-the last N hours, the stored text of whichever dispatches it wants to read, and a
-search over what it has fetched.
+where it goes to find out what it missed: what those sources published in the
+last N hours, the text of whichever dispatches it wants to read, and a search
+across what they are serving right now.
 
 Dispatches arrive raw. They are filtered by date and never ranked, because
 ranking means deciding what matters with far less context than the model reading
@@ -19,8 +20,8 @@ your model is the editor.
 **The point is the cable, not the news.** A launch discussed in Chinese or
 Russian today reaches English-language coverage days later, filtered through
 whoever decided it was worth translating — and often it never arrives at all.
-Twenty-one sources in three languages, read directly, put a reader in California
-in the same week as a reader in Shanghai or Moscow.
+Twenty-eight sources in three languages, read directly, put a reader in
+California in the same week as a reader in Shanghai or Moscow.
 
 Headlines are never translated. Each dispatch carries its language, and the
 model reading it has more context for that than any translation step would.
@@ -31,28 +32,30 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.1 archive | 2026-08-31T04:26Z..2026-08-31T12:26Z | 5 of 253 items | 3/3 sources
-CUT   cls=2/34  hn=2/218   (newest kept)
+CABLEGRAM v0.1 | 2026-08-31T08:02:26Z..2026-08-31T16:02:26Z | 6 of 500 items | 3/3 sources
+CUT   cls=2/22  data_secrets=2/4  hn=2/474   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 2/34
+## cls zh early,finance 2/22
 -- 08-31
-7dfa8ea7a34e 11:58 国务院国资委举办中央企业“AI for Science”人才特训班
-191a7a89001e 11:24 财联社8月31日电，智谱表示，其年化经常性收入（ARR）于8月突破16亿美元。
+f34c19515bb2 14:31 OpenAI广告业务上线约200天 年化营收规模突破10亿美元
+59768dd933bc 14:02 HBM现货价格飙至长协五倍：HBM4良率承压，长协锁产挤压现货供给
 
-## data_secrets ru telegram 1/1
+## data_secrets ru telegram 2/4
 -- 08-31
-f49065b348d8 08:12 Вышел OpenClaw 2.0 – крупнейшее обновление за всю историю проекта
+016ab99e8218 15:56 OpenAI закупает десятки тысяч Mac mini и Mac Studio для RL обучения агентов
+6454c66ae77d 14:03 До отправки рабочего документа в нейросеть 3… 2… 1… клик
 
-## hn en community,searchable 2/218
+## hn en community,searchable 2/474
 -- 08-31
-4d1471d69971 12:03 Advertisers are trying to influence AI bots with secret ads (theregister.com)
-f94e8c31521b 12:03 Novo Mundo (news.ycombinator.com)
+a3b094e0252f 15:59 Brocards for Vulnerability Triage (vulnbrocards.com)
+216464036f0f 15:59 Vigil 0.5.0: threat hunting agent where a deterministic controller owns state (vigilsoc.org)
 ```
 
-*Eight hours of three sources at `limit_per_source=2`, verbatim. `CUT` says what
-was left out and how much there was; `3/3` is how many answered.*
+*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.4 seconds
+and 296 tokens. `CUT` says what was left out and how much there was — 500 items
+in that window, six printed; `3/3` is how many answered.*
 
 **What it costs**, measured rather than estimated: a full day of all
 twenty-eight at the defaults is about **5,000 tokens**; six hours is about
@@ -66,7 +69,7 @@ adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
 namespaces on it, and two sections of a lab that publishes no feed, read out of
-the data its own pages ship. 417 tests covering 96% of 1,343 statements, on
+the data its own pages ship. 371 tests covering 95% of 1,198 statements, on
 3.12 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
@@ -108,8 +111,8 @@ That is the whole setup. Each call fetches what it needs and keeps nothing.
 | Tool | Question |
 | --- | --- |
 | `wire_latest` | What did the sources publish in the last N hours? |
-| `wire_read` | Give me the stored text of these ids |
-| `wire_search` | Who wrote about this term, and when — widen `days` to reach back |
+| `wire_read` | Give me the text of these ids |
+| `wire_search` | Who is carrying this term right now, and since when |
 | `wire_sources` | What exists, and what is currently broken? |
 
 All four are read-only and return plain text. The same information as JSON with
@@ -124,54 +127,49 @@ the seven Russian sources are channels. Language is not the axis; channel count
 is. The tool description carries the same table, so a model can ask before
 spending it.
 
-## Keeping an archive (optional)
+## Nothing is kept
 
-Nothing is stored by default. Set `CABLEGRAM_ARCHIVE=1` and the server reads a
-SQLite file instead of fetching, which `cablegram poll` fills:
+There is no database file, no cache directory and no state between calls. Each
+tool call builds a SQLite database in memory, fills it with one pass over the
+sources you asked for, answers from it, and throws it away when the reply is
+sent. SQLite is there for what it does inside that one call — the trigram index
+that makes a Chinese query work at all, the count of how many sources carried
+the same URL — not to keep anything.
 
-```bash
-export CABLEGRAM_ARCHIVE=1
-cablegram poll        # once now, and on a timer if you want history
-```
+This has a cost and it is worth stating: **`wire_search` cannot reach past what
+the feeds are serving today.** For English that costs almost nothing. Hacker
+News and Habr can be searched at their own origin, and the OpenAI blog hands
+over its whole back catalogue to 2015 in a single fetch, Hugging Face to 2020.
+For Chinese it is real and it is permanent — cls.cn holds 3.34 days and cannot
+page backwards, and 36Kr's live stream is about two hours deep. Anything older
+than that is gone, from here and from everywhere.
 
-The file lives under your platform's data directory
-(`~/.local/share/cablegram/archive.db` on Linux; override with `CABLEGRAM_DB`).
-It is created on first run and grows by roughly a megabyte per thousand items.
-Hacker News is most of that volume, and it is the one source you can already
-search at its own origin.
+Every reply says so rather than leaving it to be discovered: the COVER block
+gives the oldest item the fetch actually reached and states that the floor is a
+property of the feeds, never of the subject.
 
-**What an archive buys you**, and it is narrower than it sounds. Most feeds
-serve enough history that a gap in polling costs nothing: this laptop was off
-for eleven hours, the sources published 325 articles, and the next pass picked
-up all 325. Two exceptions matter — cls.cn holds 3.34 days and cannot page
-backwards, and 36Kr is shallow — so if those two are why you are here, run the
-timer. A systemd user unit is in
-[`deploy/`](https://github.com/levongabrielyan/cablegram-mcp/tree/main/deploy).
+`cablegram check` fetches every source once and prints what each one said, for
+deciding whether the catalogue still works. It stores nothing either.
 
-**What it does not buy you** is a complete history. Feeds differ enormously:
-the OpenAI blog serves back to 2015 on the first fetch, Hugging Face to 2020,
-and most of the rest a few days. `wire_search` says so on every reply — zero
-hits means "not in what we can search", never "nobody is talking about it".
-
-Nothing is uploaded anywhere, and no seed database ships with this repository:
-the server fetches on your behalf and does not redistribute anyone's content.
+Nothing is uploaded anywhere and no database ships with this repository: the
+server fetches on your behalf and does not redistribute anyone's content.
 
 ## Not built yet
 
 Separate from what this deliberately never does — the design notes list that —
 these are things it would reasonably do and does not:
 
-* **Nothing prunes the archive.** If you enable it, it only grows. There is no
-  `prune`, no retention window and no export; deleting the file is the only
-  reset, and it costs the whole history.
+* **No history.** Every call starts from nothing, so the same question asked
+  twice costs two fetches, and a question about last month cannot be answered
+  from here at all. That is the trade for leaving no file on your disk.
 * **Sources are fixed in code.** Adding one means editing `sources.py`, and an
   adapter too if it is not RSS. That is the design rather than an oversight, but
   it does mean a fork rather than a config file.
-* **Coverage before your first call is uneven and not controllable.** A feed
-  either serves its back catalogue or it does not; there is no way to ask for
-  more history than the endpoint volunteers.
+* **Coverage is uneven and not controllable.** A feed either serves its back
+  catalogue or it does not; there is no way to ask for more history than the
+  endpoint volunteers, and one source reaching 2015 says nothing about the next.
 * **Nothing checks a source's terms for you.** The endpoints are public and the
-  requests are conditional and rate-limited, but the responsibility is yours.
+  requests are bounded and rate-limited, but the responsibility is yours.
 
 ## Design
 
@@ -184,9 +182,11 @@ do.
 ## Notes
 
 Only public endpoints are used: no credentials, no authentication bypass, no
-scraping behind a login. Conditional requests (`ETag`, `If-Modified-Since`) mean
-an unchanged feed is not re-downloaded. Intended for personal research — respect
-each source's terms of service.
+scraping behind a login. Keeping nothing means every call is a full download,
+which is heavier on somebody else's server than a poller with a cache behind it
+— that is the price of not keeping a copy of their site, and it is why the tool
+descriptions teach a model to ask before spending a full sweep. Intended for
+personal research — respect each source's terms of service.
 
 ## Licence
 

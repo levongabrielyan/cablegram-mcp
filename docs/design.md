@@ -41,8 +41,8 @@ anything.
 
 Normalisation errs, everywhere, towards keeping URLs apart:
 
-* **Merging two articles is permanent.** `url_norm` is UNIQUE, so the second one
-  never enters the archive and nothing reports it.
+* **Merging two articles loses one.** `url_norm` is UNIQUE, so the second one
+  never reaches the reply and nothing reports it.
 * **Splitting one article is a duplicate** — recoverable, though not harmless:
   each split quietly lowers the cross-source count.
 
@@ -52,20 +52,20 @@ of, so `?sid=1` and `?sid=2` became the same id and the second article was
 rejected in silence.
 
 Twelve hex digits, not eight. At eight, a 50% chance of collision arrives at
-77,000 items — about five months of these feeds — and the id is a PRIMARY KEY,
-so a collision is a real article silently refused.
+77,000 items — a single sweep of Hacker News is 1,000 — and the id is a PRIMARY
+KEY, so a collision is a real article silently refused.
 
-The archive records the recipe that produced its ids and refuses to open if it
-changed. Otherwise every stored id would stop matching, every item would be
-inserted again, and the archive would double while reporting nothing wrong.
+Ids also have to survive the reply. A model is handed ids by `wire_latest` and
+passes them back to `wire_read`, so the function turning a URL into an id is
+frozen: it takes no clock, no counter and no state, which is why the same URL
+gives the same id in the next call and on another machine.
 
-## The archive is the point
+## Nothing is kept
 
-Feeds expose a window of days and no history of their own. Everything else here
-can be rewritten in an afternoon; this file is the only part whose value depends
-on when it was started. It lives outside the project directory, under the
-platform's data directory and never under a cache directory — caches are
-declared deletable and cleaners act on that.
+There is no file. Each call builds a SQLite database in memory, fills it with
+one pass over the sources asked for, answers, and discards it. What SQLite is
+doing there is work inside a single call, not storage — and the three things it
+does are the reason it is worth having at all.
 
 `sighting` is a separate table because `item` can only name whichever source got
 there first. Without it the cross-source count reads 1 for everything, which
@@ -89,12 +89,13 @@ because their recall differs.
 * **The deadline cancels only what is still in flight.** Cancelling the batch
   turned one slow feed into eleven dead ones, which nothing downstream could
   tell apart from a real outage.
-* **A 304 is a success.** The source answered and had nothing new. Counting it
-  as a failure turns a quiet week into a fake outage; it also must not overwrite
-  the last real result with a zero.
-* **A failed poll never touches `last_ok` or the stored validators.** `last_ok`
-  is how anyone notices a source has been mute for days, and wiping an ETag
-  re-downloads the whole feed for good, with no error to show for it.
+* **No conditional requests, and a 304 is a failure.** That is the opposite of
+  what it means with a cache behind it, and the reason is that there is none: a
+  304 carries no body, so a caller holding nothing gets a source with no items
+  and reports it as having published nothing. No validator is ever sent, so a
+  304 can only arrive as a protocol violation, and it is named as one.
+* **A failure never touches `last_ok`.** It is how anyone notices a source has
+  been mute, and overwriting it hides exactly the thing worth seeing.
 * **One entry, one transaction.** A single unparseable entry used to roll back
   everything already written for that source.
 * **A feed that parses to zero entries has its own state.** That is what a feed
@@ -127,8 +128,8 @@ XML and RFC-822 dates.
 * It does not translate. Each dispatch carries its language, and the model
   reading it has more context for that than any translation step would.
 * It does not rank, score or deduplicate across sources beyond counting.
-* It does not search the web. `wire_search` reads only what this archive holds,
-  which starts the day the server was first run.
-* It does not fetch article bodies. What a feed ships is what is stored.
+* It does not search the web. `wire_search` reads only what the sources are
+  serving at the moment of the call, which for some of them is a few days.
+* It does not fetch article bodies. What a feed ships is what the reply carries.
 * Sources are fixed, not configurable. A configurable aggregator is a different
   product; this one is tuned for one question.
