@@ -466,3 +466,45 @@ def test_a_source_that_answered_and_published_nothing_is_named():
     assert "SILENT" in out
     assert "openai" in out and "deepmind" in out
     assert "openai" not in out.split("SILENT")[0], "not confused with DOWN"
+
+
+# ── seventh review: a source the catalogue dropped is still in the archive ───
+
+def test_an_item_from_a_retired_source_still_carries_its_language():
+    """An archive is not rewritten when the catalogue changes — that is what an
+    archive is for — so the renderer keeps meeting sources it can no longer look
+    up. It printed them as `## vcru ??  1/17`: seventeen Russian headlines with
+    no language, under a header counting twenty-two sources, from something
+    wire_sources did not list.
+
+    `??` is the one thing this server opens by promising not to do: headlines are
+    never translated, and each carries its language.
+    """
+    from cablegram.render import render_latest
+
+    out = render_latest([row(source="vcru", id="a" * 12)], since="s", until="u",
+                        down={}, sources_total=1)
+    assert "## vcru ru " in out, f"no language on the retired source:\n{out}"
+    assert "??" not in out
+
+
+def test_the_catalogue_names_the_sources_it_dropped():
+    """The other half: an item in the payload that the catalogue cannot explain
+    is an item the model cannot ask about — and UNKNOWN SELECTOR sends it here
+    to find out."""
+    from cablegram.sources import RETIRED
+
+    out = render_sources(health={}, archive_items=0, archive_start="-",
+                         archive_path="/tmp/a.db")
+    for source in RETIRED:
+        assert source.id in out, f"{source.id} is renderable and unlisted"
+
+
+def test_a_retired_source_cannot_be_selected():
+    """It is gone from the catalogue; it is only still readable. Making it
+    selectable would put a dead feed back into every unfiltered sweep."""
+    from cablegram.sources import RETIRED, resolve
+
+    for source in RETIRED:
+        assert resolve([source.id]) == (), f"{source.id} is selectable again"
+        assert source not in resolve(None)

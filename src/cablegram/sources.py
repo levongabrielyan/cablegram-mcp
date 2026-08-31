@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["Source", "SOURCES", "by_id", "resolve"]
+__all__ = ["Source", "SOURCES", "RETIRED", "by_id", "resolve"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,10 +182,41 @@ SOURCES: tuple[Source, ...] = (
     ),
 )
 
-_BY_ID = {s.id: s for s in SOURCES}
+# Dropped from the catalogue and still present in every archive already on disk.
+# An archive is not rewritten when the catalogue changes — that is the point of
+# it — so the renderer keeps meeting items from sources it can no longer look
+# up, and printed them as `## vcru ??  1/17`: a Russian headline with no
+# language, from something wire_sources does not list and the model cannot ask
+# about. `??` breaks the one promise the server opens with, that every headline
+# carries its language.
+#
+# Never returned by resolve(). These cannot be selected, only rendered.
+RETIRED: tuple[Source, ...] = (
+    Source(
+        "vcru", "vc.ru", "rss",
+        "https://vc.ru/rss", "ru",
+        ("startups", "retired"),
+        "Dropped: of seventeen items archived, two touched AI. The /ai/ feed "
+        "404s and the general one was being used instead.",
+    ),
+    Source(
+        "productradar", "Product Radar", "rss",
+        "https://productradar.ru/rss/", "ru",
+        ("launches", "retired"),
+        "Dropped: answered 200 and had not published in 25 days — ten items in "
+        "720. Product Hunt covers the same ground and is alive.",
+    ),
+)
+
+_BY_ID = {s.id: s for s in SOURCES + RETIRED}
 
 
 def by_id(source_id: str) -> Source | None:
+    """Includes retired sources, because this is the renderer's lookup.
+
+    An archived item still has a language whether or not its source is still in
+    the catalogue. resolve() never sees these.
+    """
     return _BY_ID.get(source_id)
 
 

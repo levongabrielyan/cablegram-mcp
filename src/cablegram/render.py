@@ -23,7 +23,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .sources import SOURCES, by_id
+from .sources import RETIRED, SOURCES, by_id
 from .store import is_down
 
 __all__ = ["render_latest", "render_read", "render_search", "render_sources",
@@ -546,4 +546,15 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
     if any(s.fragile for s in SOURCES):
         out.append("fragile = reverse-engineered rather than published. It works today "
                    "and may stop without notice; treat its silence as unknown.")
+    if RETIRED:
+        # Named because an archive keeps what the catalogue drops, so their
+        # items still appear in a wide enough window. An item in the payload
+        # that the catalogue cannot explain is an item the model cannot ask
+        # about — and the UNKNOWN SELECTOR line sends it here to find out.
+        out.append("")
+        out.append("Dropped from the catalogue. Not selectable, and still in any archive "
+                   "on disk, so their items")
+        out.append("can appear in a wide window:")
+        for source in RETIRED:
+            out.append(f"  {source.id:16} {source.lang}  {source.note}")
     return "\n".join(out)
