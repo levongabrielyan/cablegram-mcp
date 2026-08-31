@@ -260,3 +260,38 @@ def test_the_total_of_each_source_counts_only_that_source(db):
     assert len(per_source) > 1, "one source cannot tell the two totals apart"
     assert per_source == dict(counted), (
         f"source_total says {per_source}, the rows actually carry {dict(counted)}")
+
+
+def test_the_headline_wire_read_prints_belongs_to_the_item_it_names(db):
+    """`wire_read` prints first_source, lang and via — all facts about the item —
+    beside a headline. That headline used to be the sighting's: the words of
+    whichever source carried it. When two sources carry one URL those are
+    different sources, and the reply attributed one's words to the other.
+
+    Measured against the real catalogue: 20 items carried by more than one
+    source, 10 of them with different headlines. The worst was a Russian
+    Telegram paraphrase printed under `openai en`, carrying a date that OpenAI's
+    own post does not contain, with no `!!` line — because `via` is a fact about
+    the item and the item had been published by a feed.
+
+    The block headings keep the sighting's headline, which is the right one
+    there: qbitai writes 智谱 where Hacker News writes Zhipu, and that pairing is
+    the bridge between a Chinese story and an English query.
+    """
+    url = "https://openai.com/index/pacing"
+    store_entries(db, by_id("openai"),
+                  [Entry("Pacing model development", url, NOW, "body", "description")],
+                  fetched_at=iso(NOW))
+    store_entries(db, by_id("qbitai"),
+                  [Entry("OpenAI暂停两周强化学习训练", url, NOW, None, None)],
+                  fetched_at=iso(NOW))
+
+    rows = {r["source"]: r for r in latest_items(db, since=iso(NOW - timedelta(days=7)))
+            if r["id"] == item_id(url)}
+    assert set(rows) == {"openai", "qbitai"}, "both sources carried it"
+
+    # Every row agrees on the item's own headline, whichever source produced it.
+    assert {r["item_title"] for r in rows.values()} == {"Pacing model development"}
+    # And each keeps its own, for the block it appears under.
+    assert rows["qbitai"]["title"] == "OpenAI暂停两周强化学习训练"
+    assert rows["openai"]["title"] == "Pacing model development"

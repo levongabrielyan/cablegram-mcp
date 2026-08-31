@@ -433,6 +433,13 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
 _ITEM_COLUMNS = (
     "i.id, i.url, i.url_norm, i.lang, i.body, i.body_src, i.published,"
     " i.date_exact, i.target_host, i.first_source,"
+    # The item's own headline, beside the sighting's. wire_read prints
+    # first_source, lang and via — all facts about the item — and used to print
+    # `title`, which is the headline of whichever source carried it. When two
+    # sources carry one URL those belong to different sources, and the result
+    # was a Russian channel's paraphrase printed under `openai en`, with a date
+    # in it that OpenAI's post does not contain.
+    "       i.title AS item_title,"
     # Both of these are facts about the item, and both were computed by
     # items_by_ids alone. That was invisible while wire_read only ever read the
     # file; serving live, it reads rows these other two queries produced, and a

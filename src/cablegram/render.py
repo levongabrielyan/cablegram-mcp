@@ -289,7 +289,7 @@ def render_read(rows: list[dict], *, requested: list[str],
         out.append(f"\n## {row['id']} {row.get('first_source', '')} {row.get('lang','')} "
                    f"{mark}{row['published']}{body}{cross}")
         out.append(f"url {row['url']}")
-        out.append(row["title"])
+        out.append(row.get("item_title") or row["title"])
         if row.get("body"):
             out.append(row["body"])
         if borrowed:

@@ -448,3 +448,47 @@ async def test_a_source_with_no_recorded_attempt_is_named_as_never_polled(server
     it left the suite green."""
     out = await call(server, "wire_latest", hours=24)
     assert "openai=never polled" in out
+
+
+@pytest.mark.anyio
+async def test_the_headline_read_back_is_the_one_the_named_source_wrote():
+    """wire_read prints `first_source`, `lang` and `via` — all facts about the
+    item — beside a headline that was the sighting's: the words of whichever
+    source carried it. When two sources carry one URL those are different
+    sources.
+
+    Measured against the real catalogue: 20 items with more than one source, 10
+    of them with different headlines. The worst printed a Russian channel's
+    paraphrase under `openai en`, with a date in it that OpenAI's own post does
+    not contain, and no `!!` — because `via` says the item was published by a
+    feed, which it was. Three fields from three places, read as one statement.
+
+    Asserted through the server rather than against the query, because the query
+    already carried both headlines and it was the renderer that chose the wrong
+    one.
+    """
+    url = "https://openai.com/index/pacing"
+
+    def rows():
+        db = connect()
+        store_entries(db, by_id("openai"),
+                      [Entry("Pacing model development", url, NOW, "body", "description")],
+                      fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        store_entries(db, by_id("qbitai"),
+                      [Entry("OpenAI暂停两周强化学习训练", url, NOW, None, None)],
+                      fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        return db
+
+    server = build(rows)
+    listing = await call(server, "wire_latest", hours=24)
+    # The blocks keep each source's own words: that pairing is the bridge
+    # between a Chinese story and an English query, and it is deliberate.
+    assert "OpenAI暂停两周强化学习训练" in listing and "Pacing model development" in listing
+
+    out = await call(server, "wire_read", ids=[item_id(url)])
+    named = re.search(r"^## \S+ (\S+) (\S+) ", out, re.M)
+    assert named and named.group(1) == "openai" and named.group(2) == "en"
+    assert "Pacing model development" in out, (
+        f"the reply names openai/en and prints a headline that is not openai's:\n{out}")
+    assert "OpenAI暂停两周强化学习训练" not in out, (
+        "qbitai's words, attributed to openai by everything around them")
