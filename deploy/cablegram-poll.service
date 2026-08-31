@@ -3,6 +3,9 @@ Description=cablegram: fetch every source once and archive it
 
 [Service]
 Type=oneshot
+# The archive is off by default, so the poller has to ask for it or it
+# would fill a file the server is not reading.
+Environment=CABLEGRAM_ARCHIVE=1
 # Adjust to where you cloned it. `uv run` is used rather than a bare
 # `cablegram` because the documented install (git clone + uv sync) leaves the
 # entry point inside the project's own .venv and never on PATH — copying a

@@ -1,12 +1,20 @@
 [project]
 name = "cablegram-mcp"
 version = "0.1.1"
-description = "Raw dispatches from 19 tech, AI and Chinese/Russian sources. Date-filtered only, never ranked."
+description = "Nineteen AI and tech sources in English, Chinese and Russian, read by a model so it knows what changed after its training cutoff."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "Levon Gabrielyan" }]
 keywords = ["mcp", "model-context-protocol", "rss", "news", "ai", "tech-signals"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
 
 dependencies = [
     "mcp>=2.1.1",
@@ -23,6 +31,8 @@ cablegram-mcp = "cablegram.cli:main"
 [project.urls]
 Homepage = "https://github.com/levongabrielyan/cablegram-mcp"
 Repository = "https://github.com/levongabrielyan/cablegram-mcp"
+Issues = "https://github.com/levongabrielyan/cablegram-mcp/issues"
+Documentation = "https://github.com/levongabrielyan/cablegram-mcp/blob/main/docs/design.md"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

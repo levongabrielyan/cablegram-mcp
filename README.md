@@ -1,11 +1,20 @@
 # cablegram-mcp
 
-Raw dispatches from tech, AI and Chinese/Russian sources — filtered by date,
-never ranked.
+Nineteen sources on AI and tech — English, Chinese and Russian — written to be
+read by a model rather than by a person.
 
-A *cablegram* was the unedited message that arrived over the submarine cables,
-before an editor turned it into a story. This server is the cable: it brings the
-dispatches. Your model is the editor.
+A model's knowledge ends at its training cutoff, and it has no way to notice
+that it has ended. It will recommend the tool that was superseded last month and
+say nothing at all about the release that changes the answer. This server is
+where it goes to find out what it missed: what nineteen sources published in the
+last N hours, the stored text of whichever dispatches it wants to read, and a
+search over what it has fetched.
+
+Dispatches arrive raw. They are filtered by date and never ranked, because
+ranking means deciding what matters with far less context than the model reading
+them has. A *cablegram* was the unedited message that came over the submarine
+cables, before an editor turned it into a story: this server is the cable, and
+your model is the editor.
 
 **The point is the cable, not the news.** A launch discussed in Chinese or
 Russian today reaches English-language coverage days later, filtered through
@@ -21,44 +30,46 @@ capabilities"* while a Russian channel titles the same URL *"OpenAI stopped RL
 for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
-A full day of all nineteen costs a few thousand tokens. Six hours of them,
-grouped by source with the cuts declared, is around 700.
-
 ```
-CABLEGRAM v0.1 | 2026-08-30T09:09Z..2026-08-30T14:09Z | 11 items | 19/19 sources
-CUT   habr=2/4  hn=2/159  kr36=2/3   (newest kept)
+CABLEGRAM v0.1 archive | 2026-08-31T04:26Z..2026-08-31T12:26Z | 5 of 253 items | 3/3 sources
+CUT   cls=2/34  hn=2/218   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 1/1
--- 08-30
-e60e27faa7fc 10:04 AI数据中心扩张“限制性因素”浮现 马斯克：SpaceX正铸造燃气轮机叶片
+## cls zh early,finance 2/34
+-- 08-31
+7dfa8ea7a34e 11:58 国务院国资委举办中央企业“AI for Science”人才特训班
+191a7a89001e 11:24 财联社8月31日电，智谱表示，其年化经常性收入（ARR）于8月突破16亿美元。
 
 ## data_secrets ru telegram 1/1
--- 08-30
-a50d137e3147 10:49 Агенты OpenAI одну за одной автономно создали три цивилизации
+-- 08-31
+f49065b348d8 08:12 Вышел OpenClaw 2.0 – крупнейшее обновление за всю историю проекта
 
-## hn en community,searchable 2/159
--- 08-30
-2929f114895f 14:06 METR and Redwood Offer Postmortem of the HuggingFace Hack (thezvi.wordpress.com)
-7901d3fb4e1c 14:04 Google removed the URLs. Only for the people who resell them (scraping.club)
+## hn en community,searchable 2/218
+-- 08-31
+4d1471d69971 12:03 Advertisers are trying to influence AI bots with secret ads (theregister.com)
+f94e8c31521b 12:03 Novo Mundo (news.ycombinator.com)
 ```
 
-*Five hours of nineteen sources, verbatim. `CUT` says what was left out and how
-much there was; `19/19` is how many answered.*
+*Eight hours of three sources at `limit_per_source=2`, verbatim. `CUT` says what
+was left out and how much there was; `3/3` is how many answered.*
 
+**What it costs**, measured rather than estimated: a full day of all nineteen at
+the defaults is about **5,000 tokens**; six hours is about **4,000**; six hours
+of three sources is **under 700**. Lower `limit_per_source` and it drops fast.
 
 ## Status
 
-v0.1 — the nineteen sources work; the tool API may still move. All nineteen sources have an adapter and were verified
-against the live endpoints: eleven RSS feeds, Hacker News through its search
-index, a signed Chinese financial API, and six public Telegram channels.
+v0.1 — the nineteen sources work; the tool API may still move. All nineteen have
+an adapter and were verified against the live endpoints: eleven RSS feeds,
+Hacker News through its search index, a signed Chinese financial API, and six
+public Telegram channels. 352 tests, 95% of 1,193 statements, on 3.12 and 3.14.
 
-Two of them are worth knowing about before you rely on them:
+Two sources are worth knowing about before you rely on them:
 
 * **cls.cn is reverse-engineered.** An undocumented internal API with a signed
-  request. It holds 3.34 days at most and cannot page backwards, so a gap in
-  polling is permanent. `wire_sources` marks it `fragile`.
+  request. It holds 3.34 days at most and cannot page backwards, so a gap is
+  permanent. `wire_sources` marks it `fragile`.
 * **Telegram is HTML with no contract.** The public preview view can change
   without a version number to notice it by.
 
@@ -69,13 +80,7 @@ Both are declared in the output rather than explained afterwards.
 Requires Python 3.12+. Nothing to clone:
 
 ```bash
-uvx cablegram-mcp poll        # fill the archive
-uvx cablegram-mcp sources     # see what it knows about
-```
-
-Register it with an MCP client — for Claude Code:
-
-```bash
+uvx cablegram-mcp sources                 # what it knows about
 claude mcp add cablegram --scope user -- uvx cablegram-mcp serve
 ```
 
@@ -88,16 +93,7 @@ claude mcp add cablegram --scope user -- \
   /path/to/cablegram-mcp/.venv/bin/python -m cablegram.cli serve
 ```
 
-Then fill the archive, and keep filling it:
-
-```bash
-uvx cablegram-mcp poll      # once, now
-uvx cablegram-mcp sources   # what it knows about
-```
-
-Feeds expose a window of days, so put `cablegram poll` on a timer — an hour
-nobody polls is an hour no endpoint will serve again. A systemd user unit is in
-[`deploy/`](deploy/).
+That is the whole setup. Each call fetches what it needs and keeps nothing.
 
 ## The four tools
 
@@ -105,41 +101,83 @@ nobody polls is an hour no endpoint will serve again. A systemd user unit is in
 | --- | --- |
 | `wire_latest` | What did the sources publish in the last N hours? |
 | `wire_read` | Give me the stored text of these ids |
-| `wire_search` | When did this term start appearing? |
+| `wire_search` | Who wrote about this term, and when — widen `days` to reach back |
 | `wire_sources` | What exists, and what is currently broken? |
 
 All four are read-only and return plain text. The same information as JSON with
 indent costs roughly six times the tokens and truncates.
 
-## The local archive
+**Fetching is per source, so the cost is whatever you ask for**: two or three
+sources answer in about a second, one language in four, all nineteen in about
+thirty. Half of that thirty is Telegram — six channels three seconds apart,
+because `t.me` drops the sixth request in a row. The tool description says so,
+so a model can ask before spending it.
 
-RSS feeds expose only their last few dozen entries; last week is unrecoverable.
-So everything fetched is stored in a SQLite file under your platform's data
-directory (`~/.local/share/cablegram/archive.db` on Linux; override with
-`CABLEGRAM_DB`).
+## Keeping an archive (optional)
 
-It is created on first run and grows by a few megabytes a year. Nothing is
-uploaded anywhere, and no seed database ships with this repository — the server
-fetches on your behalf and does not redistribute anyone's content.
+Nothing is stored by default. Set `CABLEGRAM_ARCHIVE=1` and the server reads a
+SQLite file instead of fetching, which `cablegram poll` fills:
 
-**`wire_search` only reads what this archive holds, which starts the day you
-first ran it.** Zero hits means "not in what we can search", never "nobody is
-talking about it", and the output says so on every reply.
+```bash
+export CABLEGRAM_ARCHIVE=1
+cablegram poll        # once now, and on a timer if you want history
+```
+
+The file lives under your platform's data directory
+(`~/.local/share/cablegram/archive.db` on Linux; override with `CABLEGRAM_DB`).
+It is created on first run and grows by roughly a megabyte per thousand items.
+Hacker News is most of that volume, and it is the one source you can already
+search at its own origin.
+
+**What an archive buys you**, and it is narrower than it sounds. Most feeds
+serve enough history that a gap in polling costs nothing: this laptop was off
+for eleven hours, the sources published 325 articles, and the next pass picked
+up all 325. Two exceptions matter — cls.cn holds 3.34 days and cannot page
+backwards, and 36Kr is shallow — so if those two are why you are here, run the
+timer. A systemd user unit is in
+[`deploy/`](https://github.com/levongabrielyan/cablegram-mcp/tree/main/deploy).
+
+**What it does not buy you** is a complete history. Feeds differ enormously:
+the OpenAI blog serves back to 2015 on the first fetch, Hugging Face to 2020,
+and most of the rest a few days. `wire_search` says so on every reply — zero
+hits means "not in what we can search", never "nobody is talking about it".
+
+Nothing is uploaded anywhere, and no seed database ships with this repository:
+the server fetches on your behalf and does not redistribute anyone's content.
+
+## Not built yet
+
+Separate from what this deliberately never does — the design notes list that —
+these are things it would reasonably do and does not:
+
+* **Nothing prunes the archive.** If you enable it, it only grows. There is no
+  `prune`, no retention window and no export; deleting the file is the only
+  reset, and it costs the whole history.
+* **Sources are fixed in code.** Adding one means editing `sources.py`, and an
+  adapter too if it is not RSS. That is the design rather than an oversight, but
+  it does mean a fork rather than a config file.
+* **Coverage before your first call is uneven and not controllable.** A feed
+  either serves its back catalogue or it does not; there is no way to ask for
+  more history than the endpoint volunteers.
+* **Nothing checks a source's terms for you.** The endpoints are public and the
+  requests are conditional and rate-limited, but the responsibility is yours.
 
 ## Design
 
-[`docs/design.md`](docs/design.md) covers why the identity of an item is a pure
-function of its URL, why a failure is a value rather than an exception, why the
-full-text index needs a trigram tokenizer for Chinese to work at all, and what
-this server deliberately does not do.
+[`docs/design.md`](https://github.com/levongabrielyan/cablegram-mcp/blob/main/docs/design.md)
+covers why the identity of an item is a pure function of its URL, why a failure
+is a value rather than an exception, why the full-text index needs a trigram
+tokenizer for Chinese to work at all, and what this server deliberately does not
+do.
 
 ## Notes
 
-Only public endpoints are used: no credentials, no authentication bypass,
-no scraping behind a login. Conditional requests (`ETag`, `If-Modified-Since`)
-mean an unchanged feed is not re-downloaded. Intended for personal research —
-respect each source's terms of service.
+Only public endpoints are used: no credentials, no authentication bypass, no
+scraping behind a login. Conditional requests (`ETag`, `If-Modified-Since`) mean
+an unchanged feed is not re-downloaded. Intended for personal research — respect
+each source's terms of service.
 
 ## Licence
 
 MIT. Built by [Levon Gabrielyan](https://github.com/levongabrielyan).
+<!-- mcp-name: io.github.levongabrielyan/cablegram-mcp -->

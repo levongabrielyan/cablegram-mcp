@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 
 from .archive import archive_path, connect
@@ -31,6 +32,13 @@ def _poll(args) -> int:
 
     db = connect()
     reports = asyncio.run(poll_once(db, selected))
+    # The reason a source failed is written to source_state and was never
+    # printed: a run of FETCH-FAILED with no explanation is a person guessing
+    # between a dead network, a blocked address and a source that has moved.
+    # This is the one output in the project written for a human to read.
+    why = {row["source"]: row["last_error"] for row in
+           db.execute("SELECT source, MAX(last_try), last_error FROM source_state"
+                      " WHERE last_error IS NOT NULL GROUP BY source")}
 
     archived = sum(r.new + r.referenced for r in reports)
     # `unchanged` is the source answering that nothing is new — a success, and
@@ -52,10 +60,17 @@ def _poll(args) -> int:
             line = "     nothing new (304)"
         else:
             line = f"     {report.state.upper()}"
+            if reason := why.get(report.source):
+                line += f"  {reason[:60]}"
         print(f"  {report.source:16} {line}")
 
     print(f"\n{archived} archived · {len(reports) - len(broken)}/{len(reports)} sources ok")
     print(f"{archive_path()}")
+    if os.environ.get("CABLEGRAM_ARCHIVE", "").strip().lower() not in ("1", "true", "yes"):
+        # Otherwise this fills a file nobody reads: 228 requests a day to other
+        # people's servers, for a server that is fetching live anyway.
+        print("note: the MCP server is not reading this archive. "
+              "Set CABLEGRAM_ARCHIVE=1 for it to.")
     # A poll where every source failed is worth a non-zero exit: a timer that
     # never complains is a timer nobody checks.
     return 1 if reports and len(broken) == len(reports) else 0

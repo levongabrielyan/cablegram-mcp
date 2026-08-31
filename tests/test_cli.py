@@ -69,3 +69,26 @@ def test_an_unknown_selector_does_not_poll_everything(reports, capsys, tmp_path,
 
     assert main(["poll", "typo"]) == 2
     assert "typo" in capsys.readouterr().out
+
+
+def test_a_failed_source_says_why(reports, capsys, tmp_path, monkeypatch):
+    """A column of FETCH-FAILED with no explanation leaves the person who set
+    the timer up guessing between a dead network, a blocked address and a
+    source that moved. The reason was already in source_state, and this is the
+    one output in the project written for a human to read."""
+    from cablegram.archive import connect
+    from cablegram.fetch import Fetched
+    from cablegram.sources import by_id
+    from cablegram.store import record_attempt
+
+    path = tmp_path / "a.db"
+    monkeypatch.setenv("CABLEGRAM_DB", str(path))
+    db = connect(path)
+    record_attempt(db, Fetched("qbitai", url=by_id("qbitai").url, ok=False,
+                               error="ConnectError: name or service not known",
+                               fetched_at="2026-08-31T12:00:00Z"))
+    db.close()
+
+    reports["reports"] = [StoreReport("qbitai", state="fetch-failed")]
+    main(["poll"])
+    assert "ConnectError" in capsys.readouterr().out
