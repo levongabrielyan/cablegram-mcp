@@ -1,6 +1,6 @@
 # cablegram-mcp
 
-Twenty-eight sources on AI and tech — English, Chinese and Russian — written to
+Twenty-nine sources on AI and tech — English, Chinese and Russian — written to
 be read by a model rather than by a person. Nothing is stored: each call fetches
 what it needs, answers, and discards it.
 
@@ -20,7 +20,7 @@ your model is the editor.
 **The point is the cable, not the news.** A launch discussed in Chinese or
 Russian today reaches English-language coverage days later, filtered through
 whoever decided it was worth translating — and often it never arrives at all.
-Twenty-eight sources in three languages, read directly, put a reader in
+Twenty-nine sources in three languages, read directly, put a reader in
 California in the same week as a reader in Shanghai or Moscow.
 
 Headlines are never translated. Each dispatch carries its language, and the
@@ -32,44 +32,54 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.1 | 2026-08-31T08:02:26Z..2026-08-31T16:02:26Z | 6 of 500 items | 3/3 sources
-CUT   cls=2/22  data_secrets=2/4  hn=2/474   (newest kept)
+CABLEGRAM v0.1.1 | 2026-08-31T09:43:12Z..2026-08-31T17:43:12Z | 6 of 535 items | 3/3 sources
+CUT   cls=2/16  data_secrets=2/3  hn=2/516   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 2/22
+## cls zh early,finance 2/16
 -- 08-31
 f34c19515bb2 14:31 OpenAI广告业务上线约200天 年化营收规模突破10亿美元
 59768dd933bc 14:02 HBM现货价格飙至长协五倍：HBM4良率承压，长协锁产挤压现货供给
 
-## data_secrets ru telegram 2/4
+## data_secrets ru telegram 2/3
 -- 08-31
 016ab99e8218 15:56 OpenAI закупает десятки тысяч Mac mini и Mac Studio для RL обучения агентов
 6454c66ae77d 14:03 До отправки рабочего документа в нейросеть 3… 2… 1… клик
 
-## hn en community,searchable 2/474
+## hn en community,searchable 2/516
 -- 08-31
-a3b094e0252f 15:59 Brocards for Vulnerability Triage (vulnbrocards.com)
-216464036f0f 15:59 Vigil 0.5.0: threat hunting agent where a deterministic controller owns state (vigilsoc.org)
+dac04d44395c 17:42 Agents Need Their Own UI (newsletter.cloudsquid.io)
+e8d75bd41e00 17:42 Maybe Dieting Fails Because Humans Need Fewer Calories Than We Think (greyenlightenment.com)
 ```
 
-*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.4 seconds
-and 296 tokens. `CUT` says what was left out and how much there was — 500 items
+*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.2 seconds
+and 296 tokens. `CUT` says what was left out and how much there was — 535 items
 in that window, six printed; `3/3` is how many answered.*
 
-**What it costs**, measured rather than estimated: a full day of all
-twenty-eight at the defaults is about **5,000 tokens**; six hours is about
-**3,400**; six hours of three sources is **under 800**, and **under 200** at
-`limit_per_source=2`.
+**What it costs.** A reply is priced by what the sources published, not by this
+code, so these are ranges from repeated measurement rather than figures:
+
+    24h, everything, defaults        ~5,200 tokens
+    6h,  everything, defaults        2,500-3,400
+    6h,  three busy sources          1,000-1,400
+    6h,  three, limit_per_source=2   ~300
+
+The whole-catalogue numbers hold because they average over twenty-nine feeds.
+The narrow ones move by half again within an hour: two measurements of the same
+call, sixty minutes apart, gave 3,324 and 2,515 with no change to the code —
+Chinese wire services publish in bursts. Treat a narrow selection as costing
+whatever it costs and read `CUT`, which says what was left out and how much
+there was.
 
 ## Status
 
-v0.1 — the sources work; the tool API may still move. All twenty-eight have an
+v0.1 — the sources work; the tool API may still move. All twenty-nine have an
 adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
-namespaces on it, and two sections of a lab that publishes no feed, read out of
-the data its own pages ship. 371 tests covering 95% of 1,198 statements, on
+namespaces on it, and three sections of a lab that publishes no feed, read out
+of the data its own pages ship. 382 tests covering 95% of 1,214 statements, on
 3.12 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
@@ -120,7 +130,7 @@ indent costs roughly six times the tokens and truncates.
 
 **Fetching is per source, and what it costs is Telegram**: those six channels
 go one at a time, three seconds apart, because `t.me` drops the sixth request in
-a row. Everything else is fetched in parallel, so the eighteen English sources
+a row. Everything else is fetched in parallel, so the nineteen English sources
 together cost what two do — under two seconds. Bring the channels in and it is
 twenty to forty-five, which is also what `sources=["ru"]` costs, since six of
 the seven Russian sources are channels. Language is not the axis; channel count
@@ -137,16 +147,29 @@ that makes a Chinese query work at all, the count of how many sources carried
 the same URL — not to keep anything.
 
 This has a cost and it is worth stating: **`wire_search` cannot reach past what
-the feeds are serving today.** For English that costs almost nothing. Hacker
-News and Habr can be searched at their own origin, and the OpenAI blog hands
-over its whole back catalogue to 2015 in a single fetch, Hugging Face to 2020.
-For Chinese it is real and it is permanent — cls.cn holds 3.34 days and cannot
-page backwards, and 36Kr's live stream is about two hours deep. Anything older
-than that is gone, from here and from everywhere.
+the feeds are serving today**, and the floor is lower than it sounds. Measured
+as the oldest item each feed actually served — the same quantity every reply
+prints on its COVER line:
 
-Every reply says so rather than leaving it to be discovered: the COVER block
-gives the oldest item the fetch actually reached and states that the floor is a
-property of the feeds, never of the subject.
+    openai         2015      the whole back catalogue, in one fetch
+    anthropic      2021
+    huggingface    2020
+    producthunt    48 days
+    cls.cn         3 days    at its ceiling, and it cannot page backwards, so
+                             anything older is gone from everywhere
+    36Kr           3 days
+    qbitai         2 days
+    Habr           1 day
+    Hacker News    1 day     a thousand stories is the cap, so days=7 and
+                             days=30 return the same rows
+
+Three archives reach back years; everything else reaches back days, and no
+parameter asks for more than the endpoint volunteers. That floor is a property
+of the feeds and never of the subject.
+
+Every reply carries its own rather than leaving it to be discovered: the COVER
+block gives the oldest item that fetch reached, which is the number this table
+is made of.
 
 `cablegram check` fetches every source once and prints what each one said, for
 deciding whether the catalogue still works. It stores nothing either.
