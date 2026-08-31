@@ -155,11 +155,16 @@ def _store_one(
             # carries no date, Hacker News carries the real one. First-in-wins
             # would keep the '~approximate' mark for life and leave wire_read
             # with nothing to serve, while the feed that had both moves on.
+            # Only ever improve — and for a date, better means earlier as well
+            # as more certain. wire_read prints this one, and an article is
+            # published once: every later sighting is somebody noticing it, so
+            # a submission cannot precede the thing submitted. Two feeds
+            # carrying the real date agree and nothing moves.
             if date_exact:
                 db.execute(
                     "UPDATE item SET published = ?, date_exact = 1"
-                    " WHERE id = ? AND date_exact = 0",
-                    (published, iid),
+                    " WHERE id = ? AND (date_exact = 0 OR published > ?)",
+                    (published, iid, published),
                 )
             if entry.body:
                 db.execute(
@@ -180,9 +185,10 @@ def _store_one(
         )
 
         db.execute(
-            "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at, via)"
-            " VALUES (?,?,?,?,'feed')",
-            (iid, source.id, title, fetched_at),
+            "INSERT OR IGNORE INTO sighting"
+            " (item_id, source, title, seen_at, via, published, date_exact)"
+            " VALUES (?,?,?,?,'feed',?,?)",
+            (iid, source.id, title, fetched_at, published, date_exact),
         )
 
         referenced = 0
@@ -251,9 +257,12 @@ def _record_reference(
             raise CollisionError(f"id {link_id} already belongs to another url")
 
     db.execute(
-        "INSERT OR IGNORE INTO sighting(item_id, source, title, seen_at, via)"
-        " VALUES (?,?,?,?,'link')",
-        (link_id, source.id, title, fetched_at),
+        "INSERT OR IGNORE INTO sighting"
+        " (item_id, source, title, seen_at, via, published, date_exact)"
+        # date_exact 0: a reference knows when somebody linked the article, not
+        # when it was published, exactly as the item row it creates.
+        " VALUES (?,?,?,?,'link',?,0)",
+        (link_id, source.id, title, fetched_at, published),
     )
     return 1 if cursor.rowcount else 0
 
@@ -402,8 +411,7 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
     # productradar answers OK and its newest item is 25 days old, ten items in
     # 720 days. No column needed — the pass already knows.
     newest = {row["source"]: row["newest"] for row in db.execute(
-        "SELECT s.source, MAX(i.published) AS newest"
-        " FROM sighting s JOIN item i ON i.id = s.item_id GROUP BY s.source")}
+        "SELECT source, MAX(published) AS newest FROM sighting GROUP BY source")}
     return {
         row["source"]: dict(row, at_ceiling=ceilings.get(row["source"]),
                             newest=newest.get(row["source"]))
@@ -431,8 +439,12 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
 # a quiet day. So each one carries the totals needed to tell the difference.
 
 _ITEM_COLUMNS = (
-    "i.id, i.url, i.url_norm, i.lang, i.body, i.body_src, i.published,"
-    " i.date_exact, i.target_host, i.first_source,"
+    # No date here on purpose. A listing row is one source's sighting and takes
+    # that source's date; items_by_ids is about the item and takes the item's.
+    # Selecting both under one name is worse than either: sqlite3.Row hands back
+    # whichever came first in the SELECT, so the wrong one wins in silence.
+    "i.id, i.url, i.url_norm, i.lang, i.body, i.body_src,"
+    " i.target_host, i.first_source,"
     # The item's own headline, beside the sighting's. wire_read prints
     # first_source, lang and via — all facts about the item — and used to print
     # `title`, which is the headline of whichever source carried it. When two
@@ -485,15 +497,22 @@ def latest_items(
 
     rows = db.execute(
         f"SELECT {_ITEM_COLUMNS}, s.source, s.title, s.seen_at,"
+        # The row is one source's sighting of the item, so the date on it is
+        # that source's. Selecting the item's put Hacker News's submission time
+        # under openai's block: one URL is one item row with one date, owned by
+        # whoever arrived first, and in an unfiltered pass that is catalogue
+        # order. Measured against openai.com's feed: 04:00 there, printed as
+        # 13:07 under `## openai`.
+        f"       s.published, s.date_exact,"
         f"       COUNT(*) OVER (PARTITION BY s.source) AS source_total,"
         f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
-        f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY i.published DESC)"
+        f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY s.published DESC)"
         f"           AS rank_in_source"
         f" FROM sighting s JOIN item i ON i.id = s.item_id"
         # via='feed' only: a linked article is not something the channel wrote,
         # and listing it repeats the post under the same headline.
-        f" WHERE s.via = 'feed' AND i.published >= ?{clause}"
-        f" ORDER BY s.source, i.published DESC",
+        f" WHERE s.via = 'feed' AND s.published >= ?{clause}"
+        f" ORDER BY s.source, s.published DESC",
         params,
     ).fetchall()
 
@@ -515,7 +534,7 @@ def items_by_ids(db: sqlite3.Connection, ids: list[str]) -> list[dict]:
     found = {
         row["id"]: dict(row)
         for row in db.execute(
-            f"SELECT {_ITEM_COLUMNS}, i.title,"
+            f"SELECT {_ITEM_COLUMNS}, i.title, i.published, i.date_exact,"
             f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross"
             f" FROM item i WHERE i.id IN ({marks})", ids)
     }
@@ -579,16 +598,17 @@ def search_items(
 
     rows = db.execute(
         f"SELECT {_ITEM_COLUMNS}, s.source, s.title, s.seen_at,"
+        f"       s.published, s.date_exact,"
         f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
         # Without this the renderer falls back to the number shown, so a source
         # holding 437 matches printed 3/3 — not an undeclared cut but a denied
         # one, asserting completeness in the tool built to prevent exactly that.
         f"       COUNT(*) OVER (PARTITION BY s.source) AS source_total,"
-        f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY i.published DESC)"
+        f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY s.published DESC)"
         f"           AS rank_in_source"
         f" FROM sighting s JOIN item i ON i.id = s.item_id"
-        f" WHERE {matcher} AND i.published >= ?{clause}"
-        f" ORDER BY s.source, i.published DESC",
+        f" WHERE {matcher} AND s.published >= ?{clause}"
+        f" ORDER BY s.source, s.published DESC",
         args,
     ).fetchall()
 

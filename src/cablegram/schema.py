@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS sighting (
     -- twice under the same headline, and the block header claimed completeness
     -- over the inflated list: 100 posts became 167 rows.
     via         TEXT NOT NULL DEFAULT 'feed',
+    -- When THIS source carried it, which is not when the article was published.
+    -- `item.url_norm` is UNIQUE, so one URL has one item row and one date, and
+    -- it belonged to whichever source arrived first. In an unfiltered pass that
+    -- is catalogue order — hn sits above openai — and Hacker News dates a story
+    -- when somebody submitted it. Measured against openai.com's own feed: `A
+    -- milestone in expanding access to AI` is stamped 04:00 there and came out
+    -- as 13:07 under `## openai`, nine hours wrong and flagged exact.
+    --
+    -- A sighting is "this source carried this, then". Kept here, both blocks
+    -- are true at once: openai's says 04:00 and hn's says 13:07, and neither
+    -- has to be judged more trustworthy than the other.
+    published   TEXT NOT NULL,
+    date_exact  INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (item_id, source, via)
 );
 

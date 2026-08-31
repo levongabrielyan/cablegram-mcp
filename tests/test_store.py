@@ -250,12 +250,30 @@ def test_a_body_fills_in_where_there_was_none(db):
     assert row["body"] == "the whole article"
 
 
-def test_an_exact_date_is_never_overwritten(db):
-    """Only ever improve. A second source's date must not displace a real one."""
-    store_entries(db, by_id("qbitai"), [entry(published=PUB)], fetched_at=NOW)
-    other = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    store_entries(db, by_id("hn"), [entry(published=other)], fetched_at=NOW)
-    assert rows(db)[0]["published"] == "2026-08-30T07:12:00Z"
+def test_the_item_keeps_the_earliest_exact_date_it_was_given(db):
+    """An article is published once. Every later sighting of it is somebody
+    noticing, so between two exact dates for one URL the earlier is the closer
+    to publication — a submission cannot precede the thing submitted.
+
+    Measured against openai.com's own feed: `A milestone in expanding access to
+    AI` is stamped 04:00 there, and Hacker News, which dates a story when it was
+    submitted, had it at 13:07. hn is source three in the catalogue and openai
+    is four, so in an unfiltered pass hn always wrote first and the item kept
+    13:07 — nine hours out, flagged exact, printed under openai's own block.
+    """
+    later = datetime(2026, 8, 31, 13, 7, tzinfo=timezone.utc)
+    earlier = datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc)
+
+    store_entries(db, by_id("hn"), [entry(published=later)], fetched_at=NOW)
+    assert rows(db)[0]["published"] == "2026-08-31T13:07:00Z"
+    store_entries(db, by_id("openai"), [entry(published=earlier)], fetched_at=NOW)
+    assert rows(db)[0]["published"] == "2026-08-31T04:00:00Z", \
+        "the earlier exact date is the one closer to publication"
+
+    # And it does not slide back and forth: a later one arriving after does
+    # nothing, so the answer does not depend on the order sources were polled.
+    store_entries(db, by_id("qbitai"), [entry(published=later)], fetched_at=NOW)
+    assert rows(db)[0]["published"] == "2026-08-31T04:00:00Z"
 
 
 def test_an_existing_body_is_never_replaced(db):

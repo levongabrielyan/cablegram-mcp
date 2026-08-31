@@ -295,3 +295,35 @@ def test_the_headline_wire_read_prints_belongs_to_the_item_it_names(db):
     # And each keeps its own, for the block it appears under.
     assert rows["qbitai"]["title"] == "OpenAI暂停两周强化学习训练"
     assert rows["openai"]["title"] == "Pacing model development"
+
+
+def test_each_block_shows_when_its_own_source_carried_the_story(db):
+    """`item.url_norm` is UNIQUE, so one URL is one item row with one date, and
+    it belonged to whichever source arrived first. In an unfiltered pass that is
+    catalogue order — hn is source three and openai is four — and Hacker News
+    dates a story when somebody submitted it.
+
+    Measured against openai.com's own feed: `A milestone in expanding access to
+    AI` is stamped 04:00 there and came out as 13:07 under `## openai`, nine
+    hours wrong and flagged exact. The more sources a call asked for, the worse
+    the answer got: asking for openai alone gave the right time.
+
+    A sighting is "this source carried this, then", so the date belongs on it.
+    Both rows are then true at once and neither source has to be judged more
+    trustworthy than the other.
+    """
+    url = "https://openai.com/index/milestone"
+    submitted = NOW.replace(hour=13, minute=7)
+    published = NOW.replace(hour=4, minute=0)
+
+    store_entries(db, by_id("hn"), [Entry("A milestone", url, submitted, None, None)],
+                  fetched_at=iso(NOW))
+    store_entries(db, by_id("openai"),
+                  [Entry("A milestone in expanding access to AI", url, published,
+                         "body", "description")], fetched_at=iso(NOW))
+
+    when = {r["source"]: r["published"] for r
+            in latest_items(db, since=iso(NOW - timedelta(days=1)))
+            if r["id"] == item_id(url)}
+    assert when == {"hn": iso(submitted), "openai": iso(published)}, (
+        f"each block states when its own source carried it; got {when}")
