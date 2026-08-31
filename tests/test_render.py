@@ -263,3 +263,120 @@ def test_a_referenced_article_does_not_pretend_to_be_its_own_source():
     assert "not from its own feed" in out
     assert "headlines only" not in out, "qwen.ai does publish text; nobody fetched it"
     assert "ai_newz" in out, "and name who linked it"
+
+
+# ── internal consistency ─────────────────────────────────────────────────────
+#
+# Every assertion below compares one region of a rendered payload against
+# another region of the SAME payload. None of them names an expected value, so
+# none needs touching when the format, the sources or the data change — and
+# that is the whole point. The defects they catch all had one shape: a fix
+# landed in the code and the sentence describing it stayed behind, while the
+# test covering that area asserted only that the label was present.
+# `assert "CUT" in out` is equally true of `CUT cls=25/60` and `CUT cls=1/60`,
+# so it defended the bug instead of catching it.
+
+import re
+
+# An item line: "a3f9c2e1 07:12 title", or "~a3f9c2e1 07:12 title" when the
+# date is the capture time. Deliberately does not match a day separator
+# ("-- 08-30", no HH:MM), a block heading, a header line, or an inlined body
+# (three leading spaces).
+_ITEM = re.compile(r"^~?\S+ \d{2}:\d{2} \S", re.M)
+_BLOCK = re.compile(r"^## (\S+) .*? (\d+)/(\d+)\s*$", re.M)
+_CUT = re.compile(r"^CUT\s+(.*?)\s\s+\(newest kept\)\s*$", re.M)
+_PAIR = re.compile(r"(\S+)=(\d+)/(\d+)")
+_ALLOWANCE = re.compile(r"at most (\d+) per source")
+
+
+def printed_items(out):
+    """How many dispatch lines the payload actually contains."""
+    return len(_ITEM.findall(out))
+
+
+def block_counts(out):
+    """{source: (shown, total)} straight off the `## source` headings."""
+    return {m[0]: (int(m[1]), int(m[2])) for m in _BLOCK.findall(out)}
+
+
+def test_the_headline_count_is_what_was_actually_printed():
+    """A count computed before the budget trim and printed after it.
+
+    The word in the search header is literally "shown", so a model reads
+    "165 shown" and reasons over the seventeen lines it can see — a small
+    sample taken for a broad one, which is the single failure this module
+    exists to prevent. It fired on the default call: 8000 tokens is not enough
+    for thirty days of one common term.
+    """
+    rows = [row(id=f"{i:012x}", source=s, source_total=40, title="x" * 120)
+            for s in ("a", "b", "c", "d", "e") for i in range(40)]
+
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
+                        limit_per_source=25, max_tokens=400)
+    counts = re.search(r"\| (\d+) of (\d+) items \|", out)
+    assert counts, "the header must say both what it printed and what the window held"
+    assert int(counts.group(1)) == printed_items(out), (
+        f"header claims {counts.group(1)} items, payload contains {printed_items(out)}")
+
+    out = render_search(rows, query="q", since="s", days=30,
+                        archive_start="2020-01-01", archive_items=10, max_tokens=400)
+    head = int(re.search(r"\| (\d+) shown", out).group(1))
+    assert head == printed_items(out), (
+        f'header claims {head} "shown", payload contains {printed_items(out)}')
+
+
+def test_the_headline_states_the_window_total_not_only_what_it_kept():
+    """"117 items" was what got printed; 910 were in the window.
+
+    Asked how much moved today, a model quoted 117. The real figure existed
+    only scattered across the CUT line, and only for the sources that were cut.
+    """
+    rows = [row(id=f"{i:012x}", source=s, source_total=40)
+            for s in ("a", "b") for i in range(25)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
+                        limit_per_source=25)
+
+    counts = re.search(r"\| (\d+) of (\d+) items \|", out)
+    assert counts, "the header must say both what it printed and what the window held"
+    shown, window = map(int, counts.groups())
+    assert shown == printed_items(out)
+    assert window == sum(t for _, t in block_counts(out).values())
+
+
+def test_the_cut_line_agrees_with_the_blocks_it_summarises():
+    """CUT is the line a model reads to decide whether it has seen enough.
+
+    Built before the budget loop and never rebuilt, it announced 25 of 60 above
+    a block showing 1 of 60. The error is optimistic, so the model stops
+    looking — and every per-source figure in the line is wrong at once.
+    """
+    rows = [row(id=f"{i:012x}", source=s, source_total=60, title="x" * 120)
+            for s in ("a", "b", "c") for i in range(25)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
+                        limit_per_source=25, max_tokens=400)
+
+    blocks = block_counts(out)
+    declared = _CUT.search(out)
+    assert declared, "a payload this heavily cut must declare the cut"
+    for source, shown, total in _PAIR.findall(declared.group(1)):
+        assert blocks[source] == (int(shown), int(total)), (
+            f"CUT says {source}={shown}/{total}, block says "
+            f"{blocks[source][0]}/{blocks[source][1]}")
+
+
+def test_the_announced_allowance_is_the_one_actually_applied():
+    """"at most 0 per source" printed above blocks showing 1.
+
+    `_cap_per_source` was changed to keep one placeholder row per source so no
+    heading could vanish; the label kept printing the raw allowance. The safe
+    reading of 0 is "nothing was kept", and something was — the only
+    pessimistic lie in the output, and still a lie.
+    """
+    rows = [row(id=f"{i:012x}", source=s, source_total=9, title="x" * 200)
+            for s in ("a", "b", "c", "d", "e", "f", "g", "h") for i in range(9)]
+    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
+                        max_tokens=50)
+
+    announced = int(_ALLOWANCE.search(out).group(1))
+    applied = max(n for n, _ in block_counts(out).values())
+    assert announced == applied, f"announces {announced}, applies {applied}"

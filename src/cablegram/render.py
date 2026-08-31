@@ -108,8 +108,20 @@ def _cap_per_source(rows: list[dict], allowance: int) -> list[dict]:
     """
     out = []
     for items in _by_source(rows).values():
-        out.extend(items[:allowance] if allowance else items[:1])
+        out.extend(items[:max(1, allowance)])
     return out
+
+
+def _window_total(rows: list[dict]) -> int:
+    """How many items the window held, not how many are being printed.
+
+    `source_total` is counted before the per-source limit, so summing it is the
+    only honest answer to "how much moved today". The header used to print the
+    printed count under the same label, and a model asked that question quoted
+    117 for a day that held 910.
+    """
+    return sum(items[0].get("source_total", len(items))
+               for items in _by_source(rows).values())
 
 
 def _blocks(rows: list[dict], limit_per_source: int | None,
@@ -162,35 +174,44 @@ def render_latest(
     limit_per_source: int | None = None,
     max_tokens: int = 12000,
 ) -> str:
+    window_total = _window_total(rows)
+
+    def header_for(cuts: dict[str, tuple[int, int]], printed: int) -> list[str]:
+        """Rebuilt from whatever the body ended up holding.
+
+        Built once before the budget loop, every per-source figure in it stayed
+        at the pre-trim value: `CUT cls=25/60` stood above a block showing
+        1/60. The error was optimistic, so a model stopped looking.
+        """
+        # Sources that answered: not the total minus failures, which would count
+        # the eight with no adapter as healthy and overstate the coverage of
+        # every answer built on this.
+        answering = sources_total - len(down) - len(no_adapter or ())
+        head = [
+            f"CABLEGRAM {VERSION} | {since}..{until} | {printed} of {window_total} "
+            f"items | {answering}/{sources_total} sources"
+        ]
+        if down:
+            head.append("DOWN  " + "  ".join(f"{k}={v}" for k, v in sorted(down.items())))
+            head.append('      A DOWN SOURCE MEANS UNKNOWN, NOT "nothing happened".')
+        if no_adapter:
+            # A different fact from DOWN, and mixing them buries the one that
+            # needs attention under the ones that are simply not built yet.
+            head.append("PENDING " + " ".join(sorted(no_adapter))
+                        + "  (no adapter in this build: never fetched, hold nothing)")
+        if unknown:
+            head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
+                        f"tag or language. Call wire_sources for the catalogue.")
+        cut = [f"{k}={s}/{t}" for k, (s, t) in sorted(cuts.items()) if s < t]
+        if cut:
+            head.append("CUT   " + "  ".join(cut) + "   (newest kept)")
+        head += _header_cross(rows)
+        head.append("COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])")
+        head.append("---")
+        return head
+
     body, cuts = _blocks(rows, limit_per_source, detail)
-
-    # Sources that answered: not the total minus failures, which would count
-    # the eight with no adapter as healthy and overstate the coverage of every
-    # answer built on this.
-    answering = sources_total - len(down) - len(no_adapter or ())
-    header = [
-        f"CABLEGRAM {VERSION} | {since}..{until} | {len(rows)} items | "
-        f"{answering}/{sources_total} sources"
-    ]
-    if down:
-        header.append("DOWN  " + "  ".join(f"{k}={v}" for k, v in sorted(down.items())))
-        header.append('      A DOWN SOURCE MEANS UNKNOWN, NOT "nothing happened".')
-    if no_adapter:
-        # A different fact from DOWN, and mixing them buries the one that needs
-        # attention under the eight that are simply not built yet.
-        header.append("PENDING " + " ".join(sorted(no_adapter))
-                      + "  (no adapter in this build: never fetched, hold nothing)")
-    if unknown:
-        header.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, tag "
-                      f"or language. Call wire_sources for the catalogue.")
-    cut = [f"{k}={s}/{t}" for k, (s, t) in sorted(cuts.items()) if s < t]
-    if cut:
-        header.append("CUT   " + "  ".join(cut) + "   (newest kept)")
-    header += _header_cross(rows)
-    header.append("COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])")
-    header.append("---")
-
-    text = "\n".join(header + body)
+    text = "\n".join(header_for(cuts, len(rows)) + body)
     if estimate_tokens(text) <= max_tokens:
         return text
 
@@ -200,18 +221,22 @@ def render_latest(
     # the header still counted them as answering. A source may lose all of its
     # items; it may never lose its heading.
     allowance = limit_per_source or max(1, max(len(v) for v in _by_source(rows).values()))
+    trimmed = rows
     while allowance > 0:
         allowance = allowance - 1 if allowance <= 3 else int(allowance * 0.6)
         trimmed = _cap_per_source(rows, allowance)
         body, cuts = _blocks(trimmed, allowance, detail)
-        text = "\n".join(header + body)
+        text = "\n".join(header_for(cuts, len(trimmed)) + body)
         if estimate_tokens(text) <= max_tokens:
             break
     over = estimate_tokens(text) > max_tokens
     label = "OVER BUDGET" if over else "BUDGET"
     note = (" — one item per source already exceeds it, and dropping sources would be "
             "worse than going over" if over else "")
-    return (f"{label} max_tokens={max_tokens}: at most {allowance} per source "
+    # The allowance actually applied: _cap_per_source keeps one row per source
+    # whatever it is told, so announcing 0 above blocks showing 1 understated
+    # what the reader had been given.
+    return (f"{label} max_tokens={max_tokens}: at most {max(1, allowance)} per source "
             f"({len(trimmed)}/{len(rows)} items){note}. Every source is still listed "
             f"with its real total. Raise max_tokens, narrow `hours`, or pass "
             f"`sources`.\n" + text)
@@ -272,64 +297,76 @@ def render_search(
     engine: str = "index",
     max_tokens: int = 8000,
 ) -> str:
-    body, _ = _blocks(rows, None)
-
     # Declaring the cut matters more here than in the listing. A source holding
     # 437 matches, printed as 3/3, does not leave the cut undeclared — it denies
     # it, asserting completeness, from the one tool whose entire purpose is to
     # stop a small number being read as an answer.
-    shown: dict[str, int] = {}
+    #
+    # `totals` comes from the untrimmed rows, because source_total is the real
+    # match count; `shown` has to be recounted for whatever survived the budget.
     totals: dict[str, int] = {}
     for r in rows:
-        shown[r["source"]] = shown.get(r["source"], 0) + 1
-        totals[r["source"]] = r.get("source_total") or shown[r["source"]]
-    cut = [f"{s}={shown[s]}/{totals[s]}" for s in sorted(shown) if totals[s] > shown[s]]
+        totals[r["source"]] = r.get("source_total") or totals.get(r["source"], 0) + 1
 
-    header = [
-        f'CABLEGRAM search "{query}" | last {days}d | {len(rows)} shown'
-        + (f" of {sum(totals.values())} matching" if cut else " hits")
-    ]
-    if cut:
-        header.append("CUT   " + "  ".join(cut) + "   (newest kept)")
-    header += [
-        # The oldest item, not when the file was made: an archive holding ten
-        # years of a blog announced itself as starting today, and a model asked
-        # "since when has X been discussed" declined to answer.
-        f"COVER local-archive {archive_items} items, oldest {archive_start}",
-        "      Only what this server archived. It holds nothing from before its "
-        "first run.",
-        '      "0 hits" = "not in what we can search". It does NOT mean nobody is '
-        'talking about it.',
-        "      zh/ru sources index the native term: a Chinese company is 智谱 here and "
-        "Zhipu on Hacker News.",
-        "      Retry transliterated or translated if this comes back empty.",
-        # Two queries answered by different engines are not comparable, and
-        # nothing else in this output would say so.
-        ("      ENGINE substring scan: terms under 3 characters cannot use the index, "
-         "so recall differs from a longer query."
-         if engine == "substring" else
-         "      ENGINE trigram index over archived headlines."),
-        "COLS  id hh:mm title",
-        "---",
-    ]
+    def header_for(printed: list[dict]) -> list[str]:
+        """Rebuilt from the rows that are actually in the body.
 
-    text = "\n".join(header + body)
+        Counted once before the budget loop and printed after it, the first
+        line said "165 shown" above 17 item lines — and the word is literally
+        `shown`. It happened on the default call: 8000 tokens does not hold
+        thirty days of a common term.
+        """
+        seen: dict[str, int] = {}
+        for r in printed:
+            seen[r["source"]] = seen.get(r["source"], 0) + 1
+        cut = [f"{s}={seen[s]}/{totals[s]}" for s in sorted(seen) if totals[s] > seen[s]]
+        head = [
+            f'CABLEGRAM search "{query}" | last {days}d | {len(printed)} shown'
+            + (f" of {sum(totals.values())} matching" if cut else " hits")
+        ]
+        if cut:
+            head.append("CUT   " + "  ".join(cut) + "   (newest kept)")
+        return head + [
+            # The oldest item, not when the file was made: an archive holding
+            # ten years of a blog announced itself as starting today, and a
+            # model asked "since when has X been discussed" declined to answer.
+            f"COVER local-archive {archive_items} items, oldest {archive_start}",
+            "      Only what this server archived. It holds nothing from before its "
+            "first run.",
+            '      "0 hits" = "not in what we can search". It does NOT mean nobody is '
+            'talking about it.',
+            "      zh/ru sources index the native term: a Chinese company is 智谱 here "
+            "and Zhipu on Hacker News.",
+            "      Retry transliterated or translated if this comes back empty.",
+            # Two queries answered by different engines are not comparable, and
+            # nothing else in this output would say so.
+            ("      ENGINE substring scan: terms under 3 characters cannot use the "
+             "index, so recall differs from a longer query."
+             if engine == "substring" else
+             "      ENGINE trigram index over archived headlines."),
+            "COLS  id hh:mm title",
+            "---",
+        ]
+
+    body, _ = _blocks(rows, None)
+    text = "\n".join(header_for(rows) + body)
     if estimate_tokens(text) <= max_tokens:
         return text
 
     # Trim per source and verify, rather than computing a proportion once and
     # trusting it: the old estimate ignored the header and overshot every time,
     # returning 450 tokens for max_tokens=300 while announcing that it fit.
-    allowance = max(shown.values(), default=1)
+    allowance = max((len(v) for v in _by_source(rows).values()), default=1)
+    trimmed = rows
     while allowance > 0:
         allowance = allowance - 1 if allowance <= 3 else int(allowance * 0.6)
         trimmed = _cap_per_source(rows, allowance)
         body, _ = _blocks(trimmed, allowance)
-        text = "\n".join(header + body)
+        text = "\n".join(header_for(trimmed) + body)
         if estimate_tokens(text) <= max_tokens:
             break
-    return (f"BUDGET max_tokens={max_tokens} reached: at most {allowance} per source. "
-            f"Every source keeps its heading and real total.\n" + text)
+    return (f"BUDGET max_tokens={max_tokens} reached: at most {max(1, allowance)} per "
+            f"source. Every source keeps its heading and real total.\n" + text)
 
 
 def render_sources(*, health: dict, archive_items: int, archive_start: str,
