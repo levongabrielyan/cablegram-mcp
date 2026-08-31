@@ -58,10 +58,13 @@ def _ceiling(source: Source) -> int:
         return CLS_MAX
     if source.kind == "hn":
         return HN_MAX
-    if source.kind == "hub":
-        # models_url asks for exactly MAX_ROWS, so this source is truncated on
-        # every single poll — and with 10**9 here it was the only one that could
-        # never say so.
+    if source.kind == "hub" and not source.author:
+        # The global trending listing asks for exactly MAX_ROWS, so it is
+        # truncated on every poll — and with 10**9 here it was the only source
+        # that could never say so. An author listing is excluded on purpose: it
+        # is ordered by date and fifty is far more than any lab publishes in a
+        # window this server asks about, so the marker would be permanently on
+        # and mean nothing.
         return HUB_MAX
     return 10**9  # RSS feeds and Telegram pages have no comparable cap
 
@@ -78,7 +81,7 @@ def _request_url(source: Source, since: int) -> str:
     if source.kind == "telegram":
         return channel_url(source.id)
     if source.kind == "hub":
-        return models_url()
+        return models_url(author=source.author or None)
     return source.url
 
 

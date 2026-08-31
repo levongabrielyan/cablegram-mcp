@@ -155,3 +155,41 @@ def test_the_row_count_is_what_arrived_not_what_survived():
             {"id": "c/d", "private": True}]
     assert rows_returned(rows) == 2
     assert len(parse_models(rows)) == 1
+
+
+def test_a_lab_is_asked_by_date_and_the_global_list_by_trend():
+    """Two questions, two orderings, and the difference is the reason both
+    exist.
+
+    Globally, date returns the firehose of every repo anyone touched, so trend
+    is the only ordering that returns anything real. Inside one organisation's
+    namespace there is no firehose to rank away — it holds that organisation's
+    repos by construction — so a lab is asked what it published, most recent
+    first, and nothing is ranked at all.
+
+    Measured over seven days: the six labs published thirteen models and the
+    global top fifty carried five. A release reaches a popularity list only if
+    enough people like it fast enough, and eight did not — among them
+    tencent/ContextPilot in three sizes and both BF16 builds of GLM-5.3.
+    """
+    assert "sort=likes7d" in models_url()
+    assert "sort=createdAt" in models_url(author="deepseek-ai")
+    assert "likes7d" not in models_url(author="deepseek-ai")
+
+
+def test_every_lab_source_carries_the_namespace_it_asks_for():
+    """The catalogue entry and the request have to agree, or a source silently
+    fetches the global list under a lab's name and its block fills with other
+    people's models."""
+    from cablegram.poll import _request_url
+    from cablegram.sources import SOURCES
+
+    labs = [s for s in SOURCES if s.kind == "hub" and s.author]
+    assert len(labs) == 6, f"six labs publish weights and no feed; found {len(labs)}"
+    for source in labs:
+        url = _request_url(source, since=0)
+        assert f"author={source.author}" in url, f"{source.id} asks for {url}"
+        assert source.author in source.url, (
+            f"{source.id} is catalogued at {source.url} and fetches "
+            f"{source.author}; a reader following the catalogue URL lands "
+            f"somewhere else")

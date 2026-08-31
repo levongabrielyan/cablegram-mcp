@@ -46,10 +46,23 @@ QUANTISED_OF = "base_model:quantized:"
 def models_url(*, author: str | None = None, rows: int = MAX_ROWS) -> str:
     """Trending models, or the ones a single organisation published.
 
-    `author=` is how a lab is heard directly: deepseek-ai, Qwen, zai-org,
-    moonshotai, MiniMaxAI, tencent all answer, none of them has a feed.
+    The ordering depends on which of the two it is, and that is the point of
+    having both. Globally, date returns the firehose of every repo anyone
+    touched, so trend is the only ordering that returns anything real. Inside
+    one organisation's namespace there is no firehose to rank away — it holds
+    that organisation's repos and nothing else, by construction — so a lab is
+    asked the question actually being asked: what did you publish, most recent
+    first.
+
+    That matters because the global list is a popularity list, and a release
+    only appears on it if enough people like it fast enough. Measured over seven
+    days: the six labs published thirteen models and the trending top fifty
+    carried five. tencent/ContextPilot in three sizes, the BF16 builds of
+    GLM-5.3, and tencent's smaller WeMM embeddings were all invisible to the one
+    source that exists so those labs can speak for themselves.
     """
-    query = f"sort=likes7d&direction=-1&limit={min(rows, MAX_ROWS)}"
+    sort = "createdAt" if author else "likes7d"
+    query = f"sort={sort}&direction=-1&limit={min(rows, MAX_ROWS)}"
     return f"{HUB}/api/models?{query}" + (f"&author={author}" if author else "")
 
 

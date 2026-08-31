@@ -25,6 +25,9 @@ class Source:
     tags: tuple[str, ...] = ()
     note: str = ""
     aggregator: bool = False  # links out; show the destination host
+    # For a `hub` source: one organisation's namespace instead of the global
+    # trending listing. Empty means the global one.
+    author: str = ""
     # Reverse-engineered rather than published, so it can break without notice.
     # Declared in the output before it happens rather than explained after.
     fragile: bool = False
@@ -113,7 +116,69 @@ SOURCES: tuple[Source, ...] = (
         "trend and not by date, because both date orderings return the firehose "
         "of every repo anyone touched. Somebody else's ranking, accepted "
         "knowingly: the score it was ordered on travels with each entry, beside "
-        "the all-time like count, which is a different number and not sorted.",
+        "the all-time like count, which is a different number and not sorted. "
+        "A popularity list, so the six lab sources below cover what it misses.",
+    ),
+
+    # ── The labs, asked directly ──────────────────────────────────────────────
+    #
+    # Six organisations that publish weights and no feed of any kind, each read
+    # from its own namespace on the hub, newest first. Not the trending list:
+    # that one is a popularity list, and a release appears on it only if enough
+    # people like it fast enough. Measured over seven days — these six published
+    # thirteen models and the global top fifty carried five. Invisible to it:
+    # tencent/ContextPilot in three sizes, both BF16 builds of GLM-5.3, and
+    # tencent's smaller WeMM embeddings.
+    #
+    # There is no firehose to rank away inside one organisation's namespace, so
+    # nothing here is ranked at all and the deviation the `hub` note declares
+    # does not apply to these. Six requests, 2.6s together, and they run in
+    # parallel with everything that is not Telegram.
+    #
+    # lang is `en`: the headline is a repository name in ASCII. These are
+    # Chinese labs and their releases are not translated because there is
+    # nothing to translate.
+    Source(
+        "deepseek", "DeepSeek", "hub",
+        "https://huggingface.co/deepseek-ai", "en",
+        ("lab", "launches", "weights"),
+        "The lab whose Tuesday release started this module: "
+        "V4-Flash-Vision-Exp reached the trending list the same day and "
+        "would have been invisible if it had taken two.",
+        author="deepseek-ai",
+    ),
+    Source(
+        "qwen", "Qwen (Alibaba)", "hub",
+        "https://huggingface.co/Qwen", "en",
+        ("lab", "launches", "weights"),
+        author="Qwen",
+    ),
+    Source(
+        "zhipu", "Zhipu (Z.ai)", "hub",
+        "https://huggingface.co/zai-org", "en",
+        ("lab", "launches", "weights"),
+        "Its BF16 builds of GLM-5.3 never reached the trending list.",
+        author="zai-org",
+    ),
+    Source(
+        "moonshot", "Moonshot AI", "hub",
+        "https://huggingface.co/moonshotai", "en",
+        ("lab", "launches", "weights"),
+        author="moonshotai",
+    ),
+    Source(
+        "minimax", "MiniMax", "hub",
+        "https://huggingface.co/MiniMaxAI", "en",
+        ("lab", "launches", "weights"),
+        author="MiniMaxAI",
+    ),
+    Source(
+        "tencent", "Tencent Hunyuan", "hub",
+        "https://huggingface.co/tencent", "en",
+        ("lab", "launches", "weights"),
+        "Eight releases in seven days, three of which the trending list "
+        "carried.",
+        author="tencent",
     ),
 
     # ── Chinese ──────────────────────────────────────────────────────────────
