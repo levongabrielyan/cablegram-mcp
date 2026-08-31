@@ -170,3 +170,75 @@ def test_search_says_which_engine_answered(db):
     _, short_engine = _search_items(db, "智谱", since=iso(NOW - timedelta(days=7)))
     assert long_engine == "index"
     assert short_engine == "substring"
+
+
+# ── seventh review: the read paths must agree about the same item ────────────
+
+# Facts about the item rather than about one source's sighting of it. The title
+# is deliberately not here: latest_items and search_items return the headline of
+# the source that carried it, items_by_ids the item's own, and that difference is
+# on purpose.
+ITEM_LEVEL = ("id", "url", "url_norm", "lang", "published", "date_exact",
+              "target_host", "first_source", "via", "sources")
+
+
+def test_every_read_path_reports_the_same_facts_about_the_same_item(db):
+    """wire_read serves rows from items_by_ids against the file and rows the
+    other two queries produced against the live window, so a column only one of
+    them selects is a fact that exists in one mode and not the other.
+
+    `via` was the one that lied. It marks an item nothing has published under its
+    own feed — 59 in the archive today — where the headline, language, source and
+    date all belong to whoever linked it, and wire_read prints a paragraph saying
+    so. Selected only by items_by_ids, it came back absent rather than false, and
+    live mode printed a Russian Telegram post as that channel's own dispatch
+    about an English blog it never wrote. `sources` did the same to the cross
+    count, which named one carrier on a line claiming two.
+
+    Names no expected value. It asserts that the three paths agree, whatever the
+    right answer turns out to be, so it cannot go stale and it covers the next
+    column somebody adds to one query and not the others.
+    """
+    linked = "https://bfl.ai/blog/flux-video-upscale"
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("BFL выпустили FLUX Video Upscale", "https://t.me/ai_newz/1",
+                         NOW, None, None, links=(linked,))],
+                  fetched_at=iso(NOW))
+
+    since = iso(NOW - timedelta(days=7))
+    ids = [item_id(linked), item_id("https://hn.example/0")]
+    paths = {
+        "latest_items": latest_items(db, since=since),
+        "search_items": search_items(db, "GLM", since=since)
+                        + search_items(db, "FLUX", since=since),
+        "items_by_ids": items_by_ids(db, ids),
+    }
+
+    compared = 0
+    for iid in ids:
+        facts = {name: {k: row[k] for k in ITEM_LEVEL if k in row}
+                 for name, rows in paths.items()
+                 for row in rows if row["id"] == iid}
+        assert len(facts) > 1, f"{iid} reached only {list(facts)}; nothing to compare"
+        first, *rest = facts.items()
+        for name, seen in rest:
+            assert seen == first[1], (
+                f"{iid} is {seen} through {name} and {first[1]} through {first[0]}; "
+                f"wire_read serves both and cannot tell which one it has")
+        compared += 1
+    assert compared == len(ids)
+
+
+def test_an_item_only_a_link_reached_is_marked_that_way_by_every_path(db):
+    """The half of the agreement above that has a right answer, stated once so a
+    change that makes all three agree on the wrong value still fails."""
+    linked = "https://bfl.ai/blog/flux-video-upscale"
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("BFL выпустили FLUX Video Upscale", "https://t.me/ai_newz/1",
+                         NOW, None, None, links=(linked,))],
+                  fetched_at=iso(NOW))
+
+    borrowed = items_by_ids(db, [item_id(linked)])[0]
+    assert borrowed["via"] == "link"
+    own = items_by_ids(db, [item_id("https://hn.example/0")])[0]
+    assert own["via"] == "feed", "hn published this one itself"

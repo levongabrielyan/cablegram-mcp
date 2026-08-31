@@ -425,7 +425,25 @@ def conditional_headers(db: sqlite3.Connection) -> dict[str, tuple[str | None, s
 
 _ITEM_COLUMNS = (
     "i.id, i.url, i.url_norm, i.lang, i.body, i.body_src, i.published,"
-    " i.date_exact, i.target_host, i.first_source"
+    " i.date_exact, i.target_host, i.first_source,"
+    # Both of these are facts about the item, and both were computed by
+    # items_by_ids alone. That was invisible while wire_read only ever read the
+    # file; serving live, it reads rows these other two queries produced, and a
+    # column they do not select comes back as absent rather than as false.
+    #
+    # `via` is the one that lies. 'link' means nothing has published this under
+    # its own feed, so the headline, language, source and date all belong to
+    # whoever linked it — 59 items in the archive today. Missing, wire_read
+    # printed a Telegram channel's Russian post as that channel's own dispatch
+    # about an English blog it never wrote.
+    "       CASE WHEN EXISTS (SELECT 1 FROM sighting x"
+    "                         WHERE x.item_id = i.id AND x.via = 'feed')"
+    "            THEN 'feed' ELSE 'link' END AS via,"
+    # And `sources` is what the cross count names. Without it the count and the
+    # list contradicted each other on the same line: x2[hub] for a story hn and
+    # hub both carried.
+    "       (SELECT GROUP_CONCAT(x.source) FROM sighting x WHERE x.item_id = i.id)"
+    "           AS sources"
 )
 
 
@@ -484,15 +502,7 @@ def items_by_ids(db: sqlite3.Connection, ids: list[str]) -> list[dict]:
         row["id"]: dict(row)
         for row in db.execute(
             f"SELECT {_ITEM_COLUMNS}, i.title,"
-            f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
-            f"       (SELECT GROUP_CONCAT(x.source) FROM sighting x WHERE x.item_id = i.id)"
-            f"           AS sources,"
-            # 'link' when nothing has published this under its own feed: the
-            # title, language, source and date are all borrowed from whoever
-            # linked it, and wire_read has to say so.
-            f"       CASE WHEN EXISTS (SELECT 1 FROM sighting x"
-            f"                         WHERE x.item_id = i.id AND x.via = 'feed')"
-            f"            THEN 'feed' ELSE 'link' END AS via"
+            f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross"
             f" FROM item i WHERE i.id IN ({marks})", ids)
     }
     return [found[i] for i in ids if i in found]
