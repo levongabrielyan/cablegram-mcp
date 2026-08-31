@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .sources import SOURCES, by_id
+from .store import is_down
 
 __all__ = ["render_latest", "render_read", "render_search", "render_sources",
            "estimate_tokens"]
@@ -337,6 +338,10 @@ def render_search(
     archive_start: str,
     archive_items: int,
     engine: str = "index",
+    down: dict[str, str] | None = None,
+    unknown: list[str] | None = None,
+    mode: str = "archive",
+    unused: str | None = None,
     max_tokens: int = 8000,
 ) -> str:
     # Declaring the cut matters more here than in the listing. A source holding
@@ -363,21 +368,61 @@ def render_search(
             seen[r["source"]] = seen.get(r["source"], 0) + 1
         cut = [f"{s}={seen[s]}/{totals[s]}" for s in sorted(seen) if totals[s] > seen[s]]
         head = [
-            f'CABLEGRAM search "{query}" | last {days}d | {len(printed)} shown'
+            f'CABLEGRAM search "{query}" {mode} | last {days}d | {len(printed)} shown'
             + (f" of {sum(totals.values())} matching" if cut else " hits")
         ]
+        # Before CUT, because the warning has to be read before the number it
+        # explains. And deliberately not the wording render_latest uses: there
+        # the false conclusion is "nothing happened", here it is "no match", and
+        # naming the wrong conclusion is half of what these lines are for.
+        if down:
+            head.append("DOWN  " + "  ".join(f"{k}={v}" for k, v in sorted(down.items())))
+            head.append(
+                "      A DOWN SOURCE WAS NOT SEARCHED AT ALL. Its silence here is "
+                'UNKNOWN, not "no match".'
+                if mode == "live" else
+                "      These failed their last poll, so whatever they have published "
+                'since is not in the archive. A miss on them is UNKNOWN, not "no match".')
+        if unknown:
+            head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
+                        f"tag or language. NOTHING WAS SEARCHED for it, which is why "
+                        f"the count above may be 0. Call wire_sources for the catalogue.")
         if cut:
             head.append("CUT   " + "  ".join(cut) + "   (newest kept)")
+        if mode == "live":
+            # The archive wording below is not merely unhelpful here, it is
+            # false: one live pass over openai's feed loads 1,157 items back to
+            # 2015, and the reply said `COVER local-archive ... oldest
+            # 2015-12-11`. A model reads that as ten years of coverage searched
+            # and nothing found, when what it has is a feed downloaded two
+            # seconds ago and thrown away.
+            head += [
+                f"COVER live window: fetched for this call and discarded, "
+                f"{archive_items} items, oldest {archive_start}.",
+                "      That floor is what these feeds happen to serve TODAY, not how "
+                "far back the subject goes.",
+                "      It is wildly uneven: one source served its whole back catalogue "
+                "to 2015 and another serves",
+                f"      ten items. A feed exposing ten items cannot answer a {days}d "
+                "question, and no line below",
+                "      separates the two — so read this date as a property of the "
+                "feeds, never as one of the subject.",
+            ]
+            if unused:
+                head.append(f"NOTE  {unused}")
+        else:
+            head += [
+                # The oldest item, not when the file was made: an archive holding
+                # ten years of a blog announced itself as starting today, and a
+                # model asked "since when has X been discussed" declined to answer.
+                f"COVER local-archive {archive_items} items, oldest {archive_start}",
+                "      Only what this server has fetched, and coverage is uneven: a few "
+                "feeds served their whole",
+                "      back catalogue on the first poll and most served days, so the "
+                "date above is the oldest item",
+                "      in the archive, not a floor under every source.",
+            ]
         return head + [
-            # The oldest item, not when the file was made: an archive holding
-            # ten years of a blog announced itself as starting today, and a
-            # model asked "since when has X been discussed" declined to answer.
-            f"COVER local-archive {archive_items} items, oldest {archive_start}",
-            "      Only what this server has fetched, and coverage is uneven: a few "
-            "feeds served their whole",
-            "      back catalogue on the first poll and most served days, so the date "
-            "above is the oldest item",
-            "      in the archive, not a floor under every source.",
             '      "0 hits" = "not in what we can search". It does NOT mean nobody is '
             'talking about it.',
             "      zh/ru sources index the native term: a Chinese company is 智谱 here "
@@ -388,7 +433,7 @@ def render_search(
             ("      ENGINE substring scan: terms under 3 characters cannot use the "
              "index, so recall differs from a longer query."
              if engine == "substring" else
-             "      ENGINE trigram index over archived headlines."),
+             "      ENGINE trigram index over the headlines this call searched."),
             "COLS  id hh:mm title",
             "---",
         ]
@@ -436,9 +481,7 @@ def render_sources(*, health: dict, archive_items: int, archive_start: str,
     for source in SOURCES:
         state = health.get(source.id, {})
         last_ok = (state.get("last_ok") or "-")[:16].replace("T", " ")
-        if state.get("last_error") and (
-            not state.get("last_ok") or (state.get("last_try") or "") >= state["last_ok"]
-        ):
+        if is_down(state):
             status = f"FAIL {state['last_error'][:28]}"
         elif state.get("last_ok"):
             # OK beside a three-day-old date still reads as OK, and nobody

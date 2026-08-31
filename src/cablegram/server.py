@@ -30,7 +30,8 @@ from .archive import archive_path, connect
 from .render import render_latest, render_read, render_search, render_sources
 from .poll import POLLABLE, poll_once
 from .sources import SOURCES, resolve
-from .store import (items_by_ids, latest_items, search_items, source_health)
+from .store import (is_down, items_by_ids, latest_items, search_items,
+                    source_health)
 
 __all__ = ["build", "serve", "main"]
 
@@ -127,7 +128,25 @@ def _positive(name: str, value: int, unit: str) -> int:
     return value
 
 
-def _unused_archive() -> str | None:
+def _down_sources(health: dict, wanted: set[str]) -> dict[str, str]:
+    """Which of `wanted` did not answer, and why.
+
+    Shared by wire_latest and wire_search rather than written out in each. The
+    rule for "down" already existed twice — here and in render_sources — and the
+    tool where a missing source is least visible had no copy of it at all.
+    """
+    pollable = {s.id for s in SOURCES if s.kind in POLLABLE}
+    down: dict[str, str] = {}
+    for sid in sorted(wanted & pollable):
+        state = health.get(sid) or {}
+        if not state:
+            down[sid] = "never polled"
+        elif is_down(state):
+            down[sid] = state["last_error"][:40]
+    return down
+
+
+def _unused_archive(what: str = "NOT in use") -> str | None:
     """A one-line description of an archive on disk that this build is not using.
 
     The file is never deleted and CABLEGRAM_ARCHIVE=1 returns it to service, so
@@ -135,6 +154,10 @@ def _unused_archive() -> str | None:
     live window, and an unannounced "0 hits" is indistinguishable from a quiet
     day. That is the failure this project exists to prevent, committed by its
     own migration.
+
+    `what` because the sentence has a different job in each caller. For the
+    catalogue it is a standing notice; inside a search result it is the reason
+    the count came back low, and "not in use" is too mild to be read as one.
     """
     path = archive_path()
     if not path.exists():
@@ -149,7 +172,7 @@ def _unused_archive() -> str | None:
     if not items:
         return None
     return (f"{items} items ({(oldest or '?')[:10]} .. {(newest or '?')[:10]}) are on "
-            f"disk and NOT in use. This build fetches live. "
+            f"disk and {what}. This build fetches live. "
             f"Set CABLEGRAM_ARCHIVE=1 to search them again.")
 
 
@@ -311,25 +334,7 @@ def build(open_db=None) -> MCPServer:
         wanted = {s.id for s in resolve(sources)}
         unknown = _unknown_selectors(sources)
         pollable = {s.id for s in SOURCES if s.kind in POLLABLE}
-        # A source is DOWN when its most recent attempt failed — not when it has
-        # never once succeeded. Looking only at last_ok let a source failing for
-        # three days count as healthy here while wire_sources listed it as FAIL:
-        # two tools contradicting each other, with the one called every morning
-        # doing the lying.
-        down = {}
-        for sid in wanted & pollable:
-            state = health.get(sid, {})
-            if not state:
-                down[sid] = "never polled"
-            elif state.get("last_error") and (
-                # `>=`, not `>`: a pass that downloads and then fails records
-                # both attempts with the same `fetched_at`, so a strict compare
-                # never fired and the failure stayed invisible. Safe, because a
-                # success clears `last_error`, so this can only be true after
-                # one.
-                not state.get("last_ok") or state["last_try"] >= state["last_ok"]
-            ):
-                down[sid] = state["last_error"][:40]
+        down = _down_sources(health, wanted)
         # Healthy, polled, and absent from the blocks below because they
         # published nothing in this window. Neither DOWN nor PENDING covers it,
         # so seven sources vanished from a payload whose header still said
@@ -386,11 +391,21 @@ def build(open_db=None) -> MCPServer:
         name="wire_search",
         title="Search the archive",
         description=(
-            "Search the archived headlines of every source that carried a story.\n"
-            "IMPORTANT: this searches only what this server has archived since it was "
-            "first run — not the whole internet and not the sources' own history. "
-            "'0 hits' means 'not in what we can search'. It does NOT mean nobody is "
-            "talking about it, and must never be reported as such.\n"
+            "Search the headlines of every source that carried a story.\n"
+            "WHAT IS BEING SEARCHED depends on the mode, and the first line of the "
+            "reply names the one that answered:\n"
+            "  live (the default)  each call fetches the sources and searches what "
+            "they serve right now, then throws it away. Coverage is whatever the feeds "
+            "expose today, and it is wildly uneven — one serves its back catalogue to "
+            "2015, another serves ten items. The COVER line gives the real floor.\n"
+            "  archive (CABLEGRAM_ARCHIVE=1)  searches a file a poller has been "
+            "filling since it was first run, which is deeper than any feed and grows "
+            "every hour.\n"
+            "Either way this is NOT the whole internet. '0 hits' means 'not in what we "
+            "can search'. It does NOT mean nobody is talking about it, and must never "
+            "be reported as such — read the DOWN and UNKNOWN SELECTOR lines first, "
+            "because a source that was never searched returns 0 hits exactly like a "
+            "source with nothing to say.\n"
             "Chinese and Russian sources are indexed in their own language: a company "
             "is 智谱 here and Zhipu on Hacker News. If a query comes back empty, retry "
             "it transliterated or translated before concluding anything."
@@ -410,10 +425,20 @@ def build(open_db=None) -> MCPServer:
             rows, engine = search_items(db, query, since=start, sources=sources,
                                         limit_per_source=limit_per_source)
             items, began = _archive_facts(db)
-            remember(rows, source_health(db))
+            health = source_health(db)
+            remember(rows, health)
+        # The same four facts wire_latest already carries. A search is the tool
+        # where their absence costs most: a listing that comes back short still
+        # shows which sources it did print, and "0 hits" shows nothing at all.
         return render_search(rows, query=query, since=start, days=days,
                              archive_start=began, archive_items=items,
-                             engine=engine, max_tokens=max_tokens)
+                             engine=engine,
+                             down=_down_sources(health, {s.id for s in resolve(sources)}),
+                             unknown=_unknown_selectors(sources),
+                             mode="archive" if archive_mode else "live",
+                             unused=None if archive_mode
+                                    else _unused_archive("were NOT searched"),
+                             max_tokens=max_tokens)
 
     @server.tool(
         name="wire_sources",

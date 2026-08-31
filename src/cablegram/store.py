@@ -365,6 +365,29 @@ def record_write(db: sqlite3.Connection, report: StoreReport, *, url: str, at: s
         )
 
 
+def is_down(state: dict | None) -> bool:
+    """Whether this source's most recent attempt failed.
+
+    One sentence, in one place. It was written out twice — once to build the
+    DOWN line of wire_latest and once to build the FAIL column of wire_sources —
+    and left out of wire_search entirely, so a search over twenty-one dead
+    sources came back "0 shown hits" with nothing to say they had been dead.
+    Two copies of a rule get fixed one at a time; the third copy never existed
+    and nobody noticed.
+
+    A source with no state at all is NOT down. It has never been asked, which is
+    a different fact and gets different words from every caller.
+
+    `>=`, not `>`: a pass that downloads and then fails records both attempts
+    with the same `fetched_at`, so a strict compare never fired and the failure
+    stayed invisible. Safe, because a success clears `last_error`, so this can
+    only be true after one.
+    """
+    if not state or not state.get("last_error"):
+        return False
+    return not state.get("last_ok") or (state.get("last_try") or "") >= state["last_ok"]
+
+
 def source_health(db: sqlite3.Connection) -> dict[str, dict]:
     """One row per source, folding together its endpoints.
 

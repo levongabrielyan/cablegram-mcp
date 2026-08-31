@@ -6,6 +6,8 @@ actually kept: a dead source appears, a window means what it says, an unknown id
 comes back named.
 """
 
+import re
+
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -349,3 +351,70 @@ async def test_a_limit_of_zero_is_refused_rather_than_answered(server, tool, arg
     assert "limit_per_source" in str(raised.value)
     assert "0 items per source" in str(raised.value), (
         "the message has to name what was asked for, not just refuse it")
+
+
+_DOWN_LINE = re.compile(r"^DOWN  (.*)$", re.M)
+
+
+def down_ids(out: str) -> set[str]:
+    """The sources a payload declares did not answer."""
+    line = _DOWN_LINE.search(out)
+    return {p.split("=")[0] for p in line.group(1).split("  ") if p} if line else set()
+
+
+@pytest.mark.anyio
+async def test_both_listing_tools_agree_about_which_sources_did_not_answer(server):
+    """One rule, three places, and only two of them had it written down.
+
+    wire_latest and wire_search read the same source_health and cover the same
+    catalogue, so a source that did not answer did not answer for both. Only
+    wire_latest said so. Measured against the real archive with every source
+    failing, wire_latest returned `0/21 sources` above a DOWN line naming all
+    twenty-one, and wire_search returned `0 shown hits` with no line at all —
+    directly above its own boilerplate explaining that zero hits means "not in
+    what we can search", which is the opposite of what had happened.
+
+    Compares one payload against the other and names no expected value, so it
+    holds whichever sources are down.
+    """
+    latest = await call(server, "wire_latest", hours=24)
+    search = await call(server, "wire_search", query="GLM", days=1)
+    assert down_ids(latest), "the fixture has to have something down to compare"
+    assert down_ids(search) == down_ids(latest), (
+        f"wire_latest reports {sorted(down_ids(latest))} down and wire_search "
+        f"reports {sorted(down_ids(search))}; both read the same health over the "
+        f"same catalogue, and a search is where a missing source is least visible")
+
+
+@pytest.mark.anyio
+async def test_a_search_names_the_selector_that_matched_nothing(server):
+    """`sources=["qbitia"]` came back `0 shown hits` under the line telling the
+    model that zero hits means "not in what we can search" — when the truth was
+    that nothing had been searched. wire_latest had named the typo since the
+    fifth review; the tool where an empty answer is the expected shape did not."""
+    out = await call(server, "wire_search", query="GLM", sources=["qbitia"])
+    assert "qbitia" in out and "UNKNOWN SELECTOR" in out
+    assert "NOTHING WAS SEARCHED" in out
+
+
+@pytest.mark.anyio
+async def test_every_listing_names_a_mode_and_they_name_the_same_one(server):
+    """"searched the archive" and "searched one live fetch and threw it away"
+    are different claims about what a miss means, and only wire_latest stated
+    which one it was — so a search that found nothing gave the model no way to
+    know whether it had looked at 4,936 items or at one download.
+
+    Asserts that both name a mode and that the two agree, rather than that
+    either says "archive": a payload that hardcodes the word passes a test for
+    the word, which is how the sentence and the code came apart everywhere else
+    in this file.
+    """
+    modes = {}
+    for tool, args in (("wire_latest", {"hours": 24}),
+                       ("wire_search", {"query": "GLM"})):
+        out = await call(server, tool, **args)
+        named = re.match(r"CABLEGRAM[^|]*?\b(archive|live)\b", out)
+        assert named, f"{tool} names no mode: {out.splitlines()[0]}"
+        modes[tool] = named.group(1)
+    assert len(set(modes.values())) == 1, (
+        f"one process, one source of rows, two answers: {modes}")
