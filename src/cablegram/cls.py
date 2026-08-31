@@ -24,7 +24,7 @@ from urllib.parse import urlencode
 
 from .rss import MAX_FIELD, Entry
 
-__all__ = ["CLS_BASE", "AI_SUBJECT", "signed_url", "parse_response", "feed_url"]
+__all__ = ["rows_returned", "CLS_BASE", "AI_SUBJECT", "signed_url", "parse_response", "feed_url"]
 
 CLS_BASE = "https://www.cls.cn"
 AI_SUBJECT = 1321  # 人工智能. Verified: 100 of 100 items carry it in `subjects`.
@@ -76,6 +76,22 @@ def _headline_and_body(item: dict) -> tuple[str, str | None]:
     # title on the article's own page too.
     brief = (item.get("article_brief") or "").strip()
     return raw[:MAX_FIELD], brief[:MAX_FIELD] or None
+
+
+def rows_returned(payload: dict) -> int:
+    """Articles the envelope carried, before any are dropped.
+
+    Measured before filtering on purpose, and it matters most here: cls.cn
+    cannot page backwards at all, so the AT CEILING marker is the only warning
+    that something past its hundred is gone for good. One article without an
+    `article_time` took the count to 99 and the warning never appeared.
+    """
+    if not isinstance(payload, dict):
+        return 0
+    data = payload.get("data") or []
+    if isinstance(data, dict):
+        data = data.get("roll_data") or data.get("depth_list") or []
+    return len(data) if isinstance(data, list) else 0
 
 
 def parse_response(payload: dict) -> list[Entry]:

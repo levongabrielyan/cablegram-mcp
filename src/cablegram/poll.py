@@ -20,9 +20,12 @@ import xml.etree.ElementTree as ET
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from .cls import MAX_ROWS as CLS_MAX, feed_url as cls_feed_url, parse_response as parse_cls
-from .hn import MAX_ROWS as HN_MAX, parse_search as parse_hn, search_url as hn_search_url
-from .hub import models_url, parse_models
+from .cls import (MAX_ROWS as CLS_MAX, feed_url as cls_feed_url,
+                  parse_response as parse_cls, rows_returned as cls_rows)
+from .hn import (MAX_ROWS as HN_MAX, parse_search as parse_hn,
+                 rows_returned as hn_rows, search_url as hn_search_url)
+from .hub import (MAX_ROWS as HUB_MAX, models_url, parse_models,
+                  rows_returned as hub_rows)
 from .nextjs import parse_next_payload
 from .telegram import channel_url, parse_channel
 from .fetch import TOTAL_DEADLINE, Fetched, fetch_all
@@ -55,6 +58,11 @@ def _ceiling(source: Source) -> int:
         return CLS_MAX
     if source.kind == "hn":
         return HN_MAX
+    if source.kind == "hub":
+        # models_url asks for exactly MAX_ROWS, so this source is truncated on
+        # every single poll — and with 10**9 here it was the only one that could
+        # never say so.
+        return HUB_MAX
     return 10**9  # RSS feeds and Telegram pages have no comparable cap
 
 
@@ -182,13 +190,23 @@ async def poll_once(
             reports.append(StoreReport(source.id, state="unchanged"))
             continue
 
+        # How many rows the endpoint sent, which is not how many survive parsing.
+        # `at_ceiling` means "it returned all it could, so there may be more",
+        # and measuring it on the entries made one dropped row switch it off:
+        # cls returning its full hundred with one article missing a timestamp
+        # reported at_ceiling=False, in the source that cannot page backwards,
+        # where the marker is the only warning that something is gone for good.
+        returned = None
         try:
             if source.kind == "cls":
-                entries = parse_cls(json.loads(fetched.body))
+                payload = json.loads(fetched.body)
+                entries, returned = parse_cls(payload), cls_rows(payload)
             elif source.kind == "hn":
-                entries = parse_hn(json.loads(fetched.body))
+                payload = json.loads(fetched.body)
+                entries, returned = parse_hn(payload), hn_rows(payload)
             elif source.kind == "hub":
-                entries = parse_models(json.loads(fetched.body))
+                payload = json.loads(fetched.body)
+                entries, returned = parse_models(payload), hub_rows(payload)
             elif source.kind == "nextjs":
                 # The section URL, because the payload carries a slug and not a
                 # link. One request per section, which is why /news and
@@ -227,7 +245,8 @@ async def poll_once(
             continue
 
         report = store_entries(db, source, entries, fetched_at=now)
-        report.at_ceiling = len(entries) >= _ceiling(source)
+        report.at_ceiling = (returned if returned is not None
+                             else len(entries)) >= _ceiling(source)
         if report.at_ceiling:
             # Recorded in `meta`, which is (k, v) and cannot change shape.
             # source_state has no room for it and _seal refuses an archive whose

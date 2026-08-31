@@ -7,6 +7,7 @@ exactly like a quiet day.
 """
 
 import asyncio
+import json
 
 import httpx2
 import pytest
@@ -374,3 +375,45 @@ def test_an_entry_that_would_not_store_does_not_take_its_source_down(db, network
         f"a pass that archived {report.new} of 3 is recorded as failed "
         f"({state['last_error']!r}), which takes the source out of the coverage "
         f"tally above its own items")
+
+
+def test_a_ceiling_is_measured_on_what_arrived_not_on_what_survived(db, network):
+    """AT CEILING means "it returned all it could, so there may be more", and it
+    was computed from the entries rather than from the rows.
+
+    One dropped row switched it off. cls.cn returning its full hundred with one
+    article missing an `article_time` reported at_ceiling=False — in the source
+    that cannot page backwards, where that marker is the only warning that
+    something is gone for good.
+    """
+    from cablegram.cls import MAX_ROWS as CLS_MAX
+
+    full = {"errno": 0, "data": [
+        {"article_id": i, "article_title": f"标题 {i}", "ctime": 1788000000 + i,
+         "article_brief": ""} for i in range(CLS_MAX)]}
+    # One row the parser will drop, exactly as a real payload eventually does.
+    full["data"][3].pop("ctime")
+
+    network(lambda request: httpx2.Response(200, content=json.dumps(full).encode()))
+    report = asyncio.run(poll_once(db, [by_id("cls")]))[0]
+
+    assert report.new == CLS_MAX - 1, "one row is unarchivable, as intended"
+    assert report.at_ceiling, (
+        f"the endpoint returned its full {CLS_MAX} and one row did not parse, "
+        f"so the pass is still at the ceiling — cls cannot page backwards and "
+        f"this marker is the only warning that anything past it is lost")
+
+
+def test_the_hub_declares_the_ceiling_it_is_always_at(db, network):
+    """models_url asks for exactly MAX_ROWS, so this source is truncated on
+    every poll — and it was the only one whose ceiling was 10**9, so it was the
+    only one that could never say so."""
+    from cablegram.hub import MAX_ROWS as HUB_MAX
+
+    rows = [{"id": f"org{i}/model", "likes": i, "downloads": i,
+             "trendingScore": HUB_MAX - i, "createdAt": "2026-08-30T10:00:00.000Z"}
+            for i in range(HUB_MAX)]
+    network(lambda request: httpx2.Response(200, content=json.dumps(rows).encode()))
+    report = asyncio.run(poll_once(db, [by_id("hub")]))[0]
+
+    assert report.at_ceiling, f"{HUB_MAX} rows of a {HUB_MAX}-row page is the ceiling"

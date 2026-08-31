@@ -34,10 +34,13 @@ from datetime import datetime, timezone
 
 from .rss import Entry
 
-__all__ = ["HUB", "MAX_ROWS", "models_url", "parse_models"]
+__all__ = ["HUB", "MAX_ROWS", "models_url", "parse_models", "rows_returned"]
 
 HUB = "https://huggingface.co"
 MAX_ROWS = 50
+
+# The tag a repo writes to say whose weights it requantised.
+QUANTISED_OF = "base_model:quantized:"
 
 
 def models_url(*, author: str | None = None, rows: int = MAX_ROWS) -> str:
@@ -51,7 +54,19 @@ def models_url(*, author: str | None = None, rows: int = MAX_ROWS) -> str:
 
 
 def _when(item: dict) -> datetime | None:
-    for key in ("lastModified", "createdAt"):
+    """When the repo was made, preferred over when it was last touched.
+
+    The order used to be the other way round. It changed nothing in practice —
+    measured, this endpoint returns lastModified in 0 of 50 rows unless it is
+    asked for — which is exactly what made it dangerous: the day Hugging Face
+    adds the field to the default listing, or somebody adds `full=true` to get
+    something else, every old model edited today enters a 24h window as if it
+    were new, and nothing in the code moves.
+
+    A model release is a repo being created. Anyone adding a README to a model
+    from March is not publishing it again.
+    """
+    for key in ("createdAt", "lastModified"):
         raw = item.get(key)
         if not raw:
             continue
@@ -63,6 +78,42 @@ def _when(item: dict) -> datetime | None:
     # No date rather than today's: this endpoint is not ordered by time, so an
     # invented timestamp would put the model in whatever window was asked for.
     return None
+
+
+def rows_returned(payload: list) -> int:
+    """How many rows the endpoint sent, which is not how many become entries.
+
+    The ceiling means "it gave all it could, there may be more", so it has to be
+    measured on what arrived rather than on what survived filtering: with the
+    private and requantisation filters below, a full page of 50 yields about 33
+    entries and would never reach a ceiling of 50.
+    """
+    return len(payload) if isinstance(payload, list) else 0
+
+
+def _requantised_by_a_third_party(item: dict) -> bool:
+    """A repo declaring, in its own published metadata, that it is somebody
+    else's weights requantised.
+
+    Not an editorial call and not a quality judgement: the tag
+    `base_model:quantized:<org>/<model>` is written by the repo itself, and the
+    only thing read off it is whether that organisation is the one publishing
+    this. Qwen shipping an FP8 of its own model is Qwen publishing; sixteen
+    GGUF and "uncensored" rebuilds of Qwen3.8-27B by other people are the same
+    release arriving seventeen times.
+
+    Measured over the live top fifty: 17 rows declare a quantised base, 16 of
+    them from a different organisation, and one — Qwen/Qwen3.8-Flash-Next-FP8 —
+    from the same one. Filtering on `base_model:` alone would have taken 13
+    finetunes with it, including ibm-granite/granite-4.2-30b and
+    tencent/WeMM-Embedding-9B, which are lab releases.
+    """
+    owner = (item.get("id") or item.get("modelId") or "").split("/")[0]
+    for tag in item.get("tags") or ():
+        if tag.startswith(QUANTISED_OF):
+            base = tag[len(QUANTISED_OF):]
+            return "/" in base and base.split("/")[0] != owner
+    return False
 
 
 def parse_models(payload: list) -> list[Entry]:
@@ -77,6 +128,8 @@ def parse_models(payload: list) -> list[Entry]:
     entries: list[Entry] = []
     for item in payload:
         if not isinstance(item, dict) or item.get("private"):
+            continue
+        if _requantised_by_a_third_party(item):
             continue
         model_id = (item.get("id") or item.get("modelId") or "").strip()
         if not model_id:

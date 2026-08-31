@@ -25,7 +25,7 @@ from urllib.parse import urlencode
 
 from .rss import MAX_FIELD, Entry
 
-__all__ = ["parse_search", "search_url", "ALGOLIA", "MAX_ROWS"]
+__all__ = ["rows_returned", "parse_search", "search_url", "ALGOLIA", "MAX_ROWS"]
 
 ALGOLIA = "https://hn.algolia.com/api/v1"
 MAX_ROWS = 1000  # asking for more is capped in silence, not refused
@@ -62,6 +62,17 @@ def _text(raw: str | None) -> str | None:
         return None
     stripped = html.unescape(_TAGS.sub(" ", html.unescape(raw)))
     return " ".join(stripped.split())[:MAX_FIELD] or None
+
+
+def rows_returned(payload: dict) -> int:
+    """Hits the endpoint sent, which is not how many become entries.
+
+    The ceiling means "it returned all it could", so it has to be measured
+    before filtering: one Ask HN with no objectID took the count from 1000 to
+    999 and the marker stopped firing for the whole pass.
+    """
+    hits = payload.get("hits") if isinstance(payload, dict) else None
+    return len(hits) if isinstance(hits, list) else 0
 
 
 def parse_search(payload: dict) -> list[Entry]:

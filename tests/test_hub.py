@@ -98,3 +98,60 @@ def test_a_response_that_is_not_a_list_is_an_error_not_an_empty_hub():
     read as a day on which nobody published anything."""
     with pytest.raises(ValueError, match="schema"):
         parse_models({"error": "nope"})
+
+
+def test_somebody_elses_requantisation_is_not_a_publication():
+    """The same release arriving many times. Measured over the live top fifty:
+    seventeen rows declare a quantised base and sixteen come from a different
+    organisation — ten of them rebuilds of one model, Qwen3.8-27B, which alone
+    took 20% of the page.
+
+    Not an editorial call. The tag `base_model:quantized:<org>/<model>` is
+    written by the repo itself, and the only thing read off it is whether that
+    organisation is the one publishing this.
+    """
+    rows = [
+        {"id": "Qwen/Qwen3.8-27B", "trendingScore": 9, "createdAt": "2026-08-05T00:00:00Z"},
+        {"id": "unsloth/Qwen3.8-27B-GGUF", "trendingScore": 8,
+         "createdAt": "2026-08-30T00:00:00Z",
+         "tags": ["base_model:Qwen/Qwen3.8-27B", "base_model:quantized:Qwen/Qwen3.8-27B"]},
+    ]
+    assert [e.title for e in parse_models(rows)] == ["Qwen/Qwen3.8-27B"]
+
+
+def test_a_lab_quantising_its_own_model_is_still_the_lab_publishing():
+    """Qwen/Qwen3.8-Flash-Next-FP8 is Qwen shipping a build of its own weights,
+    and it was one of the seventeen. Filtering every `base_model:` tag instead
+    would also have dropped thirteen finetunes, among them
+    ibm-granite/granite-4.2-30b and tencent/WeMM-Embedding-9B — lab releases,
+    which is the whole reason this source exists."""
+    rows = [{"id": "Qwen/Qwen3.8-Flash-Next-FP8", "trendingScore": 5,
+             "createdAt": "2026-08-30T00:00:00Z",
+             "tags": ["base_model:quantized:Qwen/Qwen3.8-Flash-Next"]},
+            {"id": "ibm-granite/granite-4.2-30b", "trendingScore": 4,
+             "createdAt": "2026-08-30T00:00:00Z",
+             "tags": ["base_model:finetune:ibm-granite/granite-4.2-base"]}]
+    assert len(parse_models(rows)) == 2
+
+
+def test_the_date_is_when_the_repo_was_made_not_when_it_was_touched():
+    """A model release is a repo being created; adding a README to a model from
+    March is not publishing it again. The preference was the other way round and
+    changed nothing in practice — this endpoint returns lastModified in 0 of 50
+    rows — which is what made it dangerous: the day the field appears in the
+    default listing, every edited old model enters a 24h window as new and
+    nothing in the code has moved."""
+    entry = parse_models([{"id": "x/y", "createdAt": "2026-03-01T00:00:00.000Z",
+                           "lastModified": "2026-08-31T00:00:00.000Z"}])[0]
+    assert entry.published.isoformat().startswith("2026-03-01")
+
+
+def test_the_row_count_is_what_arrived_not_what_survived():
+    """`rows_returned` feeds the ceiling marker, which means "it gave all it
+    could". Counting the entries instead let one filtered row switch it off."""
+    from cablegram.hub import rows_returned
+
+    rows = [{"id": "a/b", "trendingScore": 2, "createdAt": "2026-08-30T00:00:00Z"},
+            {"id": "c/d", "private": True}]
+    assert rows_returned(rows) == 2
+    assert len(parse_models(rows)) == 1
