@@ -253,8 +253,18 @@ def build(open_db=None) -> MCPServer:
         if archive_mode:
             return open_db()
         db = connect(memory=True)
+        targets = list(resolve(selectors)) if selectors else None
+        if selectors and not targets:
+            # "You gave me no selector" and "your selector matched nothing" both
+            # resolve to an empty list, and `or None` read them both as
+            # everything. Free against a file; in live mode a typo cost 23
+            # seconds and 22 requests to other people's servers, for a question
+            # nobody asked. The UNKNOWN SELECTOR line already explains the empty
+            # reply, and this build spends a paragraph teaching the model to ask
+            # before spending that sweep.
+            return db
         try:
-            asyncio.run(poll_once(db, list(resolve(selectors)) or None,
+            asyncio.run(poll_once(db, targets,
                                   window_hours=max(hours, 24),
                                   deadline=LIVE_DEADLINE))
         except Exception:

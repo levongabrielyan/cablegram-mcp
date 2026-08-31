@@ -236,10 +236,22 @@ async def poll_once(
             with db:
                 db.execute("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)",
                            (f"ceiling:{source.id}", now))
-        if report.failed:
-            _mark_failed(db, fetched, source,
-                         f"{report.failed} of {len(entries)} entries could not be "
-                         f"archived")
+        # Deliberately no _mark_failed here, unlike the two paths above. Those
+        # two archived nothing; this one archived most of it. Recording a failed
+        # attempt made the source DOWN — record_attempt(ok=False) writes
+        # last_error with the same fetched_at as the success, so last_try >=
+        # last_ok holds — and the reply came out as
+        #
+        #   | 2 of 2 items | 0/1 sources
+        #   DOWN  qbitai=1 of 3 entries could not be archived
+        #   ## qbitai zh community 2/2
+        #
+        # Zero coverage declared directly above 66% of it, and `answering` is
+        # what the description tells the model to report as what it did not
+        # read. The count is already kept in wrote_failed and wire_sources
+        # already prints it beside OK as "1 entries unarchived", which is the
+        # honest shape: the source answered, and some of what it sent was not
+        # storable.
         record_write(db, report, url=source.url, at=now)
         reports.append(report)
 

@@ -334,3 +334,43 @@ def test_no_batch_is_handed_more_time_than_its_own_bound(db, network, monkeypatc
         f"TOTAL_DEADLINE of {TOTAL_DEADLINE}s")
     assert all(d <= 15.0 for _, d in channels), (
         f"a Telegram channel was given more than its 15s: {channels}")
+
+
+def test_an_entry_that_would_not_store_does_not_take_its_source_down(db, network):
+    """A pass that archives most of a feed is not a pass that failed.
+
+    record_attempt(ok=False) writes last_error with the same fetched_at as the
+    success beside it, so last_try >= last_ok holds and the source is declared
+    DOWN. Measured with a three-entry feed, one carrying a URL normalise()
+    refuses:
+
+        | 2 of 2 items | 0/1 sources
+        DOWN  qbitai=1 of 3 entries could not be archived
+        ## qbitai zh community 2/2
+
+    Zero coverage announced above 66% of it, and `answering` is the figure
+    wire_latest's own description tells the model to report as what it did not
+    read. The count belongs where wire_sources already prints it: beside OK, as
+    entries unarchived.
+    """
+    from cablegram.store import source_health
+
+    feed = b"""<rss version="2.0"><channel>
+      <item><title>Good one</title><link>https://qbitai.com/one</link>
+            <pubDate>Mon, 31 Aug 2026 10:00:00 +0000</pubDate></item>
+      <item><title>Broken</title><link>http://[::1/x</link>
+            <pubDate>Mon, 31 Aug 2026 10:01:00 +0000</pubDate></item>
+      <item><title>Good two</title><link>https://qbitai.com/two</link>
+            <pubDate>Mon, 31 Aug 2026 10:02:00 +0000</pubDate></item>
+    </channel></rss>"""
+
+    network(lambda request: httpx2.Response(200, content=feed))
+    report = asyncio.run(poll_once(db, [by_id("qbitai")]))[0]
+
+    assert (report.new, report.failed) == (2, 1)
+    state = source_health(db)["qbitai"]
+    assert state["wrote_failed"] == 1, "the count still has to be kept"
+    assert not state["last_error"], (
+        f"a pass that archived {report.new} of 3 is recorded as failed "
+        f"({state['last_error']!r}), which takes the source out of the coverage "
+        f"tally above its own items")

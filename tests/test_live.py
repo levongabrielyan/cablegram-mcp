@@ -178,3 +178,50 @@ async def test_the_two_modes_state_the_same_facts_about_the_same_window(live, tm
     assert facts(live_out) == facts(archived), (
         "live and archive answered the same question over the same items and "
         "stated different facts about it")
+
+
+@pytest.mark.anyio
+async def test_a_selector_that_matches_nothing_fetches_nothing(live, monkeypatch):
+    """"no selector" and "a selector that matched nothing" both resolved to an
+    empty list, and `or None` read them both as everything. Against a file that
+    was free; live it spent 23 seconds and 22 requests to other people's servers
+    on a typo, in a build whose description spends a paragraph teaching the
+    model to ask before spending exactly that.
+
+    The reply is unchanged — UNKNOWN SELECTOR already explains it — so this
+    counts the fetches rather than reading the payload.
+    """
+    import cablegram.poll as poll_mod
+
+    fetched = []
+    real = poll_mod.fetch_all
+
+    async def spy(requests, **kwargs):
+        fetched.extend(i for i, _ in requests)
+        return await real(requests, **kwargs)
+
+    monkeypatch.setattr(poll_mod, "fetch_all", spy)
+
+    out = await call(live, "wire_latest", hours=24, sources=["qbitia"])
+    assert "qbitia" in out and "UNKNOWN SELECTOR" in out
+    assert fetched == [], f"a typo fetched {len(fetched)} sources: {fetched}"
+
+
+@pytest.mark.anyio
+async def test_a_search_with_a_bad_selector_fetches_nothing_either(live, monkeypatch):
+    """The same hole, and worse here before wire_search learned to name the
+    typo: the sweep was spent and the empty result read as a real absence."""
+    import cablegram.poll as poll_mod
+
+    fetched = []
+    real = poll_mod.fetch_all
+
+    async def spy(requests, **kwargs):
+        fetched.extend(i for i, _ in requests)
+        return await real(requests, **kwargs)
+
+    monkeypatch.setattr(poll_mod, "fetch_all", spy)
+
+    out = await call(live, "wire_search", query="GLM", sources=["qbitia"])
+    assert "UNKNOWN SELECTOR" in out
+    assert fetched == []
