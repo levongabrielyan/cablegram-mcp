@@ -133,9 +133,19 @@ async def poll_once(
     started = time.monotonic()
 
     def left(default: float) -> float:
+        """This step's own budget, or what is left of the pass, whichever is less.
+
+        Returning the whole remainder handed the main batch 45s when its own
+        TOTAL_DEADLINE is 25 — measured, `fetch_all(15 sources) deadline=45.0`.
+        That bound is not decoration: httpx restarts its read timeout on every
+        chunk, so a source dripping one byte every seven seconds is stopped by
+        nothing else. And every second the batch spends above ~28 comes
+        straight out of Telegram's share, which is what makes channels report
+        `skipped: pass deadline reached` on a slow day.
+        """
         if deadline is None:
             return default
-        return max(0.0, deadline - (time.monotonic() - started))
+        return min(default, max(0.0, deadline - (time.monotonic() - started)))
 
     requests = [(s.id, _request_url(s, since)) for s in targets]
     results = (await fetch_all(requests, conditional=conditional,
@@ -143,7 +153,7 @@ async def poll_once(
 
     for index, channel in enumerate(channels):
         if index:
-            await asyncio.sleep(min(TELEGRAM_GAP, left(TELEGRAM_GAP)))
+            await asyncio.sleep(left(TELEGRAM_GAP))
         budget = left(15.0)
         if deadline is not None and budget <= 0:
             # Out of time, and saying so beats a shorter list: a channel that
@@ -152,8 +162,7 @@ async def poll_once(
                                    error=f"skipped: {deadline:g}s pass deadline reached"))
         else:
             results += await fetch_all([(channel.id, _request_url(channel, since))],
-                                       conditional=conditional,
-                                       deadline=min(15.0, budget))
+                                       conditional=conditional, deadline=budget)
         targets = targets + [channel]
 
     reports: list[StoreReport] = []

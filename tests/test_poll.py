@@ -291,3 +291,46 @@ def test_a_pass_deadline_still_reports_every_source(db, network, monkeypatch):
                                            "data_secrets"]
     skipped = [r for r in reports if r.state == "fetch-failed"]
     assert skipped, "a source that never got its request has to say so"
+
+
+# ── seventh review ──────────────────────────────────────────────────────────
+
+def test_no_batch_is_handed_more_time_than_its_own_bound(db, network, monkeypatch):
+    """`left()` returned the whole remaining pass budget rather than the smaller
+    of that and the step's own, so a 45s pass handed the main batch 45 seconds
+    when TOTAL_DEADLINE is 25 — measured against the live catalogue:
+    `fetch_all(15 sources) deadline=44.99993`.
+
+    That bound is not a formality. httpx restarts its read timeout on every
+    chunk, so a source that drips one byte every seven seconds is stopped by
+    nothing else in the stack; the batch deadline is the only brake. And the
+    time the batch takes above its share comes out of Telegram's, which is what
+    turns six healthy channels into `skipped: pass deadline reached`.
+
+    Reads the bound off the module rather than naming 25, so it holds if the
+    number changes.
+    """
+    import cablegram.poll as poll_mod
+    from cablegram.fetch import TOTAL_DEADLINE
+
+    monkeypatch.setattr(poll_mod, "TELEGRAM_GAP", 0.01)
+    network(lambda request: httpx2.Response(200, content=FEED))
+
+    handed = []
+    real = poll_mod.fetch_all
+
+    async def spy(requests, **kwargs):
+        handed.append((len(requests), kwargs.get("deadline")))
+        return await real(requests, **kwargs)
+
+    monkeypatch.setattr(poll_mod, "fetch_all", spy)
+    asyncio.run(poll_once(db, [by_id("qbitai"), by_id("habr"), by_id("ai_newz")],
+                          deadline=45.0))
+
+    assert handed, "the pass has to have fetched something"
+    batch, channels = handed[0], handed[1:]
+    assert batch[1] <= TOTAL_DEADLINE, (
+        f"the main batch of {batch[0]} sources was given {batch[1]}s against a "
+        f"TOTAL_DEADLINE of {TOTAL_DEADLINE}s")
+    assert all(d <= 15.0 for _, d in channels), (
+        f"a Telegram channel was given more than its 15s: {channels}")
