@@ -24,8 +24,8 @@ def _poll(args) -> int:
     selected = list(resolve(args.sources)) if args.sources else None
     if args.sources and not selected:
         # `or None` used to turn the empty tuple a typo produces into "all of
-        # them", so `cablegram poll typo` polled all nineteen. sources.py has a
-        # test defending the opposite principle; this line undid it.
+        # them", so `cablegram poll typo` polled the whole catalogue. sources.py
+        # has a test defending the opposite principle; this line undid it.
         print(f"  no source, tag or language matches {' '.join(args.sources)}")
         print("  try: cablegram sources")
         return 2

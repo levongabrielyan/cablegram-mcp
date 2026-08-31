@@ -206,8 +206,8 @@ def _record_reference(
     """Credit a source for an article it pointed at.
 
     A channel writing about a launch has carried that story, and its own URL is
-    a permalink to the post rather than to the article — so without this, six of
-    nineteen sources could never appear in a cross-source count at all.
+    a permalink to the post rather than to the article — so without this, the six
+    Telegram channels could never appear in a cross-source count at all.
 
     The article is archived if it is not already there, with the referring
     post's headline standing in until its own feed supplies a better one. That

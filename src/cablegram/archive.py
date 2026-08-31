@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 --
 -- 'trigram' is not a preference. With the default tokenizer every Chinese query
 -- returns zero hits, silently: Chinese has no spaces, so a whole headline
--- becomes one token. Three of nineteen sources would go mute with nobody
+-- becomes one token. The three Chinese sources would go mute with nobody
 -- noticing. Queries under three characters still need the LIKE fallback.
 CREATE VIRTUAL TABLE IF NOT EXISTS sighting_fts USING fts5(
     title,

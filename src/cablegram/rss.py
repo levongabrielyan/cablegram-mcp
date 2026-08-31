@@ -1,7 +1,7 @@
 """RSS and Atom parsing, using only the standard library.
 
 Written by hand rather than pulling in feedparser because the feed set is fixed
-and known: eleven of the project's nineteen sources are RSS, all verified. A
+and known: eleven of the project's sources are plain RSS, all verified. A
 dependency earns its place when it encapsulates knowledge that shifts or that
 fails silently — neither applies to eleven URLs that have to keep working
 anyway.
