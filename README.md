@@ -32,30 +32,36 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.2.0 | 2026-08-31T10:03:09Z..2026-08-31T18:03:09Z | 6 of 538 items | 3/3 sources
-CUT   cls=2/15  data_secrets=2/3  hn=2/520   (newest kept)
+CABLEGRAM v0.2.0 | 2026-09-01T01:45:06Z..2026-09-01T09:45:06Z
+CEILING cls hn  (returned everything it can serve, so this window is wider than its answer)
+        What falls outside what it served is not absent, it is unseen. Narrow the window.
+CUT   cls=2/22  hn=2/235   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 2/15
--- 08-31
-f34c19515bb2 14:31 OpenAI广告业务上线约200天 年化营收规模突破10亿美元
-59768dd933bc 14:02 HBM现货价格飙至长协五倍：HBM4良率承压，长协锁产挤压现货供给
+## cls zh early,finance 2/22
+-- 09-01
+86fe4fc2f313 09:34 2026年济南人工智能核心产业规模预计达800亿元
+50f39c2a8d03 09:25 财联社9月1日电，百度CFO表示，人工智能业务将很快带来与搜索业务相当的利润。
 
-## data_secrets ru telegram 2/3
--- 08-31
-016ab99e8218 15:56 OpenAI закупает десятки тысяч Mac mini и Mac Studio для RL обучения агентов
-6454c66ae77d 14:03 До отправки рабочего документа в нейросеть 3… 2… 1… клик
+## data_secrets ru telegram 1/1
+-- 09-01
+5b36070d1786 08:18 Anthropic выпустили большую статью о том, как они улучшают безопасность в век побегов агентов из лабораторий
 
-## hn en community,searchable 2/520
--- 08-31
-d81b8756e5b5 18:00 AGI Society: AI and Labor Market Assessment Quiz (ask.agi-society.de)
-bb5ea2feff52 17:59 Slop: Six centuries, six technologies (pipe0.com)
+## hn en community,searchable 2/235
+-- 09-01
+7dcd951ed6d0 09:44 A permissioned token and a honeypot look identical on-chain (xroot.dev)
+1550a166e5c4 09:43 Show HN: HyperMarkdown, streaming Markdown renderer for React (github.com)
 ```
 
-*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.8 seconds
-and 290 tokens. `CUT` says what was left out and how much there was — 538 items
-in that window, six printed; `3/3` is how many answered.*
+*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.7
+seconds and 325 tokens. The header states the window and nothing else:
+every source asked for is either a block below or named on a line above,
+so there is no tally to check. `CUT` says what was left out and how much
+there was — 22 items from cls, two printed. `CEILING` is the one that
+matters most: cls and hn served everything they could, so eight hours is
+wider than what those two answered, and what falls outside is unseen
+rather than absent.*
 
 **What it costs.** A reply is priced by what the sources published, not by this
 code, so these are ranges from repeated measurement rather than figures:

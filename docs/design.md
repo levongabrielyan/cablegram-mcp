@@ -44,7 +44,8 @@ Normalisation errs, everywhere, towards keeping URLs apart:
 * **Merging two articles loses one.** `url_norm` is UNIQUE, so the second one
   never reaches the reply and nothing reports it.
 * **Splitting one article is a duplicate** — recoverable, though not harmless:
-  each split quietly lowers the cross-source count.
+  each split hides that two sources carried the same story, which is the thing
+  `sighting` exists to record.
 
 Both are bad; only one cannot be undone. Hence a *denylist* of tracking
 parameters rather than an allowlist: an allowlist drops any key it has not heard
@@ -68,8 +69,8 @@ doing there is work inside a single call, not storage — and the three things i
 does are the reason it is worth having at all.
 
 `sighting` is a separate table because `item` can only name whichever source got
-there first. Without it the cross-source count reads 1 for everything, which
-looks like a story nobody else picked up rather than a missing feature. Each
+there first. Without it every story looks like one nobody else picked up,
+rather than like a missing feature. Each
 sighting keeps the headline that source used: one outlet writes 智谱 where
 another writes Zhipu for the same link, and that pairing is the only bridge
 between a Chinese story and an English query.
