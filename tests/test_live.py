@@ -24,17 +24,18 @@ import pytest
 
 from cablegram.server import build
 from cablegram.urls import item_id
+from dates import iso_date, rss_date
 
-FEED = b"""<rss version="2.0"><channel>
+FEED = f"""<rss version="2.0"><channel>
   <item><title>GLM-5 released</title><link>https://qbitai.com/glm5</link>
-        <pubDate>Sat, 30 Aug 2026 06:40:00 +0000</pubDate>
+        <pubDate>{rss_date(6)}</pubDate>
         <description>Body of the story</description></item>
   <item><title>Second story</title><link>https://qbitai.com/second</link>
-        <pubDate>Sat, 30 Aug 2026 07:00:00 +0000</pubDate></item>
-</channel></rss>"""
+        <pubDate>{rss_date(5)}</pubDate></item>
+</channel></rss>""".encode()
 
-CHANNEL = """<div class="tgme_widget_message" data-post="ai_newz/1">
-  <time datetime="2026-08-30T08:00:00+00:00">x</time>
+CHANNEL = f"""<div class="tgme_widget_message" data-post="ai_newz/1">
+  <time datetime="{iso_date(4)}">x</time>
   <div class="tgme_widget_message_text js-message_text">GLM-5 вышла
     <a href="https://qbitai.com/glm5">тут</a></div>
 </div>"""

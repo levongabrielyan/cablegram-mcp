@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx2
 import pytest
+from dates import rss_date
 
 from cablegram.fetch import Fetched, fetch_all, fetch_one
 from cablegram.rss import MAX_EXPANSION, parse_feed
@@ -185,14 +186,14 @@ def test_an_item_whose_only_address_is_its_guid_is_still_archived():
 
 # ── the server's wiring ─────────────────────────────────────────────────────
 
-FEED = b"""<rss version="2.0"><channel>
+FEED = f"""<rss version="2.0"><channel>
   <item><title>GLM-5 released</title><link>https://qbitai.com/glm5</link>
-        <pubDate>Sat, 30 Aug 2026 06:40:00 +0000</pubDate></item>
+        <pubDate>{rss_date(6)}</pubDate></item>
   <item><title>Second</title><link>https://qbitai.com/second</link>
-        <pubDate>Sat, 30 Aug 2026 07:00:00 +0000</pubDate></item>
+        <pubDate>{rss_date(5)}</pubDate></item>
   <item><title>Third</title><link>https://qbitai.com/third</link>
-        <pubDate>Sat, 30 Aug 2026 07:30:00 +0000</pubDate></item>
-</channel></rss>"""
+        <pubDate>{rss_date(4)}</pubDate></item>
+</channel></rss>""".encode()
 
 
 @pytest.fixture

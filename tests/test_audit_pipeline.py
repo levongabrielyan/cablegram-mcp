@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx2
 import pytest
+from dates import rss_date
 
 from cablegram.fetch import Fetched
 from cablegram.poll import poll_once
@@ -261,11 +262,11 @@ def test_a_pass_whose_results_do_not_line_up_fails_rather_than_misfiling(db, net
 
 # ── the MCP surface ─────────────────────────────────────────────────────────
 
-FEED = b"""<rss version="2.0"><channel>
+FEED = f"""<rss version="2.0"><channel>
   <item><title>GLM-5 released</title><link>https://qbitai.com/glm5</link>
-        <pubDate>Sat, 30 Aug 2026 06:40:00 +0000</pubDate>
+        <pubDate>{rss_date(6)}</pubDate>
         <description>Body of the story</description></item>
-</channel></rss>"""
+</channel></rss>""".encode()
 
 
 @pytest.fixture

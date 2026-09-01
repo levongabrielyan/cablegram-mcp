@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import httpx2
 import pytest
+from dates import rss_date
 
 from cablegram.rss import Entry
 from cablegram.schema import connect
@@ -39,7 +40,7 @@ def feed(n):
     items = b"".join(
         f'<item><title>story {i}</title>'
         f'<link>https://qbitai.com/{i}</link>'
-        f'<pubDate>Sat, 30 Aug 2026 06:40:00 +0000</pubDate></item>'.encode()
+        f'<pubDate>{rss_date(6)}</pubDate></item>'.encode()
         for i in range(n))
     return b'<rss version="2.0"><channel>' + items + b"</channel></rss>"
 
