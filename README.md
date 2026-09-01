@@ -20,8 +20,14 @@ your model is the editor.
 **The point is the cable, not the news.** A launch discussed in Chinese or
 Russian today reaches English-language coverage days later, filtered through
 whoever decided it was worth translating — and often it never arrives at all.
-Twenty-nine sources in three languages, read directly, put a reader in
-California in the same week as a reader in Shanghai or Moscow.
+It runs every way: the Chinese press covers OpenAI and not a Russian Telegram
+channel; the Russian press covers OpenAI and not 36Kr. No press covers the other
+two blocs, and each of them is somebody else's other bloc.
+
+Twenty-nine sources in three languages, read directly, put the reader in the
+same week as all three at once — and the reader here has no home press to be
+behind, because it is a model. It reads what it is handed, in whatever language
+it arrives.
 
 Headlines are never translated. Each dispatch carries its language, and the
 model reading it has more context for that than any translation step would.
@@ -149,8 +155,8 @@ There is no database file, no cache directory and no state between calls. Each
 tool call builds a SQLite database in memory, fills it with one pass over the
 sources you asked for, answers from it, and throws it away when the reply is
 sent. SQLite is there for what it does inside that one call — the trigram index
-that makes a Chinese query work at all, the count of how many sources carried
-the same URL — not to keep anything.
+that makes a Chinese query work at all, and the join that names every source
+which carried the same URL — not to keep anything.
 
 This has a cost and it is worth stating: **`wire_search` cannot reach past what
 the feeds are serving today**, and the floor is lower than it sounds. Measured
@@ -174,8 +180,10 @@ parameter asks for more than the endpoint volunteers. That floor is a property
 of the feeds and never of the subject.
 
 Every reply carries its own rather than leaving it to be discovered: the COVER
-block gives the oldest item that fetch reached, which is the number this table
-is made of.
+line names the floor **per source**, which is what this table is made of. One
+number for the whole call would be the deepest feed in it — and that feed may
+have matched nothing, so a search that reached back one day would report eleven
+years of coverage behind a miss.
 
 `cablegram check` fetches every source once and prints what each one said, for
 deciding whether the catalogue still works. It stores nothing either.
