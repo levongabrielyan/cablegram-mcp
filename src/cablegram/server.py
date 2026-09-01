@@ -101,7 +101,27 @@ def _parse_since(raw: str) -> str:
             continue
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
-        return _iso(parsed.astimezone(timezone.utc))
+        parsed = parsed.astimezone(timezone.utc)
+        # A window that ends before it starts. `since=2027-01-01` parsed
+        # cleanly, `until - start` went negative, `max(hours, -2919)` handed the
+        # poller the 24h default, and every row was then filtered against a
+        # timestamp in the future. Measured:
+        #
+        #     | 2027-01-01T00:00:00Z..2026-09-01T08:33:39Z | 0 of 0 items | 1/1
+        #     SILENT hn  (answered, published nothing in this window)
+        #
+        # The header prints the two ends in the order given, so the impossible
+        # window is on the first line and the reply still asserts underneath
+        # that the source answered and published nothing inside it.
+        now = _now()
+        if parsed > now:
+            raise ToolError(
+                f"`since` is in the future: {_iso(parsed)} is after {_iso(now)}, "
+                f"so it describes a window that ends before it starts. Nothing "
+                f"can be published inside it, and the empty reply would have "
+                f"read as a quiet period rather than as an impossible request."
+            )
+        return _iso(parsed)
     # ToolError, not ValueError: the SDK forwards its message to the client and
     # withholds the text of anything else, so a plain exception would reach the
     # model as "Error executing tool" — with the recovery instructions stripped

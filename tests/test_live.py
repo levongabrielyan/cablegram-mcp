@@ -342,3 +342,21 @@ async def test_a_window_past_the_calendar_says_so_instead_of_failing_blank(live)
         f"the refusal recommends hours={widest}; it has to be a window that "
         f"answers")
 
+
+@pytest.mark.anyio
+async def test_a_since_in_the_future_is_refused_not_answered(live):
+    """It parsed cleanly, `until - start` went negative, `max(hours, -2919)`
+    handed the poller the 24h default, and every row was filtered against a
+    timestamp in the future. Measured:
+
+        | 2027-01-01T00:00:00Z..2026-09-01T08:33:39Z | 0 of 0 items | 1/1
+        SILENT hn  (answered, published nothing in this window)
+
+    The header prints an impossible window on its first line and the reply
+    still asserts underneath that the source answered and published nothing
+    inside it.
+    """
+    with pytest.raises(ToolError) as raised:
+        await call(live, "wire_latest", since="2027-01-01T00:00:00Z",
+                   sources=["qbitai"])
+    assert "future" in str(raised.value)
