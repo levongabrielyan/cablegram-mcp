@@ -86,7 +86,7 @@ there was.
 
 ## Status
 
-v0.2.0 — the sources work; the tool API may still move. All twenty-nine have an
+v0.2.1 — the sources work; the tool API may still move. All twenty-nine have an
 adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
