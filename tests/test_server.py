@@ -11,6 +11,8 @@ import re
 
 from datetime import datetime, timedelta, timezone
 
+from pathlib import Path
+
 import pytest
 
 from cablegram.schema import connect
@@ -515,6 +517,17 @@ async def test_every_place_that_states_a_version_states_the_same_one(server):
 
     out = await call(server, "wire_latest", hours=24)
     assert out.startswith(f"CABLEGRAM v{__version__} ")
+
+    # The README was left out of this comparison and drifted on its own: its
+    # Status section still opened with "v0.1" two releases later, twelve lines
+    # under a sample reply reading `CABLEGRAM v0.2.0`. It is the first place a
+    # reader looks to know which build they are getting, and it named one that
+    # no longer exists. Found by the cloud review of v0.1.1..HEAD.
+    readme = (Path(__file__).parent.parent / "README.md").read_text()
+    status = readme.split("## Status", 1)[1].lstrip()
+    assert status.startswith(f"v{__version__} "), (
+        f"the Status section opens with {status[:12]!r}; the package is "
+        f"{__version__}")
 
 
 
