@@ -550,3 +550,24 @@ async def test_an_empty_query_is_refused_rather_than_answered(server, query):
     with pytest.raises(ToolError) as raised:
         await call(server, "wire_search", query=query, days=7)
     assert "query" in str(raised.value) and "wire_latest" in str(raised.value)
+
+
+@pytest.mark.anyio
+async def test_every_tool_states_the_build_that_answered(server):
+    """Three of the four printed the version and wire_search printed none, so a
+    client could not tell which build answered a search — the one reply whose
+    coverage changes most between builds, because it is the one bounded by what
+    the catalogue can reach.
+
+    Compared against the installed metadata rather than a literal, so it holds
+    at whatever the version becomes.
+    """
+    from cablegram import __version__
+
+    for name, args in (("wire_latest", {"hours": 24}),
+                       ("wire_search", {"query": "GLM"}),
+                       ("wire_read", {"ids": ["deadbeef0000"]}),
+                       ("wire_sources", {})):
+        out = await call(server, name, **args)
+        assert out.startswith(f"CABLEGRAM v{__version__}"), (
+            f"{name} opens with {out.splitlines()[0][:40]!r}")

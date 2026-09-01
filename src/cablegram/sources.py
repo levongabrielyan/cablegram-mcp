@@ -50,7 +50,11 @@ SOURCES: tuple[Source, ...] = (
     Source(
         "hn", "Hacker News", "hn",
         "https://hn.algolia.com/api/v1/search_by_date", "en",
-        ("community", "searchable"),
+        # Not "searchable": printed bare in a block heading it reads as though
+        # the other twenty-eight are not, which would make wire_search cover
+        # one source. It means the search happens at the origin, in Hacker
+        # News's own index, rather than over what a fetch brought back.
+        ("community", "origin-search"),
         "The only source that can be searched at its origin. 10k requests/hour, no key.",
         aggregator=True,
     ),

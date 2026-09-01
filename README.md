@@ -48,7 +48,7 @@ COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 -- 09-01
 5b36070d1786 08:18 Anthropic выпустили большую статью о том, как они улучшают безопасность в век побегов агентов из лабораторий
 
-## hn en community,searchable 2/235
+## hn en community,origin-search 2/235
 -- 09-01
 7dcd951ed6d0 09:44 A permissioned token and a honeypot look identical on-chain (xroot.dev)
 1550a166e5c4 09:43 Show HN: HyperMarkdown, streaming Markdown renderer for React (github.com)

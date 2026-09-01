@@ -240,7 +240,8 @@ def render_read(rows: list[dict], *, requested: list[str],
     found = {row["id"] for row in rows}
     missing = [i for i in requested if i not in found]
 
-    header = [f"CABLEGRAM read | {len(requested)} requested | {len(rows)} resolved "
+    header = [f"CABLEGRAM {VERSION} read | {len(requested)} requested "
+              f"| {len(rows)} resolved "
               f"| {len(missing)} unknown"]
     if missing:
         # The only route to autonomous recovery, so every clause has to be
@@ -361,7 +362,7 @@ def render_search(
         # CUT line already says when a source held more than it showed. It had
         # also been wrong: 24 shown above thirteen stories, before the search
         # stopped serving a post and its link as two rows.
-        head = [f'CABLEGRAM search "{query}" | last {days}d']
+        head = [f'CABLEGRAM {VERSION} search "{query}" | last {days}d']
         # Before CUT, because the warning has to be read before the number it
         # explains. And deliberately not the wording render_latest uses: there
         # the false conclusion is "nothing happened", here it is "no match", and
