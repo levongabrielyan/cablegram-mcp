@@ -136,7 +136,7 @@ async def test_search_finds_the_english_headline_of_a_chinese_story(server):
 @pytest.mark.anyio
 async def test_search_says_zero_hits_is_not_silence(server):
     out = await call(server, "wire_search", query="nothingmatchesthis")
-    assert "0 hits" in out and "does NOT mean" in out
+    assert "not the same as nobody discussing it" in out
 
 
 @pytest.mark.anyio
@@ -207,7 +207,7 @@ async def test_search_says_how_far_back_the_archive_really_goes(server):
     OpenAI posts announced itself as starting today — and a model asked "since
     when has X been discussed" refuses to answer."""
     out = await call(server, "wire_search", query="GLM")
-    assert "oldest" in out, "the header states how far back the archive reaches"
+    assert "searched back to" in out, "the header states how far back it reached"
 
 
 @pytest.mark.anyio

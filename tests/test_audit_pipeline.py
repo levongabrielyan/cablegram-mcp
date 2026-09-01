@@ -386,19 +386,6 @@ async def test_the_catalogue_reports_the_health_of_the_call_before_it(live):
     assert "FAIL" in openai, f"openai failed the call before this one:\n{openai}"
 
 
-@pytest.mark.anyio
-async def test_the_coverage_line_counts_what_this_call_actually_fetched(live):
-    """COVER is the floor a model reads to decide how far back the answer
-    reaches. It is the only figure in a search reply that describes the fetch
-    rather than the query, so nothing else in the payload contradicts it when
-    it is wrong."""
-    out = await call(live, "wire_search", query="GLM", days=7, sources=["qbitai"])
-    fetched = int(re.search(r"fetched (\d+) items", out).group(1))
-    assert fetched == FEED.count(b"<item>"), (
-        f"the feed served {FEED.count(b'<item>')} items and COVER reports "
-        f"{fetched}")
-
-
 def test_an_empty_query_is_refused_rather_than_answered(db):
     """A blank query has no engine and no result. Turned into a scan for a
     space it returns every headline that contains one, and the reply files them

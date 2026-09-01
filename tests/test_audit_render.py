@@ -44,28 +44,23 @@ def source_line(out, source_id):
     return [l for l in out.splitlines() if l.startswith(f"{source_id} ")][0]
 
 
-def test_a_source_with_no_adapter_is_not_counted_among_those_that_answered():
-    """`sources_total - len(down)` counts every PENDING source as healthy.
+def test_a_source_with_no_adapter_is_named_rather_than_left_absent():
+    """The reply used to carry a tally, `answering/total`, and it counted every
+    PENDING source as healthy — overstating the coverage of every answer built
+    on it, three lines above the payload that named them.
 
-    `answering` is the figure a model quotes as how much of the world it just
-    saw. Counting the never-fetched ones into it overstates the coverage of
-    every answer built on the reply, and the payload names them three lines
-    below.
+    The tally is gone: a reader can add up the blocks, DOWN, PENDING and
+    SILENT for itself. What it cannot do is invent a source nobody mentioned,
+    so the naming is what has to hold.
     """
     out = render_latest([], since="s", until="u", down={"cls": "HTTP403"},
                         sources_total=19, no_adapter=["ai_newz", "techsparks"])
 
-    answering, total = map(int, re.search(r"\| (\d+)/(\d+) sources", out).groups())
-    down = re.search(r"^DOWN  (.*)$", out, re.M)
+    assert re.search(r"^DOWN  cls=", out, re.M)
     pending = re.search(r"^PENDING (.*?)  \(", out, re.M)
-    absent = len(down.group(1).split()) + len(pending.group(1).split())
-    assert answering == total - absent, (
-        f"{total - answering} sources are unaccounted for in the tally and the "
-        f"payload names {absent} of them as not having been read")
-
-
-# ── CUT ─────────────────────────────────────────────────────────────────────
-
+    assert pending and sorted(pending.group(1).split()) == ["ai_newz", "techsparks"]
+    assert "sources" not in out.splitlines()[0], (
+        "the first line states the window and nothing it would have to count")
 def test_the_cut_line_leaves_out_a_source_that_was_not_cut():
     """`CUT b=3/3` asserts that more exist, from the line built to declare that.
 
@@ -96,7 +91,7 @@ def test_a_search_declares_no_cut_over_a_source_it_served_whole():
     rows = ([row(id=f"a{i:011x}", source="a", source_total=437) for i in range(3)]
             + [row(id=f"b{i:011x}", source="b", source_total=2) for i in range(2)])
     out = render_search(rows, query="AI", since="s", days=7,
-                        archive_start="2020-01-01", archive_items=2341)
+                        archive_start="2020-01-01")
 
     declared = _CUT.search(out)
     named = ({s: (int(shown), int(total))

@@ -517,17 +517,16 @@ def build(rows_from=None) -> MCPServer:
         start = _ago(_now(), "days", days)
         _positive("limit_per_source", limit_per_source, "items per source")
         with closing(opened(sources, days * 24)) as db:
-            rows, engine = search_items(db, query, since=start, sources=sources,
+            rows, _engine = search_items(db, query, since=start, sources=sources,
                                         limit_per_source=limit_per_source)
-            items, began = _window_facts(db)
+            _, began = _window_facts(db)
             health = source_health(db)
             remember(rows, health)
         # The same four facts wire_latest already carries. A search is the tool
         # where their absence costs most: a listing that comes back short still
         # shows which sources it did print, and "0 hits" shows nothing at all.
         return render_search(rows, query=query, since=start, days=days,
-                             archive_start=began, archive_items=items,
-                             engine=engine,
+                             archive_start=began,
                              down=_down_sources(health, {s.id for s in resolve(sources)}),
                              ceiling=_at_ceiling(health, {s.id for s in resolve(sources)}),
                              unknown=_unknown_selectors(sources),

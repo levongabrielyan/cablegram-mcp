@@ -75,18 +75,18 @@ def test_search_says_what_it_could_not_look_in():
     """Without this, zero hits reads as "nobody is talking about it" instead of
     "not in the fifteen days we hold"."""
     out = render_search([], query="lovable", since="2026-08-23", days=7,
-                        archive_start="2026-08-30", archive_items=2341)
-    assert "0 hits" in out
-    assert "does NOT mean" in out or "NOT" in out
-    assert "2026-08-30" in out
+                        archive_start="2026-08-30")
+    assert "not the same as nobody discussing it" in out
+    assert "2026-08-30" in out, "and how far back it could look"
 
-
-def test_search_tells_the_model_to_retry_in_the_source_language():
-    """智谱 returns nothing on Hacker News and Zhipu returns 212, for the same
-    company. The model can only fix that if it is told."""
-    out = render_search([], query="Zhipu", since="s", days=7,
-                        archive_start="2026-08-30", archive_items=10)
-    assert "translit" in out.lower() or "native" in out.lower()
+    # And not on a reply that found things, where it says nothing. A caveat
+    # printed above every answer is one nobody reads by the third call.
+    found = render_search([{"id": "a" * 12, "source": "hn", "title": "t",
+                            "published": "2026-08-30T00:00:00Z", "lang": "en",
+                            "tags": "x", "source_total": 1, "date_exact": 1}],
+                          query="lovable", since="2026-08-23", days=7,
+                          archive_start="2026-08-30")
+    assert "nobody discussing it" not in found
 
 
 def test_sources_lists_every_source_including_the_broken_ones():
@@ -155,7 +155,7 @@ def test_search_declares_its_cut_like_the_listing_does():
     drawing conclusions from a small number."""
     rows = [row(id=f"{i:012x}", source="openai", source_total=437) for i in range(3)]
     out = render_search(rows, query="AI", since="s", days=7,
-                        archive_start="2020-01-01", archive_items=2341)
+                        archive_start="2020-01-01")
     assert "3/437" in out
     assert "CUT" in out
 
@@ -171,13 +171,6 @@ def test_the_body_element_is_reported_without_a_verdict():
     assert "description" in out
 
 
-def test_cross_says_when_it_is_showing_only_some():
-    rows = [row(id=f"{i:012x}", cross=3) for i in range(30)]
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=19)
-    assert "of 30" in out or "30 " in out.split("---")[0]
-
-
-
 def test_a_budget_too_small_for_the_sources_says_so():
     """With one item each, the headers alone can exceed a small max_tokens.
     Going over is the right call — dropping sources is worse — but going over
@@ -191,15 +184,6 @@ def test_a_budget_too_small_for_the_sources_says_so():
     assert estimate_tokens(out) > 50
     assert "OVER BUDGET" in out
     assert len({l.split()[1] for l in out.splitlines() if l.startswith("## ")}) == 8
-
-
-def test_search_declares_which_engine_answered():
-    """"GLM" runs on the trigram index and finds 4; "GL" falls to a LIKE scan and
-    finds 63. Different recall, different semantics, same-looking answer — and a
-    model comparing two queries has no way to know they were not comparable."""
-    out = render_search([], query="GL", since="s", days=7, archive_start="2020-01-01",
-                        archive_items=10, engine="substring")
-    assert "substring" in out.lower()
 
 
 def test_a_source_silent_for_days_is_marked_stale():
@@ -287,50 +271,6 @@ def block_counts(out):
     return {m[0]: (int(m[1]), int(m[2])) for m in _BLOCK.findall(out)}
 
 
-def test_the_headline_count_is_what_was_actually_printed():
-    """A count computed before the budget trim and printed after it.
-
-    The word in the search header is literally "shown", so a model reads
-    "165 shown" and reasons over the seventeen lines it can see — a small
-    sample taken for a broad one, which is the single failure this module
-    exists to prevent. It fired on the default call: 8000 tokens is not enough
-    for thirty days of one common term.
-    """
-    rows = [row(id=f"{i:012x}", source=s, source_total=40, title="x" * 120)
-            for s in ("a", "b", "c", "d", "e") for i in range(40)]
-
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
-                        limit_per_source=25, max_tokens=400)
-    counts = re.search(r"\| (\d+) of (\d+) items \|", out)
-    assert counts, "the header must say both what it printed and what the window held"
-    assert int(counts.group(1)) == printed_items(out), (
-        f"header claims {counts.group(1)} items, payload contains {printed_items(out)}")
-
-    out = render_search(rows, query="q", since="s", days=30,
-                        archive_start="2020-01-01", archive_items=10, max_tokens=400)
-    head = int(re.search(r"\| (\d+) shown", out).group(1))
-    assert head == printed_items(out), (
-        f'header claims {head} "shown", payload contains {printed_items(out)}')
-
-
-def test_the_headline_states_the_window_total_not_only_what_it_kept():
-    """"117 items" was what got printed; 910 were in the window.
-
-    Asked how much moved today, a model quoted 117. The real figure existed
-    only scattered across the CUT line, and only for the sources that were cut.
-    """
-    rows = [row(id=f"{i:012x}", source=s, source_total=40)
-            for s in ("a", "b") for i in range(25)]
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=19,
-                        limit_per_source=25)
-
-    counts = re.search(r"\| (\d+) of (\d+) items \|", out)
-    assert counts, "the header must say both what it printed and what the window held"
-    shown, window = map(int, counts.groups())
-    assert shown == printed_items(out)
-    assert window == sum(t for _, t in block_counts(out).values())
-
-
 def test_the_cut_line_agrees_with_the_blocks_it_summarises():
     """CUT is the line a model reads to decide whether it has seen enough.
 
@@ -391,10 +331,10 @@ def test_the_coverage_note_does_not_contradict_the_date_above_it():
     bad: either it has been running since 2015, or the dates cannot be trusted.
     """
     out = render_search([], query="q", since="s", days=7,
-                        archive_start="2015-12-11", archive_items=4242)
-    oldest = re.search(r"oldest (\d{4}-\d{2}-\d{2})", out)
-    assert oldest, "the coverage block must print the date it reaches back to"
-    assert oldest.group(1) == "2015-12-11"
+                        archive_start="2015-12-11")
+    reached = re.search(r"searched back to (\d{4}-\d{2}-\d{2})", out)
+    assert reached, "the coverage line must print the date it reaches back to"
+    assert reached.group(1) == "2015-12-11"
     claims = _ORIGIN_FLOOR.findall(out)
     assert not claims, (
         f"COVER says the archive reaches back to {oldest.group(1)} and another "

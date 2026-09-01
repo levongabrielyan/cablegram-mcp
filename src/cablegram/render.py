@@ -92,18 +92,6 @@ def _cap_per_source(rows: list[dict], allowance: int) -> list[dict]:
     return out
 
 
-def _window_total(rows: list[dict]) -> int:
-    """How many items the window held, not how many are being printed.
-
-    `source_total` is counted before the per-source limit, so summing it is the
-    only honest answer to "how much moved today". The header used to print the
-    printed count under the same label, and a model asked that question quoted
-    117 for a day that held 910.
-    """
-    return sum(items[0].get("source_total", len(items))
-               for items in _by_source(rows).values())
-
-
 def _blocks(rows: list[dict], limit_per_source: int | None,
             detail: str = "headlines") -> tuple[list[str], dict[str, tuple[int, int]]]:
     """Group by source, chronological within. Neutral, and it makes cuts legible.
@@ -162,8 +150,6 @@ def render_latest(
     limit_per_source: int | None = None,
     max_tokens: int = 12000,
 ) -> str:
-    window_total = _window_total(rows)
-
     def header_for(cuts: dict[str, tuple[int, int]], printed: int) -> list[str]:
         """Rebuilt from whatever the body ended up holding.
 
@@ -171,14 +157,15 @@ def render_latest(
         at the pre-trim value: `CUT cls=25/60` stood above a block showing
         1/60. The error was optimistic, so a model stopped looking.
         """
-        # Sources that answered: not the total minus failures, which would count
-        # the eight with no adapter as healthy and overstate the coverage of
-        # every answer built on this.
-        answering = sources_total - len(down) - len(no_adapter or ())
-        head = [
-            f"CABLEGRAM {VERSION} | {since}..{until} | {printed} of "
-            f"{window_total} items | {answering}/{sources_total} sources"
-        ]
+        # No tally of items or of sources. Both were counts of what is on the
+        # page: the blocks below name every source that answered, and DOWN,
+        # PENDING and SILENT between them name every source that did not, so
+        # "how many of what I asked for" is addition a reader can do. Both had
+        # already been wrong in ways nothing in the reply could catch —
+        # `0 of 0 items | 21/21 sources` above a SILENT line naming all
+        # twenty-one, and a tally of the whole catalogue printed for a call
+        # that asked for one source.
+        head = [f"CABLEGRAM {VERSION} | {since}..{until}"]
         if down:
             head.append("DOWN  " + "  ".join(f"{k}={v}" for k, v in sorted(down.items())))
             head.append('      A DOWN SOURCE MEANS UNKNOWN, NOT "nothing happened".')
@@ -340,8 +327,6 @@ def render_search(
     since: str,
     days: int,
     archive_start: str,
-    archive_items: int,
-    engine: str = "index",
     down: dict[str, str] | None = None,
     ceiling: list[str] | None = None,
     unknown: list[str] | None = None,
@@ -370,10 +355,11 @@ def render_search(
         for r in printed:
             seen[r["source"]] = seen.get(r["source"], 0) + 1
         cut = [f"{s}={seen[s]}/{totals[s]}" for s in sorted(seen) if totals[s] > seen[s]]
-        head = [
-            f'CABLEGRAM search "{query}" | last {days}d | {len(printed)} shown'
-            + (f" of {sum(totals.values())} matching" if cut else " hits")
-        ]
+        # No count of hits. It was the length of the list below it, and the
+        # CUT line already says when a source held more than it showed. It had
+        # also been wrong: 24 shown above thirteen stories, before the search
+        # stopped serving a post and its link as two rows.
+        head = [f'CABLEGRAM search "{query}" | last {days}d']
         # Before CUT, because the warning has to be read before the number it
         # explains. And deliberately not the wording render_latest uses: there
         # the false conclusion is "nothing happened", here it is "no match", and
@@ -394,56 +380,36 @@ def render_search(
                         '"no match".')
         if unknown:
             head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
-                        f"tag or language. NOTHING WAS SEARCHED for it, which is why "
-                        f"the count above may be 0. Call wire_sources for the catalogue.")
+                        f"tag or language. NOTHING WAS SEARCHED for it. Call "
+                        f"wire_sources for the catalogue.")
         if cut:
             head.append("CUT   " + "  ".join(cut) + "   (newest kept)")
         head += [
-            # The floor is a property of the feeds, and reading it as a
-            # statement about the subject is the most expensive wrong conclusion
-            # this surface can produce. One pass over openai's feed loads 1,157
-            # items back to 2015; another source serves ten.
-            f"COVER this call fetched {archive_items} items and kept none, oldest "
-            f"{archive_start}.",
-            "      That floor is what these feeds happen to serve TODAY, not how "
-            "far back the subject goes.",
-            "      It is wildly uneven: one source served its whole back catalogue "
-            "to 2015 and another serves",
-            f"      ten items. A feed exposing ten items cannot answer a {days}d "
-            "question, and no line below",
-            "      separates the two — so read this date as a property of the "
-            "feeds, never as one of the subject.",
+            # The one fact left of a nine-line COVER block. The floor is a
+            # property of the feeds and reading it as a statement about the
+            # subject is the most expensive wrong conclusion this surface can
+            # produce: one pass over openai's feed loads 1,157 items back to
+            # 2015, another source serves ten, and CEILING above does not fire
+            # for the second because ten items is all it has. The rest of that
+            # block explained what "0 hits" means, which is the tool's own
+            # description repeated into every reply.
+            f"COVER searched back to {archive_start}; `days` reaches no further "
+            f"than the feeds serve.",
         ]
-        return head + [
-            '      "0 hits" = "not in what we can search". It does NOT mean nobody is '
-            'talking about it.',
-            "      zh/ru sources index the native term: a Chinese company is 智谱 here "
-            "and Zhipu on Hacker News.",
-            "      Retry transliterated or translated if this comes back empty.",
-            # Two queries answered by different engines are not comparable, and
-            # nothing else in this output would say so.
-            #
-            # search_items returns three engines, not two: "index", "substring"
-            # and "none" — the last one when it returned before searching
-            # anything, which is what a typo'd selector produces. A two-armed
-            # test sent "none" down the else, so the reply carried both of
-            # these, three lines apart:
-            #
-            #     UNKNOWN SELECTOR qbitia -> ... NOTHING WAS SEARCHED for it
-            #           ENGINE trigram index over the headlines this call searched.
-            #
-            # This is the one line that says what happened at query time, and
-            # in the failure case it said the opposite.
-            ("      ENGINE substring scan: terms under 3 characters cannot use the "
-             "index, so recall differs from a longer query."
-             if engine == "substring" else
-             "      ENGINE trigram index over the headlines this call searched."
-             if engine == "index" else
-             "      ENGINE none: nothing was searched at all, so the 0 above is "
-             "not a result. See the line naming what failed."),
+        if not printed:
+            # Kept, and only here. It was printed above every reply including
+            # the ones holding fifty hits, where it says nothing — and a caveat
+            # that is always on is one nobody reads. On an empty result it is
+            # the whole reply, and the wrong conclusion it stops is the most
+            # expensive this server can cause.
+            head.append('      Nothing matched. That means "not in what these '
+                        'feeds serve today",')
+            head.append("      which is not the same as nobody discussing it.")
+        head += [
             "COLS  id hh:mm title",
             "---",
         ]
+        return head
 
     body, _ = _blocks(rows, None)
     text = "\n".join(header_for(rows) + body)

@@ -88,19 +88,6 @@ async def test_the_default_build_actually_fetches(live):
 
 
 @pytest.mark.anyio
-async def test_the_tally_counts_the_sources_asked_for(live):
-    """`sources_total=len(SOURCES)` instead of len(wanted) passes the whole
-    suite, because every other call is unfiltered and the two are equal there.
-    A model that asks for one language is then told 19 of 21 sources answered
-    when the truth is 0 of 3 — the figure it uses to judge how much of the
-    world it just saw."""
-    out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
-    answering, total = map(int, re.search(r"\| (\d+)/(\d+) sources", out).groups())
-    assert total == 1, f"one source was asked for; the header says {total}"
-    assert answering == 1
-
-
-@pytest.mark.anyio
 async def test_a_source_that_answered_this_very_call_is_not_never_polled(live):
     """The branch that fires for most sources in most replies, covered by
     nothing: deleting it left the suite green. In live mode it is also the
@@ -111,11 +98,20 @@ async def test_a_source_that_answered_this_very_call_is_not_never_polled(live):
 
 
 @pytest.mark.anyio
-async def test_a_source_that_failed_says_so_and_is_not_counted_as_answering(live):
+async def test_a_source_that_failed_is_named_and_the_one_that_answered_is_not(live):
+    """The tally that used to sit beside this — `1/2 sources` — is gone: with
+    every source either printed as a block or named on a DOWN, PENDING or
+    SILENT line, the count is addition the reader can do, and it had already
+    been wrong in ways nothing in the reply could catch.
+
+    What cannot be recovered by addition is the naming. A source that failed
+    and is not named simply is not there, and absence reads as silence.
+    """
     out = await call(live, "wire_latest", hours=48, sources=["openai", "qbitai"])
-    assert "openai=" in out and "DOWN" in out
-    answering, total = map(int, re.search(r"\| (\d+)/(\d+) sources", out).groups())
-    assert (answering, total) == (1, 2)
+    assert re.search(r"^DOWN  .*openai=", out, re.M), "the one that failed is named"
+    assert "## qbitai" in out, "the one that answered is a block, not a count"
+    assert "openai" not in out.split("---", 1)[1], (
+        "a source that did not answer has no block below the rule")
 
 
 @pytest.mark.anyio
@@ -365,25 +361,24 @@ async def test_a_since_in_the_future_is_refused_not_answered(live):
 
 
 @pytest.mark.anyio
-async def test_a_reply_that_searched_nothing_does_not_claim_an_index_ran(live):
+async def test_a_reply_that_searched_nothing_claims_no_search_at_all(live):
     """search_items returns three engines and the renderer tested for two, so
     "none" — returned before anything was searched — fell through to the arm
-    that claims a trigram index ran. The reply then carried both of these:
+    naming the trigram index, and the reply carried both of these three lines
+    apart:
 
         UNKNOWN SELECTOR qbitia -> ... NOTHING WAS SEARCHED for it
               ENGINE trigram index over the headlines this call searched.
 
-    Three lines apart, in direct contradiction. ENGINE is the only line that
-    describes what happened at query time, which is exactly why the whole
-    search surface tells the reader to check these lines before trusting a
-    count. Found by the cloud review; it rated the contradiction cosmetic.
+    The ENGINE line is gone entirely now: which engine answered is a fact about
+    the server, not about what a caller can or cannot conclude, and it was one
+    more sentence able to contradict the rest of the reply. What has to survive
+    is the line that says nothing was searched.
     """
     out = await call(live, "wire_search", query="GLM", sources=["qbitia"])
-    assert "UNKNOWN SELECTOR" in out
-    assert "trigram index over the headlines this call searched" not in out, (
-        "nothing was searched; no index ran over anything")
-    assert "ENGINE none" in out
-
+    assert "UNKNOWN SELECTOR" in out and "NOTHING WAS SEARCHED" in out
+    assert "ENGINE" not in out
+    assert "index" not in out, "no index ran over anything"
 
 @pytest.mark.anyio
 async def test_a_source_that_hit_its_ceiling_says_so_where_the_window_is_stated(
