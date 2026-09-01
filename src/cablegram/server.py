@@ -201,6 +201,33 @@ def _down_sources(health: dict, wanted: set[str]) -> dict[str, str]:
     return down
 
 
+def _at_ceiling(health: dict, wanted: set[str]) -> list[str]:
+    """Which of `wanted` served everything it could, so the answer is narrower
+    than the window printed above it.
+
+    The poller already measures this and stores it; only wire_sources read it.
+    So the two tools that print a window never mentioned that the window was
+    wider than the data under it. Measured against Hacker News, whose search
+    index stops at a thousand rows:
+
+        hours=48  ->  982 items
+        hours=30  ->  981 items
+
+    The same answer for two windows eighteen hours apart, under a header that
+    states the wider one as fact. A model asked for two days, was given about
+    thirty hours, and had nothing in the reply to tell the two apart.
+
+    Compared against `last_write` for the same reason wire_sources does it: the
+    mark is about the most recent pass, not a permanent tombstone.
+    """
+    out = []
+    for sid in sorted(wanted):
+        state = health.get(sid) or {}
+        if state.get("at_ceiling") and state["at_ceiling"] == state.get("last_write"):
+            out.append(sid)
+    return out
+
+
 def _window_facts(db) -> tuple[int, str]:
     """How much this fetch pulled in, and how far back it reaches.
 
@@ -401,6 +428,7 @@ def build(rows_from=None) -> MCPServer:
         silent = sorted((wanted & pollable) - set(down)
                         - {r["source"] for r in rows})
         return render_latest(rows, since=start, until=_iso(until), down=down,
+                             ceiling=_at_ceiling(health, wanted),
                              sources_total=len(wanted), silent=silent,
                              no_adapter=sorted(wanted - pollable), detail=detail,
                              unknown=unknown, limit_per_source=limit_per_source,
@@ -504,6 +532,7 @@ def build(rows_from=None) -> MCPServer:
                              archive_start=began, archive_items=items,
                              engine=engine,
                              down=_down_sources(health, {s.id for s in resolve(sources)}),
+                             ceiling=_at_ceiling(health, {s.id for s in resolve(sources)}),
                              unknown=_unknown_selectors(sources),
                              max_tokens=max_tokens)
 

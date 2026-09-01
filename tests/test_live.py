@@ -381,3 +381,48 @@ async def test_a_reply_that_searched_nothing_does_not_claim_an_index_ran(live):
     assert "trigram index over the headlines this call searched" not in out, (
         "nothing was searched; no index ran over anything")
     assert "ENGINE none" in out
+
+
+@pytest.mark.anyio
+async def test_a_source_that_hit_its_ceiling_says_so_where_the_window_is_stated(
+        live, monkeypatch):
+    """The poller measures the ceiling and stores it, and only wire_sources read
+    it. So the two tools that print a window never said the window was wider
+    than the answer beneath it. Measured live against Hacker News, whose search
+    index stops at a thousand rows:
+
+        hours=48  ->  982 items
+        hours=30  ->  981 items
+
+    The same answer for two windows eighteen hours apart, each under a header
+    stating its own as fact. A model asked for two days, got about thirty
+    hours, and had nothing in the reply to tell the two apart.
+
+    The second half is the half that can rot: the mark has to be about the most
+    recent pass. A ceiling left over from an earlier one would put a permanent
+    warning on a source that is now serving its whole window, and a warning
+    that is always on is one nobody reads.
+    """
+    import cablegram.server as server_mod
+
+    real = server_mod.source_health
+    mark = {"hit": True}
+
+    def spy(db):
+        health = real(db)
+        state = health.setdefault("qbitai", {})
+        state["last_write"] = state.get("last_write") or "2026-09-01T00:00:00Z"
+        state["at_ceiling"] = (state["last_write"] if mark["hit"]
+                               else "1999-01-01T00:00:00Z")
+        return health
+
+    monkeypatch.setattr(server_mod, "source_health", spy)
+
+    out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
+    assert "CEILING qbitai" in out, (
+        "the source served all it could; the window above is wider than that")
+
+    mark["hit"] = False
+    out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
+    assert "CEILING" not in out, (
+        "that ceiling belongs to an earlier pass, not to this answer")

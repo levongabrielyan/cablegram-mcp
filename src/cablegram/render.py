@@ -173,6 +173,7 @@ def render_latest(
     until: str,
     down: dict[str, str],
     sources_total: int,
+    ceiling: list[str] | None = None,
     no_adapter: list[str] | None = None,
     silent: list[str] | None = None,
     unknown: list[str] | None = None,
@@ -212,6 +213,16 @@ def render_latest(
             # happen: missing from the list, it cannot be known to exist.
             head.append("SILENT " + " ".join(silent)
                         + "  (answered, published nothing in this window)")
+        if ceiling:
+            # The poller measures this and only wire_sources printed it, so the
+            # two tools that state a window never said the window was wider than
+            # the answer under it. hours=48 and hours=30 both return the same
+            # 981 rows from Hacker News, under headers claiming 48 and 30.
+            head.append("CEILING " + " ".join(ceiling)
+                        + "  (returned everything it can serve, so this window is "
+                          "wider than its answer)")
+            head.append("        What falls outside what it served is not absent, "
+                        "it is unseen. Narrow the window.")
         if unknown:
             head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
                         f"tag or language. Call wire_sources for the catalogue.")
@@ -346,6 +357,7 @@ def render_search(
     archive_items: int,
     engine: str = "index",
     down: dict[str, str] | None = None,
+    ceiling: list[str] | None = None,
     unknown: list[str] | None = None,
     max_tokens: int = 8000,
 ) -> str:
@@ -384,6 +396,16 @@ def render_search(
             head.append("DOWN  " + "  ".join(f"{k}={v}" for k, v in sorted(down.items())))
             head.append("      A DOWN SOURCE WAS NOT SEARCHED AT ALL. Its silence "
                         'here is UNKNOWN, not "no match".')
+        if ceiling:
+            # Same fact as the listing's line, named for the conclusion it stops
+            # here. hn serves a thousand rows at most, so a 30d search of it
+            # searched a fraction of thirty days — and a term absent from the
+            # part it could not serve looks exactly like a term nobody used.
+            head.append("CEILING " + " ".join(ceiling)
+                        + "  (served all it can, so this search did not reach the "
+                          "whole window)")
+            head.append("      Beyond what it served, a miss is UNKNOWN, not "
+                        '"no match".')
         if unknown:
             head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
                         f"tag or language. NOTHING WAS SEARCHED for it, which is why "
