@@ -293,3 +293,24 @@ async def test_a_call_bigger_than_the_cache_keeps_its_newest_dispatches(live, mo
     body = await call(live, "wire_read", ids=[ids[0]])
     assert "UNKNOWN" not in body, (
         f"{ids[0]} is the first dispatch of the reply that just produced it")
+
+
+@pytest.mark.anyio
+async def test_a_window_older_than_the_year_1000_is_not_reported_as_silence(live):
+    """`%Y` drops the leading zero, and these timestamps are compared as strings.
+
+    So `hours=10000000` wrote the window start as `885-11-14T16:33:21Z`, and
+    `published >= ?` compared "2" against "8" and excluded every row stored.
+    Measured live against Hacker News, which held 982 items in that window:
+
+        0 of 0 items | 1/1 sources
+        SILENT hn  (answered, published nothing in this window)
+
+    Every clause of that is false, the source is marked healthy, and nothing in
+    the reply can be checked against anything else in it. It is the exact shape
+    this whole server exists to not produce.
+    """
+    out = await call(live, "wire_latest", hours=10000000, sources=["qbitai"])
+    assert "SILENT qbitai" not in out, (
+        "the source answered and published two items inside this window")
+    assert "GLM-5 released" in out

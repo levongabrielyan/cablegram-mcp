@@ -58,7 +58,21 @@ def _now() -> datetime:
 
 
 def _iso(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Zero-pad the year, because these strings are compared as strings.
+
+    `%Y` writes a year under 1000 without its leading zero, so a window reaching
+    back to the year 885 was written `885-11-14T16:33:21Z` and `published >= ?`
+    compared "2" against "8" — excluding every row ever stored. Measured against
+    Hacker News, which had 982 items in the window:
+
+        hours=10000000  ->  0 of 0 items | 1/1 sources
+                            SILENT hn (answered, published nothing in this window)
+
+    An affirmative claim that Hacker News published nothing in eleven centuries,
+    with the source marked healthy and nothing in the reply to check it against.
+    With the zero it returns all 982.
+    """
+    return f"{dt.year:04d}-{dt:%m-%dT%H:%M:%SZ}"
 
 
 # Accepted spellings, widest first. Anything else is refused rather than
