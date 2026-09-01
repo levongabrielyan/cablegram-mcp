@@ -139,6 +139,30 @@ def _positive(name: str, value: int, unit: str) -> int:
     return value
 
 
+def _ago(until: datetime, name: str, value: int) -> str:
+    """The start of a window `value` units before `until`, or a refusal.
+
+    Past the year 1 the subtraction raises OverflowError, and an exception that
+    is not a ToolError reaches the model as "Error executing tool" with no text
+    at all. Measured: `hours=87600000` and `days=3650000` both returned exactly
+    that — the caller is told the call failed and nothing about why or what to
+    try, which for a window argument is indistinguishable from the server being
+    broken.
+    """
+    step = timedelta(**{name: _positive(name, value, name)})
+    try:
+        return _iso(until - step)
+    except OverflowError:
+        floor = datetime.min.replace(tzinfo=timezone.utc)
+        widest = int((until - floor) / timedelta(**{name: 1}))
+        raise ToolError(
+            f"`{name}={value}` reaches past the calendar: that many {name} "
+            f"before now is a year this server cannot write down. The widest "
+            f"window it can answer is `{name}={widest}`, which reaches the "
+            f"year 1 and returns everything every source served."
+        ) from None
+
+
 def _down_sources(health: dict, wanted: set[str]) -> dict[str, str]:
     """Which of `wanted` did not answer, and why.
 
@@ -323,7 +347,7 @@ def build(rows_from=None) -> MCPServer:
                 tzinfo=timezone.utc)
             hours = max(hours, ceil(span.total_seconds() / 3600))
         else:
-            start = _iso(until - timedelta(hours=_positive("hours", hours, "hours")))
+            start = _ago(until, "hours", hours)
         if detail not in _DETAIL:
             # The only failure on this surface that disguises itself as a
             # better answer: detail="Full" fell through to headlines, so the
@@ -445,7 +469,7 @@ def build(rows_from=None) -> MCPServer:
                 "would come back `0 shown hits`, which reads as an answer. Pass a "
                 "term, or use wire_latest if what you want is a whole window."
             )
-        start = _iso(_now() - timedelta(days=_positive("days", days, "days")))
+        start = _ago(_now(), "days", days)
         _positive("limit_per_source", limit_per_source, "items per source")
         with closing(opened(sources, days * 24)) as db:
             rows, engine = search_items(db, query, since=start, sources=sources,

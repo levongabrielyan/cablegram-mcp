@@ -22,6 +22,8 @@ import re
 import httpx2
 import pytest
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from cablegram.server import build
 from cablegram.urls import item_id
 from dates import iso_date, rss_date
@@ -315,3 +317,28 @@ async def test_a_window_older_than_the_year_1000_is_not_reported_as_silence(live
     assert "SILENT qbitai" not in out, (
         "the source answered and published two items inside this window")
     assert "GLM-5 released" in out
+
+
+@pytest.mark.anyio
+async def test_a_window_past_the_calendar_says_so_instead_of_failing_blank(live):
+    """OverflowError is not a ToolError, and the SDK forwards the text of
+    nothing else. So `hours=87600000` reached the model as "Error executing
+    tool" with no body at all: the call failed, and nothing said why or what to
+    try instead. For a window argument that is indistinguishable from the
+    server being broken.
+
+    The refusal names the widest window that does work, and that number has to
+    be one the caller can actually use — a message recommending a value that
+    also fails is worse than no message.
+    """
+    with pytest.raises(ToolError) as raised:
+        await call(live, "wire_latest", hours=87600000, sources=["qbitai"])
+    message = str(raised.value)
+    assert "hours" in message and "calendar" in message
+
+    widest = int(re.findall(r"hours=(\d+)", message)[-1])
+    out = await call(live, "wire_latest", hours=widest, sources=["qbitai"])
+    assert "GLM-5 released" in out, (
+        f"the refusal recommends hours={widest}; it has to be a window that "
+        f"answers")
+
