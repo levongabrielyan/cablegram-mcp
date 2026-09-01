@@ -634,7 +634,15 @@ def search_items(
         f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY s.published DESC)"
         f"           AS rank_in_source"
         f" FROM sighting s JOIN item i ON i.id = s.item_id"
-        f" WHERE {matcher} AND s.published >= ?{clause}"
+        # via='feed' only, exactly as latest_items does. A Telegram post makes
+        # two sightings of one story — the post, and the article it linked —
+        # and the linked one has no headline of its own, so it carries the
+        # post's and matched the same query twice. Measured over three Russian
+        # channels: "24 shown hits" above thirteen stories, every headline
+        # printed twice, from the tool built to stop a count being read as an
+        # answer. The cross count is a subquery over every sighting and is not
+        # affected: an article two channels linked still counts twice.
+        f" WHERE {matcher} AND s.via = 'feed' AND s.published >= ?{clause}"
         f" ORDER BY s.source, s.published DESC",
         args,
     ).fetchall()

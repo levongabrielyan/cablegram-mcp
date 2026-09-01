@@ -16,7 +16,7 @@ from cablegram.rss import Entry
 from cablegram.sources import by_id
 from cablegram.store import (StoreReport, cross_count,
                              items_by_ids, latest_items,
-                             record_attempt,
+                             record_attempt, search_items,
                              store_entries)
 from cablegram.urls import item_id
 
@@ -636,3 +636,40 @@ def test_a_publisher_takes_over_from_the_aggregator_that_saw_it_first(db):
     store_entries(db, by_id("qbitai"),
                   [Entry("智谱", url, PUB, None, None)], fetched_at=NOW)
     assert rows(db)[0]["first_source"] == "openai"
+
+
+def test_a_search_does_not_serve_a_post_and_its_link_as_two_separate_hits(db):
+    """latest_items filters `via = 'feed'` and search_items did not, so the two
+    tools disagreed about what a row is.
+
+    A Telegram post creates two sightings for one story: the post, and the
+    article it linked. The linked one has no headline of its own — nothing was
+    downloaded — so it carries the post's, and a search matched both copies of
+    the same text. Measured over three Russian channels:
+
+        CABLEGRAM search "AI" | last 30d | 24 shown hits
+        ## data_secrets  016ab99e8218 15:56 OpenAI закупает ...
+                        ~d1a666a12b3d 15:56 OpenAI закупает ...
+
+    Thirteen stories reported as twenty-four hits, every headline printed
+    twice, under a header that states the count as fact — from the one tool
+    whose whole purpose is stopping a number from being read as an answer.
+
+    The cross count is unaffected: it is a subquery over every sighting, so an
+    article two channels linked still counts twice.
+    """
+    linked = "https://openai.com/index/gpt6"
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("Вышла GPT-6", "https://t.me/ai_newz/1", PUB, None, None,
+                         links=(linked,))], fetched_at=NOW)
+
+    both = db.execute("SELECT via FROM sighting WHERE source = 'ai_newz'"
+                      " ORDER BY via").fetchall()
+    assert [r["via"] for r in both] == ["feed", "link"], (
+        "the fixture has to produce both sightings for the test to mean anything")
+
+    rows, _ = search_items(db, "GPT-6", since="2026-08-01T00:00:00Z",
+                           sources=["ai_newz"])
+    assert len(rows) == 1, (
+        f"one story, one hit; the search returned {len(rows)}: "
+        f"{[(r['id'], r['title']) for r in rows]}")

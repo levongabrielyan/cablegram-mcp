@@ -202,7 +202,11 @@ def test_every_read_path_reports_the_same_facts_about_the_same_item(db):
                   fetched_at=iso(NOW))
 
     since = iso(NOW - timedelta(days=7))
-    ids = [item_id(linked), item_id("https://hn.example/0")]
+    # The linked article is deliberately absent: latest_items and search_items
+    # both filter `via = 'feed'` now, so an article nothing published under its
+    # own feed reaches wire_read by id and by no other route. Asserted below
+    # rather than left implied.
+    ids = [item_id("https://hn.example/0")]
     paths = {
         "latest_items": latest_items(db, since=since),
         "search_items": search_items(db, "GLM", since=since)
@@ -223,6 +227,13 @@ def test_every_read_path_reports_the_same_facts_about_the_same_item(db):
                 f"wire_read serves both and cannot tell which one it has")
         compared += 1
     assert compared == len(ids)
+
+    only_by_id = item_id(linked)
+    assert not [r for r in paths["latest_items"] if r["id"] == only_by_id]
+    assert not [r for r in paths["search_items"] if r["id"] == only_by_id]
+    assert items_by_ids(db, [only_by_id]), (
+        "an article only a link reached is still readable by id; it is the "
+        "listings and the search that must not repeat the post under it")
 
 
 def test_an_item_only_a_link_reached_is_marked_that_way_by_every_path(db):

@@ -134,21 +134,23 @@ async def test_an_id_from_one_reply_resolves_in_the_next(live):
 
 
 @pytest.mark.anyio
-async def test_a_borrowed_headline_is_marked_in_live_mode_too(live):
-    """The failure this mode had all to itself. wire_read serves cached rows
-    here and rows from items_by_ids against the file, and `via` was selected by
-    the second query only — so the mark came out on disk and not in the mode
-    that ships.
+async def test_a_channel_post_and_the_article_it_linked_are_one_hit_not_two(live):
+    """A Telegram post makes two sightings of one story: the post, and the
+    article it linked. The linked one has no headline of its own — nothing was
+    downloaded — so it carried the post's, and search matched both copies of
+    the same text while the listing showed one. Measured over three Russian
+    channels: thirteen stories served as twenty-four hits, every headline
+    printed twice.
 
-    Without it a model reports "the Russian channel ai_newz published this",
-    about an article that channel linked and never wrote.
+    This replaces a test that reached the linked article through the search and
+    then read it, to check the borrowed-headline mark. That route is gone on
+    purpose: with the duplicate filtered out, an article nothing published
+    under its own feed is reachable by id alone, and the mark is covered where
+    it now lives, in tests/test_queries.py.
     """
-    await call(live, "wire_search", query="GLM", days=7, sources=["ai_newz"])
-    body = await call(live, "wire_read", ids=[item_id("https://qbitai.com/glm5")])
-    # The claim, not the sentence: an assertion on the exact prose is the
-    # `assert "CUT" in out` disease with better manners.
-    assert "!!" in body and "not the article's" in body
-
+    out = await call(live, "wire_search", query="GLM", days=7, sources=["ai_newz"])
+    ids = re.findall(r"^~?(\w{12}) \d{2}:\d{2} ", out, re.M)
+    assert len(ids) == 1, f"one post, one hit; the search offered {ids}"
 
 
 @pytest.mark.anyio
