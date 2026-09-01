@@ -189,8 +189,10 @@ def render_latest(
             head.append("CEILING " + " ".join(ceiling)
                         + "  (returned everything it can serve, so this window is "
                           "wider than its answer)")
-            head.append("        What falls outside what it served is not absent, "
-                        "it is unseen. Narrow the window.")
+            head.append("        What falls outside what they served is unseen, "
+                        "not absent, and their totals on")
+            head.append("        CUT count what they served rather than what the "
+                        "window holds.")
         if unknown:
             head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
                         f"tag or language. Call wire_sources for the catalogue.")
@@ -326,7 +328,7 @@ def render_search(
     query: str,
     since: str,
     days: int,
-    archive_start: str,
+    reach: dict[str, str] | None = None,
     down: dict[str, str] | None = None,
     ceiling: list[str] | None = None,
     unknown: list[str] | None = None,
@@ -377,7 +379,8 @@ def render_search(
                         + "  (served all it can, so this search did not reach the "
                           "whole window)")
             head.append("      Beyond what it served, a miss is UNKNOWN, not "
-                        '"no match".')
+                        '"no match". Its total on CUT counts what it served, '
+                        "not the window.")
         if unknown:
             head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
                         f"tag or language. NOTHING WAS SEARCHED for it. Call "
@@ -400,11 +403,15 @@ def render_search(
         # what these feeds serve today" — two sentences describing an operation
         # that did not happen, under an UNKNOWN SELECTOR line that had already
         # said so.
-        searched = archive_start not in ("", "-", None)
+        searched = bool(reach)
         if searched:
-            head.append(
-                f"COVER searched back to {archive_start}; `days` reaches no "
-                f"further than the feeds serve.")
+            # One floor per source. A single date was the oldest item across
+            # every source searched, including sources that matched nothing:
+            # two sources, a term only hn had, and the reply said "searched
+            # back to 2015-12-11" while hn itself reached back one day. The
+            # deepest feed in the call set the number for all of them.
+            head.append("COVER " + "  ".join(f"{k}={v}" for k, v in sorted(reach.items()))
+                        + "   (how far back each source could be searched)")
         if not printed and searched:
             # Kept, and only here. It was printed above every reply including
             # the ones holding fifty hits, where it says nothing — and a caveat

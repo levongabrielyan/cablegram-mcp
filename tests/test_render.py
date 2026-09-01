@@ -75,7 +75,7 @@ def test_search_says_what_it_could_not_look_in():
     """Without this, zero hits reads as "nobody is talking about it" instead of
     "not in the fifteen days we hold"."""
     out = render_search([], query="lovable", since="2026-08-23", days=7,
-                        archive_start="2026-08-30")
+                        reach={"hn": "2026-08-30"})
     assert "not the same as nobody discussing it" in out
     assert "2026-08-30" in out, "and how far back it could look"
 
@@ -85,7 +85,7 @@ def test_search_says_what_it_could_not_look_in():
                             "published": "2026-08-30T00:00:00Z", "lang": "en",
                             "tags": "x", "source_total": 1, "date_exact": 1}],
                           query="lovable", since="2026-08-23", days=7,
-                          archive_start="2026-08-30")
+                          reach={"hn": "2026-08-30"})
     assert "nobody discussing it" not in found
 
 
@@ -155,7 +155,7 @@ def test_search_declares_its_cut_like_the_listing_does():
     drawing conclusions from a small number."""
     rows = [row(id=f"{i:012x}", source="openai", source_total=437) for i in range(3)]
     out = render_search(rows, query="AI", since="s", days=7,
-                        archive_start="2020-01-01")
+                        reach={"hn": "2020-01-01"})
     assert "3/437" in out
     assert "CUT" in out
 
@@ -331,10 +331,10 @@ def test_the_coverage_note_does_not_contradict_the_date_above_it():
     bad: either it has been running since 2015, or the dates cannot be trusted.
     """
     out = render_search([], query="q", since="s", days=7,
-                        archive_start="2015-12-11")
-    reached = re.search(r"searched back to (\d{4}-\d{2}-\d{2})", out)
-    assert reached, "the coverage line must print the date it reaches back to"
-    assert reached.group(1) == "2015-12-11"
+                        reach={"hn": "2015-12-11"})
+    reached = re.search(r"^COVER (\S+)=(\d{4}-\d{2}-\d{2})", out, re.M)
+    assert reached, "the coverage line must print how far back each source reached"
+    assert reached.groups() == ("hn", "2015-12-11")
     claims = _ORIGIN_FLOOR.findall(out)
     assert not claims, (
         f"COVER says the archive reaches back to {oldest.group(1)} and another "
@@ -476,3 +476,26 @@ def test_the_catalogue_hands_over_what_it_knows_about_each_source():
     for source in SOURCES:
         if source.note:
             assert source.note in out, f"{source.id} knows something and says nothing"
+
+
+def test_coverage_is_stated_per_source_and_not_as_one_number():
+    """It was the oldest item across every source searched, and that reads as
+    the reach of the search. It is the reach of the deepest feed in it — and
+    that feed may have matched nothing. Measured, searching two sources for a
+    term only Hacker News had:
+
+        COVER searched back to 2015-12-11
+        CEILING hn  (served all it can, so this search did not reach the whole
+                     window)
+
+    hn reached back about a day. 2015 came from openai's back catalogue, which
+    contributed no rows. A model asking "has anyone written about this in the
+    past week" reads eleven years of coverage behind a miss — the single most
+    optimistic figure available, drawn from the source that found nothing.
+    """
+    out = render_search([], query="agent", since="s", days=7, ceiling=["hn"],
+                        reach={"hn": "2026-08-31", "openai": "2015-12-11"})
+
+    line = next(l for l in out.splitlines() if l.startswith("COVER"))
+    assert "hn=2026-08-31" in line, "the shallow source states its own floor"
+    assert "openai=2015-12-11" in line, "and the deep one states its own"

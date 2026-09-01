@@ -207,7 +207,10 @@ async def test_search_says_how_far_back_the_archive_really_goes(server):
     OpenAI posts announced itself as starting today — and a model asked "since
     when has X been discussed" refuses to answer."""
     out = await call(server, "wire_search", query="GLM")
-    assert "searched back to" in out, "the header states how far back it reached"
+    assert re.search(r"^COVER \S+=\d{4}-\d{2}-\d{2}", out, re.M), (
+        "the header states how far back each source could be searched, one "
+        "floor per source: a single date was the deepest feed in the call and "
+        "read as the reach of the whole search")
 
 
 @pytest.mark.anyio

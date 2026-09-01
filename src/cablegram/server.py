@@ -228,18 +228,29 @@ def _at_ceiling(health: dict, wanted: set[str]) -> list[str]:
     return out
 
 
-def _window_facts(db) -> tuple[int, str]:
-    """How much this fetch pulled in, and how far back it reaches.
+def _reach(db) -> dict[str, str]:
+    """How far back each source could be searched, one floor per source.
 
-    Both are properties of what the feeds happen to serve today, not of a
-    subject: one pass over openai's feed loads 1,157 items back to 2015 and
-    another source serves ten. The COVER block says so, because the floor read
-    as a statement about the story is the most expensive wrong conclusion this
-    surface can produce.
+    It was a single date, the oldest item across every source, and that reads
+    as the reach of the search. It is the reach of the deepest feed in it —
+    including feeds that matched nothing. Measured, searching two sources for
+    a term only Hacker News had:
+
+        COVER searched back to 2015-12-11
+        CEILING hn  (served all it can, so this search did not reach the whole
+                     window)
+
+    hn reached back about a day; 2015 came from openai's back catalogue, which
+    contributed no rows at all. A model asking "has anyone written about this
+    in the past week" reads eleven years of coverage behind a miss.
+
+    Coverage here is per source and wildly uneven — one feed serves its whole
+    back catalogue, another serves ten items — so one number cannot state it
+    without overstating it for everything except the deepest feed.
     """
-    items = db.execute("SELECT COUNT(*) FROM item").fetchone()[0]
-    oldest = db.execute("SELECT MIN(published) FROM item").fetchone()[0]
-    return items, (oldest[:10] if oldest else "-")
+    return {row["source"]: row["floor"][:10] for row in db.execute(
+        "SELECT source, MIN(published) AS floor FROM sighting"
+        " WHERE published IS NOT NULL GROUP BY source")}
 
 
 def _unknown_selectors(selectors: list[str] | None) -> list[str]:
@@ -526,14 +537,14 @@ def build(rows_from=None) -> MCPServer:
         with closing(opened(sources, days * 24)) as db:
             rows, _engine = search_items(db, query, since=start, sources=sources,
                                         limit_per_source=limit_per_source)
-            _, began = _window_facts(db)
+            reach = _reach(db)
             health = source_health(db)
             remember(rows, health)
         # The same four facts wire_latest already carries. A search is the tool
         # where their absence costs most: a listing that comes back short still
         # shows which sources it did print, and "0 hits" shows nothing at all.
         return render_search(rows, query=query, since=start, days=days,
-                             archive_start=began,
+                             reach=reach,
                              down=_down_sources(health, {s.id for s in resolve(sources)}),
                              ceiling=_at_ceiling(health, {s.id for s in resolve(sources)}),
                              unknown=_unknown_selectors(sources),

@@ -91,7 +91,7 @@ def test_a_search_declares_no_cut_over_a_source_it_served_whole():
     rows = ([row(id=f"a{i:011x}", source="a", source_total=437) for i in range(3)]
             + [row(id=f"b{i:011x}", source="b", source_total=2) for i in range(2)])
     out = render_search(rows, query="AI", since="s", days=7,
-                        archive_start="2020-01-01")
+                        reach={"hn": "2020-01-01"})
 
     declared = _CUT.search(out)
     named = ({s: (int(shown), int(total))
