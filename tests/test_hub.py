@@ -49,7 +49,7 @@ def test_the_figure_labelled_as_the_ordering_is_the_one_that_orders():
     """
     import re
 
-    printed = [re.search(r"trend (\d+) \(the ordering\)", e.body)
+    printed = [re.search(r"trend score (\d+) \(what the list was ordered by\)", e.body)
                for e in parse_models(SAMPLE)]
     assert all(printed), "every entry has to carry the figure it was ordered on"
     values = [int(m.group(1)) for m in printed]
@@ -204,9 +204,39 @@ def test_a_lab_listing_does_not_claim_a_ranking_it_does_not_have():
     figure that ordered it is the timestamp already printed on the line."""
     lab = parse_models([{"id": "deepseek-ai/V4", "likes": 279, "downloads": 0,
                          "createdAt": "2026-08-31T06:16:18.000Z"}])[0]
-    assert "not ranked" in lab.body and "the ordering" not in lab.body
+    assert "not ranked" in lab.body and "ordered by" not in lab.body
 
     globally = parse_models([{"id": "Qwen/Q", "likes": 4487, "downloads": 1,
                               "trendingScore": 4276,
                               "createdAt": "2026-08-24T08:24:59.000Z"}])[0]
-    assert "trend 4276 (the ordering)" in globally.body
+    assert "trend score 4276 (what the list was ordered by)" in globally.body
+
+
+def test_a_repo_younger_than_the_download_window_says_so():
+    """`0 downloads in 30d` on a model published yesterday reads as a verdict
+    on the model. It is a property of the arithmetic: the count covers thirty
+    days and the repo has existed for one.
+
+    Measured on DeepSeek-V4-Flash-Vision-Exp, a day old and on the trending
+    list the same day: `403 likes all-time, 0 downloads in 30d`. A model
+    weighing whether a release matters has, on that line, a large like count
+    and an apparent total absence of use.
+    """
+    from cablegram.hub import fetched_at_utc
+    from datetime import timedelta
+
+    now = fetched_at_utc()
+    fresh, old = now - timedelta(days=1), now - timedelta(days=200)
+    entries = parse_models([
+        {"id": "a/fresh", "trendingScore": 398, "likes": 403, "downloads": 0,
+         "createdAt": fresh.isoformat().replace("+00:00", "Z")},
+        {"id": "b/old", "trendingScore": 12, "likes": 50, "downloads": 900,
+         "createdAt": old.isoformat().replace("+00:00", "Z")},
+    ])
+    bodies = {e.title: e.body for e in entries}
+    assert "this repo is 1d old" in bodies["a/fresh"], (
+        "a zero over thirty days on a one-day-old repo is arithmetic, not a "
+        "verdict")
+    assert "old" not in bodies["b/old"].replace("all-time", ""), (
+        "a repo older than the window needs no qualifier, and one on every "
+        "line means nothing")

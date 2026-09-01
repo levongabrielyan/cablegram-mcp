@@ -66,6 +66,12 @@ def models_url(*, author: str | None = None, rows: int = MAX_ROWS) -> str:
     return f"{HUB}/api/models?{query}" + (f"&author={author}" if author else "")
 
 
+def fetched_at_utc() -> datetime:
+    """Now, as an aware UTC datetime. Named so the age arithmetic below reads
+    as what it is rather than as a fetch timestamp from the payload."""
+    return datetime.now(timezone.utc)
+
+
 def _when(item: dict) -> datetime | None:
     """When the repo was made, preferred over when it was last touched.
 
@@ -165,8 +171,22 @@ def parse_models(payload: list) -> list[Entry]:
         # "trend not in this response (the ordering)" made two false claims in
         # one line, on 238 of 271 entries: that a ranking ordered the list, and
         # that the figure behind it was missing.
-        counts = f"{likes} likes all-time, {downloads} downloads in 30d"
-        detail = (f"trend {trend} (the ordering), {counts}" if trend is not None
+        # A repo younger than the window says so. `0 downloads in 30d` on a
+        # model published yesterday reads as a verdict on the model, and it is
+        # a property of the arithmetic: the count covers thirty days and the
+        # repo has existed for one. Measured on DeepSeek-V4-Flash-Vision-Exp,
+        # a day old and on the trending list: `403 likes all-time, 0 downloads
+        # in 30d`.
+        when = _when(item)
+        age = (fetched_at_utc() - when).days if when else None
+        window = ("30d" if age is None or age >= 30
+                  else f"30d, but this repo is {age}d old")
+        counts = f"{likes} likes all-time, {downloads} downloads in {window}"
+        # "trend 398 (the ordering)" leaves 398 ambiguous between a position in
+        # a ranking and a score. It is a score, and naming it as one is two
+        # words.
+        detail = (f"trend score {trend} (what the list was ordered by), {counts}"
+                  if trend is not None
                   else f"newest first, not ranked; {counts}")
         entries.append(Entry(
             title=model_id,
