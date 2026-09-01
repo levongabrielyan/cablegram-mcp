@@ -380,6 +380,21 @@ async def test_a_reply_that_searched_nothing_claims_no_search_at_all(live):
     assert "ENGINE" not in out
     assert "index" not in out, "no index ran over anything"
 
+    # And nothing else claiming an operation either. The reply used to carry
+    # "COVER searched back to -" and "Nothing matched. That means not in what
+    # these feeds serve today" — both describing a fetch that never happened,
+    # directly under the line saying nothing was searched.
+    assert "COVER" not in out, "no feed was consulted, so there is no floor"
+    assert "Nothing matched" not in out, (
+        "nothing was searched; a miss is not a match that failed")
+
+    # The same two lines are the whole point of a search that did run and found
+    # nothing, so their absence above has to be about this call and not about
+    # the lines having been dropped.
+    real = await call(live, "wire_search", query="notinanyheadline",
+                      sources=["qbitai"])
+    assert "COVER" in real and "Nothing matched" in real
+
 @pytest.mark.anyio
 async def test_a_source_that_hit_its_ceiling_says_so_where_the_window_is_stated(
         live, monkeypatch):

@@ -393,10 +393,19 @@ def render_search(
             # for the second because ten items is all it has. The rest of that
             # block explained what "0 hits" means, which is the tool's own
             # description repeated into every reply.
-            f"COVER searched back to {archive_start}; `days` reaches no further "
-            f"than the feeds serve.",
         ]
-        if not printed:
+        # Only when something was actually fetched. A typo'd selector reaches
+        # here having consulted no feed at all, and the line came out as
+        # "COVER searched back to -" above "Nothing matched. That means not in
+        # what these feeds serve today" — two sentences describing an operation
+        # that did not happen, under an UNKNOWN SELECTOR line that had already
+        # said so.
+        searched = archive_start not in ("", "-", None)
+        if searched:
+            head.append(
+                f"COVER searched back to {archive_start}; `days` reaches no "
+                f"further than the feeds serve.")
+        if not printed and searched:
             # Kept, and only here. It was printed above every reply including
             # the ones holding fifty hits, where it says nothing — and a caveat
             # that is always on is one nobody reads. On an empty result it is
