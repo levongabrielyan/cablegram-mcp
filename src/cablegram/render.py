@@ -414,10 +414,25 @@ def render_search(
             "      Retry transliterated or translated if this comes back empty.",
             # Two queries answered by different engines are not comparable, and
             # nothing else in this output would say so.
+            #
+            # search_items returns three engines, not two: "index", "substring"
+            # and "none" — the last one when it returned before searching
+            # anything, which is what a typo'd selector produces. A two-armed
+            # test sent "none" down the else, so the reply carried both of
+            # these, three lines apart:
+            #
+            #     UNKNOWN SELECTOR qbitia -> ... NOTHING WAS SEARCHED for it
+            #           ENGINE trigram index over the headlines this call searched.
+            #
+            # This is the one line that says what happened at query time, and
+            # in the failure case it said the opposite.
             ("      ENGINE substring scan: terms under 3 characters cannot use the "
              "index, so recall differs from a longer query."
              if engine == "substring" else
-             "      ENGINE trigram index over the headlines this call searched."),
+             "      ENGINE trigram index over the headlines this call searched."
+             if engine == "index" else
+             "      ENGINE none: nothing was searched at all, so the 0 above is "
+             "not a result. See the line naming what failed."),
             "COLS  id hh:mm title",
             "---",
         ]

@@ -360,3 +360,24 @@ async def test_a_since_in_the_future_is_refused_not_answered(live):
         await call(live, "wire_latest", since="2027-01-01T00:00:00Z",
                    sources=["qbitai"])
     assert "future" in str(raised.value)
+
+
+@pytest.mark.anyio
+async def test_a_reply_that_searched_nothing_does_not_claim_an_index_ran(live):
+    """search_items returns three engines and the renderer tested for two, so
+    "none" — returned before anything was searched — fell through to the arm
+    that claims a trigram index ran. The reply then carried both of these:
+
+        UNKNOWN SELECTOR qbitia -> ... NOTHING WAS SEARCHED for it
+              ENGINE trigram index over the headlines this call searched.
+
+    Three lines apart, in direct contradiction. ENGINE is the only line that
+    describes what happened at query time, which is exactly why the whole
+    search surface tells the reader to check these lines before trusting a
+    count. Found by the cloud review; it rated the contradiction cosmetic.
+    """
+    out = await call(live, "wire_search", query="GLM", sources=["qbitia"])
+    assert "UNKNOWN SELECTOR" in out
+    assert "trigram index over the headlines this call searched" not in out, (
+        "nothing was searched; no index ran over anything")
+    assert "ENGINE none" in out
