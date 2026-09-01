@@ -44,65 +44,6 @@ def source_line(out, source_id):
     return [l for l in out.splitlines() if l.startswith(f"{source_id} ")][0]
 
 
-# ── the CROSS block ─────────────────────────────────────────────────────────
-
-def test_the_cross_block_prints_as_many_stories_as_it_says_it_did():
-    """"8 shown of 30" above seven lines.
-
-    The count is written out beside a slice, so the two move independently. A
-    model reading this line is deciding whether to ask for the rest, and the
-    figure it decides on is the one that is wrong.
-    """
-    rows = [row(id=f"{i:012x}", cross=3) for i in range(30)]
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=19)
-
-    listed = _CROSS_ENTRY.findall(out)
-    claim = _CROSS_MORE.search(out)
-    assert claim, "a CROSS block holding more than it prints has to say so"
-    assert int(claim.group(1)) == len(listed), (
-        f"the line claims {claim.group(1)} shown and {len(listed)} are printed")
-    assert int(claim.group(2)) == len(rows), (
-        f"the line claims {claim.group(2)} repeated stories and there are "
-        f"{len(rows)}")
-
-
-def test_the_cross_block_keeps_the_most_carried_stories_it_says_it_keeps():
-    """"most-carried first" above the least-carried eight.
-
-    CROSS is the earliest signal this server can give, and the sentence under it
-    tells the model the order means something. Reversed, the eight kept are the
-    eight that matter least and the thirteen that matter most are the ones cut —
-    with a line underneath asserting the opposite.
-    """
-    rows = [row(id=f"{i:012x}", cross=2 + i) for i in range(21)]
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=19)
-
-    printed = [int(n) for _, n in _CROSS_ENTRY.findall(out)]
-    assert printed, "the block has to have printed something"
-    assert "most-carried first" in out
-    assert printed == sorted((r["cross"] for r in rows), reverse=True)[:len(printed)], (
-        f"the block says most-carried first and printed {printed}")
-
-
-def test_the_cross_block_says_so_the_moment_one_story_is_left_out():
-    """Nine repeated stories, eight printed, and no line to say a ninth exists.
-
-    Off by one at exactly the boundary the line exists for: every count in the
-    payload still agrees with every other, and the only fact missing is the one
-    that would send the model back for more.
-    """
-    rows = [row(id=f"{i:012x}", cross=3) for i in range(9)]
-    out = render_latest(rows, since="s", until="u", down={}, sources_total=19)
-
-    listed = _CROSS_ENTRY.findall(out)
-    if len(listed) < len(rows):
-        assert _CROSS_MORE.search(out), (
-            f"{len(listed)} of {len(rows)} repeated stories are printed and "
-            f"nothing in the payload says the rest exist")
-
-
-# ── the header tally ────────────────────────────────────────────────────────
-
 def test_a_source_with_no_adapter_is_not_counted_among_those_that_answered():
     """`sources_total - len(down)` counts every PENDING source as healthy.
 
@@ -201,33 +142,33 @@ def test_the_budget_line_counts_the_items_that_survived_it():
 
 # ── wire_read ───────────────────────────────────────────────────────────────
 
-def test_the_repeat_count_names_as_many_sources_as_it_counts():
-    """`x2[hub]` for a story hn and hub both carried.
+def test_an_item_several_sources_carried_names_all_of_them():
+    """It used to read `x2[hub]` — a count and a list contradicting each other
+    inside one line, where a model has to pick one and both readings are wrong.
 
-    The count and the list contradict each other inside one line, and a model
-    resolving that has to pick one — either the count is inflated or a source
-    was dropped. Both readings are wrong and neither can be checked.
+    The count is gone with the CROSS block: it was the length of the list
+    printed beside it. The list stays, because on a single item somebody asked
+    to read, who else carried it is the one thing that is not on the page.
     """
-    out = render_read([row(cross=2, sources="hn,hub", source="hub")],
+    out = render_read([row(sources="hn,hub", source="hub")],
                       requested=["a3f9c2e1"])
 
-    named = re.search(r" x(\d+)\[([^\]]+)\]", out)
-    assert named, "a repeated story has to carry its count and the sources"
-    assert int(named.group(1)) == len(named.group(2).split(",")), (
-        f"the line counts {named.group(1)} sources and names "
-        f"{named.group(2).split(',')}")
+    named = re.search(r" \[([^\]]+)\]", out)
+    assert named, "a story two sources carried has to name both"
+    assert sorted(named.group(1).split(",")) == ["hn", "hub"]
 
 
-def test_a_story_only_one_source_carried_is_not_marked_as_a_repeat():
-    """`x1[qbitai]` on every line turns the one signal this server offers into
-    decoration: if everything is marked, the mark distinguishes nothing."""
-    out = render_read([row(id="a" * 12, cross=1, sources="qbitai"),
-                       row(id="b" * 12, cross=2, sources="qbitai,hn")],
+def test_a_story_only_one_source_carried_is_not_marked_at_all():
+    """`[qbitai]` on every line turns the mark into decoration: if everything
+    carries it, it distinguishes nothing. The heading already names the source
+    that carried a single-source item."""
+    out = render_read([row(id="a" * 12, sources="qbitai"),
+                       row(id="b" * 12, sources="qbitai,hn")],
                       requested=["a" * 12, "b" * 12])
 
     heads = {l.split()[1]: l for l in out.splitlines() if l.startswith("## ")}
-    assert "x1[" not in heads["a" * 12], "one source is not a repeat"
-    assert "x2[" in heads["b" * 12]
+    assert "[" not in heads["a" * 12], "one source is not a repeat"
+    assert "[qbitai,hn]" in heads["b" * 12]
 
 
 def test_a_borrowed_date_is_marked_uncertain_like_any_other():

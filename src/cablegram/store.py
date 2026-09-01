@@ -28,7 +28,6 @@ from .sources import SOURCES, Source, resolve
 from .urls import item_id, normalise
 
 __all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
-           "cross_count", "cross_counts",
            "items_of_source", "record_write", "source_health",
            "latest_items", "items_by_ids", "search_items"]
 
@@ -201,8 +200,8 @@ def _store_one(
         # which the updates above had already corrected to OpenAI's. hn is where
         # it was seen first, which is what the field means and why nothing here
         # is false; it is not who published it, which is what the position
-        # reads as. The cross list beside it is unaffected: both still appear
-        # there, in the order they were seen.
+        # reads as. The list of carriers beside it is unaffected: both still
+        # appear there, in the order they were seen.
         if not source.aggregator and _AGGREGATORS:
             marks = ",".join("?" * len(_AGGREGATORS))
             db.execute(
@@ -242,9 +241,10 @@ def _record_reference(
 ) -> int:
     """Credit a source for an article it pointed at.
 
-    A channel writing about a launch has carried that story, and its own URL is
-    a permalink to the post rather than to the article — so without this, the six
-    Telegram channels could never appear in a cross-source count at all.
+    A channel writing about a launch has carried that story, and its own URL
+    is a permalink to the post rather than to the article — so without this,
+    the six Telegram channels could never be named as carrying an article at
+    all.
 
     The article is archived if it is not already there, with the referring
     post's headline standing in until its own feed supplies a better one. That
@@ -292,32 +292,6 @@ def _record_reference(
         (link_id, source.id, title, fetched_at, published),
     )
     return 1 if cursor.rowcount else 0
-
-
-def cross_count(db: sqlite3.Connection, iid: str) -> int:
-    """How many sources carried this item. A count, not a score.
-
-    That GLM-5 surfaced in six feeds across three languages within four hours is
-    arithmetic. Ranking it would be a judgement, and judgement belongs to the
-    reader, who has more context than this server ever will.
-    """
-    return db.execute(
-        "SELECT COUNT(*) FROM sighting WHERE item_id = ?", (iid,)
-    ).fetchone()[0]
-
-
-def cross_counts(db: sqlite3.Connection, ids: list[str]) -> dict[str, int]:
-    """The same, for a whole page of results. One query, not one per item —
-    a normal day's listing is a couple of hundred."""
-    if not ids:
-        return {}
-    marks = ",".join("?" * len(ids))
-    return {
-        row["item_id"]: row["n"]
-        for row in db.execute(
-            f"SELECT item_id, COUNT(*) AS n FROM sighting"
-            f" WHERE item_id IN ({marks}) GROUP BY item_id", ids)
-    }
 
 
 def items_of_source(db: sqlite3.Connection, source_id: str, limit: int = 200) -> list:
@@ -492,9 +466,9 @@ _ITEM_COLUMNS = (
     "       CASE WHEN EXISTS (SELECT 1 FROM sighting x"
     "                         WHERE x.item_id = i.id AND x.via = 'feed')"
     "            THEN 'feed' ELSE 'link' END AS via,"
-    # And `sources` is what the cross count names. Without it the count and the
-    # list contradicted each other on the same line: x2[hub] for a story hn and
-    # hub both carried.
+    # `sources` names who carried the item, which wire_read prints beside it.
+    # It is the one thing a reader asking to read a single item cannot see for
+    # itself — unlike a repeated headline two lines apart, which it can.
     "       (SELECT GROUP_CONCAT(x.source) FROM sighting x WHERE x.item_id = i.id)"
     "           AS sources"
 )
@@ -532,7 +506,6 @@ def latest_items(
         # 13:07 under `## openai`.
         f"       s.published, s.date_exact,"
         f"       COUNT(*) OVER (PARTITION BY s.source) AS source_total,"
-        f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
         f"       ROW_NUMBER() OVER (PARTITION BY s.source ORDER BY s.published DESC)"
         f"           AS rank_in_source"
         f" FROM sighting s JOIN item i ON i.id = s.item_id"
@@ -561,9 +534,8 @@ def items_by_ids(db: sqlite3.Connection, ids: list[str]) -> list[dict]:
     found = {
         row["id"]: dict(row)
         for row in db.execute(
-            f"SELECT {_ITEM_COLUMNS}, i.title, i.published, i.date_exact,"
-            f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross"
-            f" FROM item i WHERE i.id IN ({marks})", ids)
+            f"SELECT {_ITEM_COLUMNS}, i.title, i.published, i.date_exact"
+                f" FROM item i WHERE i.id IN ({marks})", ids)
     }
     return [found[i] for i in ids if i in found]
 
@@ -626,7 +598,6 @@ def search_items(
     rows = db.execute(
         f"SELECT {_ITEM_COLUMNS}, s.source, s.title, s.seen_at,"
         f"       s.published, s.date_exact,"
-        f"       (SELECT COUNT(*) FROM sighting x WHERE x.item_id = i.id) AS cross,"
         # Without this the renderer falls back to the number shown, so a source
         # holding 437 matches printed 3/3 — not an undeclared cut but a denied
         # one, asserting completeness in the tool built to prevent exactly that.
@@ -640,8 +611,8 @@ def search_items(
         # post's and matched the same query twice. Measured over three Russian
         # channels: "24 shown hits" above thirteen stories, every headline
         # printed twice, from the tool built to stop a count being read as an
-        # answer. The cross count is a subquery over every sighting and is not
-        # affected: an article two channels linked still counts twice.
+        # answer. `sources` is a subquery over every sighting and is not
+        # affected: an article two channels linked still names both.
         f" WHERE {matcher} AND s.via = 'feed' AND s.published >= ?{clause}"
         f" ORDER BY s.source, s.published DESC",
         args,

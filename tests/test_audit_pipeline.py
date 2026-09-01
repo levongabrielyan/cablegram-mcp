@@ -110,9 +110,9 @@ def test_a_channel_that_linked_a_story_counts_towards_its_cross_source_total(db)
 
     row = [r for r in latest_items(db, since="2026-08-01T00:00:00Z")
            if r["id"] == item_id(linked)][0]
-    assert row["cross"] == 2, (
-        "ai_newz carried this story by linking it; a count of 1 says nobody "
-        "else did")
+    assert sorted(row["sources"].split(",")) == ["ai_newz", "hn"], (
+        f"ai_newz carried this story by linking it; naming only "
+        f"{row['sources']} says nobody else did")
 
 
 def test_an_item_published_exactly_at_the_window_edge_is_inside_it(db):
@@ -126,22 +126,6 @@ def test_an_item_published_exactly_at_the_window_edge_is_inside_it(db):
     assert latest_items(db, since=ISO), (
         f"an item published at {ISO} is missing from the window that starts at "
         f"{ISO}")
-
-
-def test_the_cross_source_list_names_every_source_the_count_counts(db):
-    """The count and the list are two columns of the same query and were built
-    from different ones: `x2[hub]` reached the reply for a story hn and hub both
-    carried. Whichever half the model believes, the other is wrong."""
-    url = "https://qbitai.com/glm5"
-    store_entries(db, by_id("qbitai"), [Entry("智谱发布GLM-5", url, NOW, None, None)],
-                  fetched_at=ISO)
-    store_entries(db, by_id("hn"), [Entry("Zhipu releases GLM-5", url, NOW, None, None)],
-                  fetched_at=ISO)
-
-    row = latest_items(db, since="2026-08-01T00:00:00Z")[0]
-    assert row["sources"], "the row has to name the sources its count counts"
-    assert len(row["sources"].split(",")) == row["cross"], (
-        f"cross={row['cross']} and sources={row['sources']!r}")
 
 
 def test_a_search_term_holding_a_wildcard_is_matched_literally(db):

@@ -58,25 +58,6 @@ def _time(published: str) -> str:
     return published[11:16]
 
 
-def _header_cross(rows: list[dict]) -> list[str]:
-    """Which stories more than one source carried. A count, never a score."""
-    seen: dict[str, dict] = {}
-    for row in rows:
-        if row.get("cross", 1) > 1:
-            seen.setdefault(row["id"], row)
-    if not seen:
-        return []
-
-    ranked = sorted(seen.items(), key=lambda kv: -kv[1]["cross"])
-    lines = []
-    for i, (iid, row) in enumerate(ranked[:8]):
-        lines.append(f"{'CROSS ' if i == 0 else '      '}{iid} x{row['cross']}")
-    if len(ranked) > 8:
-        lines.append(f"      8 shown of {len(ranked)} repeated stories, most-carried first")
-    lines.append("      Raw count of the same normalised url across sources. NOT a ranking.")
-    return lines
-
-
 def _item_line(row: dict, links_out: bool = False) -> str:
     """One dispatch. The destination host only where it says something.
 
@@ -229,7 +210,6 @@ def render_latest(
         cut = [f"{k}={s}/{t}" for k, (s, t) in sorted(cuts.items()) if s < t]
         if cut:
             head.append("CUT   " + "  ".join(cut) + "   (newest kept)")
-        head += _header_cross(rows)
         head.append("COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])")
         head.append("---")
         return head
@@ -291,8 +271,14 @@ def render_read(rows: list[dict], *, requested: list[str],
 
     chunks: list[tuple[str, list[str]]] = []
     for row in rows:
-        sources = row.get("sources") or row.get("source", "")
-        cross = f" x{row['cross']}[{sources}]" if row.get("cross", 1) > 1 else ""
+        # Which sources carried it, named rather than counted. The count was a
+        # CROSS line in every header, promising "six feeds in three languages"
+        # and delivering huggingface.co against itself — the lab namespace and
+        # the trending list serving one URL. A reader who can see two headlines
+        # repeat does not need arithmetic to notice; what it cannot see, on a
+        # single item it asked to read, is who else carried it.
+        carried = (row.get("sources") or row.get("source", "")).split(",")
+        cross = f" [{','.join(carried)}]" if len(carried) > 1 else ""
         # The element it came from and its length. Which of those holds a whole
         # article is a property of the source, checked once against its feed —
         # not something a tag name can be asked, in either direction.

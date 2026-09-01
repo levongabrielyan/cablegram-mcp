@@ -364,6 +364,6 @@ def test_a_linked_article_is_keyed_by_the_same_rule_as_a_published_one():
 
     rows = {r["id"]: r for r in latest_items(db, since="2026-08-01T00:00:00Z")}
     assert item_id(canonical) in rows, "the feed's own copy has to be there"
-    assert rows[item_id(canonical)]["cross"] == 2, (
+    assert sorted(rows[item_id(canonical)]["sources"].split(",")) == ["ai_newz", "hn"], (
         f"the channel linked the same article; the two spellings archived as "
         f"{sorted(rows)}")

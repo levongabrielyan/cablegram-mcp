@@ -60,13 +60,6 @@ def test_the_destination_shows_only_for_aggregators():
     assert "(" not in plain.split("---")[-1]
 
 
-def test_a_story_in_several_sources_is_counted_in_the_header():
-    """Arithmetic, not a ranking — and the strongest early signal there is."""
-    out = render_latest([row(cross=6)], since="s", until="u", down={}, sources_total=19)
-    assert "a3f9c2e1 x6" in out
-    assert "NOT a ranking" in out
-
-
 def test_a_story_in_one_source_is_not_counted():
     out = render_latest([row(cross=1)], since="s", until="u", down={}, sources_total=19)
     assert "CROSS" not in out

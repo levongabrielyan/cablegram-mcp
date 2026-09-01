@@ -14,7 +14,7 @@ from cablegram.schema import connect
 from cablegram.fetch import Fetched
 from cablegram.rss import Entry
 from cablegram.sources import by_id
-from cablegram.store import (StoreReport, cross_count,
+from cablegram.store import (StoreReport,
                              items_by_ids, latest_items,
                              record_attempt, search_items,
                              store_entries)
@@ -23,6 +23,19 @@ from cablegram.urls import item_id
 NOW = "2026-08-30T12:00:00Z"
 PUB = datetime(2026, 8, 30, 7, 12, tzinfo=timezone.utc)
 GLM = "https://qbitai.com/2026/08/glm5.html"
+
+
+def carriers(db, iid: str) -> int:
+    """How many sources have a sighting of this item.
+
+    Was `store.cross_count`, removed with the CROSS line that was its only
+    caller: a reader who can see the same headline twice does not need the
+    server to count it. The write path still has to record both sightings —
+    that is what these tests are about — so the count moved here, where it is
+    an assertion rather than a claim in a reply.
+    """
+    return db.execute("SELECT COUNT(*) FROM sighting WHERE item_id = ?",
+                      (iid,)).fetchone()[0]
 
 
 @pytest.fixture
@@ -93,7 +106,7 @@ def test_the_same_story_from_two_sources_is_one_item_seen_twice(db):
     store_entries(db, by_id("hn"), [entry(title="Zhipu releases GLM-5")], fetched_at=NOW)
 
     assert len(rows(db)) == 1
-    assert cross_count(db, item_id(GLM)) == 2
+    assert carriers(db, item_id(GLM)) == 2
 
 
 def test_the_second_source_is_a_sighting_not_a_new_item(db):
@@ -117,7 +130,7 @@ def test_each_sighting_keeps_the_headline_that_source_used(db):
 def test_one_source_repeating_itself_is_still_one_sighting(db):
     store_entries(db, by_id("qbitai"), [entry()], fetched_at=NOW)
     store_entries(db, by_id("qbitai"), [entry()], fetched_at="2026-08-30T13:00:00Z")
-    assert cross_count(db, item_id(GLM)) == 1
+    assert carriers(db, item_id(GLM)) == 1
 
 
 # ── dates: the field that lies most easily ───────────────────────────────────
@@ -331,31 +344,6 @@ def test_a_source_shows_the_headline_it_used(db):
     assert items_of_source(db, "hn")[0]["title"] == "Zhipu releases GLM-5"
 
 
-def test_cross_counts_come_back_in_one_query(db):
-    """One query per item is 210 queries for a normal day's wire_latest.
-
-    The assertion counts them. Checking only the returned dict would pass with a
-    loop of N queries, which is the thing this function exists to avoid."""
-    store_entries(db, by_id("qbitai"), [entry(), entry(url="https://qbitai.com/b")],
-                  fetched_at=NOW)
-    store_entries(db, by_id("hn"), [entry()], fetched_at=NOW)
-
-    from cablegram.store import cross_counts
-
-    statements = []
-    db.set_trace_callback(statements.append)
-    try:
-        counts = cross_counts(db, [item_id(GLM), item_id("https://qbitai.com/b")])
-    finally:
-        db.set_trace_callback(None)
-
-    assert counts == {item_id(GLM): 2, item_id("https://qbitai.com/b"): 1}
-    assert len(statements) == 1, f"one query, got {len(statements)}"
-
-
-
-# ── fourth review: the report is the only channel, so it cannot lie ──────────
-
 def test_a_rolled_back_entry_is_not_counted_as_archived(db):
     """new was incremented inside the transaction. If the commit then failed,
     the row went away and the count did not — the same entry reported as new and
@@ -434,7 +422,7 @@ def test_a_linked_article_is_archived_and_credited_to_the_channel(db):
                  links=(linked,))
     store_entries(db, by_id("ai_newz"), [post], fetched_at=NOW)
 
-    assert cross_count(db, item_id(linked)) == 1
+    assert carriers(db, item_id(linked)) == 1
     row = db.execute("SELECT * FROM item WHERE id = ?", (item_id(linked),)).fetchone()
     assert row["first_source"] == "ai_newz"
     assert row["url_norm"] == linked
@@ -449,7 +437,7 @@ def test_two_channels_linking_the_same_article_cross(db):
                              links=(linked,))],
                       fetched_at=NOW)
 
-    assert cross_count(db, item_id(linked)) == 2
+    assert carriers(db, item_id(linked)) == 2
 
 
 def test_a_linked_article_crosses_with_its_own_feed(db):
@@ -462,7 +450,7 @@ def test_a_linked_article_crosses_with_its_own_feed(db):
     store_entries(db, by_id("openai"), [Entry("Introducing GLM-5", linked, PUB, "body",
                                               "description")], fetched_at=NOW)
 
-    assert cross_count(db, item_id(linked)) == 2
+    assert carriers(db, item_id(linked)) == 2
     row = db.execute("SELECT body FROM item WHERE id = ?", (item_id(linked),)).fetchone()
     assert row["body"] == "body", "the source's own body fills in the placeholder"
 
@@ -516,7 +504,7 @@ def test_the_linked_article_still_counts_towards_the_crossing(db):
                       [Entry("Робо-утка", f"https://t.me/{channel}/1", PUB, None, None,
                              links=(linked,))], fetched_at=NOW)
 
-    assert cross_count(db, item_id(linked)) == 2
+    assert carriers(db, item_id(linked)) == 2
 
 
 def test_a_borrowed_headline_is_marked_as_borrowed(db):

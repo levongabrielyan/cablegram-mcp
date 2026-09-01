@@ -83,13 +83,14 @@ def test_totals_report_what_was_cut(db):
 
 def test_an_item_carries_every_source_that_had_it(db):
     """One row per sighting would repeat the story; a row with no sources loses
-    the cross-source count, which is the strongest signal here."""
+    who carried it, which is what wire_read prints beside an item and the one
+    thing a reader asking for a single item cannot see for itself."""
     store_entries(db, by_id("kr36"),
                   [Entry("同一条", "https://qbitai.example/0", NOW, None, None)],
                   fetched_at=iso(NOW))
     rows = latest_items(db, since=iso(NOW - timedelta(days=7)), sources=["qbitai"])
     glm = [r for r in rows if r["id"] == item_id("https://qbitai.example/0")][0]
-    assert glm["cross"] == 2
+    assert sorted(glm["sources"].split(",")) == ["kr36", "qbitai"]
 
 
 def test_reading_by_id_returns_the_bodies(db):

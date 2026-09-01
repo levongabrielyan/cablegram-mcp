@@ -106,12 +106,6 @@ async def test_every_source_has_an_adapter_now(server):
 
 
 @pytest.mark.anyio
-async def test_latest_counts_the_cross_source_repeat(server):
-    out = await call(server, "wire_latest", hours=24)
-    assert f"{item_id('https://qbitai.example/glm5')} x2" in out
-
-
-@pytest.mark.anyio
 async def test_read_reports_the_element_not_a_verdict(server):
     """The full/teaser judgement was removed from the parser and came back here.
     What is printed now is the element and the size — facts — because whether a
