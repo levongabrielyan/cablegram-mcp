@@ -51,7 +51,13 @@ def estimate_tokens(text: str) -> int:
 
 
 def _day(published: str) -> str:
-    return published[5:10].replace("-", "-")
+    """The whole date, year included.
+
+    It was `MM-DD`, and a window wider than a year put items three years apart
+    under one separator: measured, a 2023 post and a 2026 post both filed under
+    `-- 03-14`, which does not omit the year so much as assert they share a day.
+    Five characters a separator, and a 24h listing has one or two."""
+    return published[:10]
 
 
 def _time(published: str) -> str:

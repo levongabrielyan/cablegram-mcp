@@ -270,7 +270,12 @@ def test_two_days_get_two_separators_and_each_names_a_whole_day():
     """The separator is the only place a date appears in a listing — item lines
     carry hh:mm and nothing else. Truncated, the 30th and the 31st print the
     same one, so a day's worth of dispatches is filed under its neighbour and
-    every timestamp under it still looks right."""
+    every timestamp under it still looks right.
+
+    It also has to carry the year. It was `MM-DD`, and a window wider than a
+    year put a 2023 post and a 2026 post under one `-- 03-14` — which does not
+    omit the year so much as assert the two share a day. This test used to
+    accept exactly that shape."""
     rows = [row(id="a" * 12, published="2026-08-30T07:12:00Z"),
             row(id="b" * 12, published="2026-08-31T09:30:00Z")]
     out = render_latest(rows, since="s", until="u", down={}, sources_total=19)
@@ -278,8 +283,8 @@ def test_two_days_get_two_separators_and_each_names_a_whole_day():
     days = re.findall(r"^-- (.+)$", out, re.M)
     assert len(days) == 2, f"two days, {len(days)} separators: {days}"
     for day in days:
-        assert re.fullmatch(r"\d{2}-\d{2}", day), (
-            f"'-- {day}' does not name a day")
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", day), (
+            f"'-- {day}' does not name a day, year included")
 
 
 def test_an_inlined_body_cannot_be_read_as_a_dispatch_line():
