@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sqlite3
+from collections import Counter
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from math import ceil
@@ -42,6 +43,20 @@ __all__ = ["build", "serve", "main"]
 # full pass measures, and whatever has not answered by then is
 # reported DOWN rather than waited for.
 LIVE_DEADLINE = 45.0
+
+# The vocabulary for choosing, generated from the catalogue rather than written
+# down. Fifteen tags existed and not one of them appeared in any description:
+# the only way to learn them was wire_sources, which costs 1,554 tokens. What a
+# reader did learn for free was `sources=['ru']` — the single selector example
+# on the whole surface, and the most expensive call there is at 20-36s, because
+# six of the seven Russian sources are Telegram channels. So the expensive
+# selector arrived by accident and the cheap ones did not arrive at all: a model
+# after the Chinese labs has `weights`, six sources in under a second, and no
+# way to find out.
+def _tag_menu() -> str:
+    counted = Counter(tag for s in SOURCES for tag in s.tags)
+    return ", ".join(f"{tag}({n})" for tag, n in
+                     sorted(counted.items(), key=lambda kv: (-kv[1], kv[0])))
 
 # Dispatches this process can still resolve an id for. Nothing is kept between
 # runs, so this is the whole of wire_read's reach.
@@ -281,12 +296,27 @@ def build(rows_from=None) -> MCPServer:
         # Empty in the handshake until now, so a client could not tell a build
         # serving nineteen sources from one serving twenty-nine.
         version=__version__,
+        # What it is, and — the part that was missing — when to reach for it.
+        # The descriptions explain each tool well; none of them said what makes
+        # a moment one of these. This is the only text a client shows before any
+        # tool is chosen, so it is the only place that can.
         instructions=(
             f"Raw dispatches from {len(SOURCES)} tech, AI and Chinese/Russian sources, "
-            "filtered by "
-            "date and never ranked. You are the editor: this server brings the cables, "
-            "you decide what matters. Headlines are never translated — each carries its "
-            "language."
+            "filtered by date and never ranked. You are the editor: this server "
+            "brings the cables, you decide what matters. Headlines are never "
+            "translated — each carries its language.\n"
+            "WHY IT EXISTS: your training data ended, and you cannot notice that it "
+            "did. This is how you find out what changed. Not a news feed to read "
+            "through — an instrument for checking whether what you are about to say "
+            "is still true.\n"
+            "CALL IT UNASKED when an answer turns on what is true now: 'what is "
+            "new', 'what is happening'; before recommending a library, model, SDK "
+            "or approach in anything that moves; when somebody repeats what they "
+            "were told, to check it against the sources; before starting work in a "
+            "fast-moving space.\n"
+            "`sources` takes ids, tags and languages in one argument — the tags are "
+            "listed on wire_latest and wire_search. Ask for a tag rather than for "
+            "everything: it is narrower and, usually, far cheaper."
         ),
     )
     # What the last pass in this process saw. Nothing is kept between runs, so
@@ -360,6 +390,15 @@ def build(rows_from=None) -> MCPServer:
             "The header states the window and nothing else. Every source asked for "
             "is either a block below or named on DOWN, PENDING or SILENT, so there "
             "is no tally to read: count them if you need the number.\n"
+            "`sources` takes ids, tags and languages in one list, so ['weights', "
+            "'hn'] is a legal request. Languages: en, zh, ru. Tags, with how many "
+            f"sources carry each — {_tag_menu()}. Ask for the narrowest thing that "
+            "answers the question; wire_sources has the full catalogue but costs "
+            "about 1,500 tokens, and you should not need it to make a choice.\n"
+            "`max_tokens` (default 12000) bounds the reply. Over budget, the "
+            "allowance per source drops rather than the tail being cut, and the "
+            "BUDGET line says what it dropped to — so a small budget returns fewer "
+            "rows from every source instead of the last sources vanishing.\n"
             "COST, and it decides how to call this. Everything except Telegram is "
             "fetched in parallel, so the price is set by how many Telegram channels the "
             f"selection pulls in: there are {len(resolve(['telegram']))} of them and "
@@ -503,6 +542,13 @@ def build(rows_from=None) -> MCPServer:
             "SELECTOR lines first, because a source that was never searched, and one "
             "that could not serve the whole window, both return 0 hits exactly like a "
             "source with nothing to say.\n"
+            "`sources` takes ids, tags and languages in one list, so ['weights', "
+            "'hn'] is a legal request. Languages: en, zh, ru. Tags, with how many "
+            f"sources carry each — {_tag_menu()}. Searching a tag rather than "
+            "everything is narrower and usually far cheaper, and the reply names "
+            "which sources answered.\n"
+            "`max_tokens` (default 8000) bounds the reply; over budget the rows are "
+            "trimmed and the CUT line says how many each source really held.\n"
             "COST: in live mode this fetches, on the same terms as wire_latest — "
             f"~1-2s for any number of non-Telegram sources, ~20-45s once the "
             f"{len(resolve(['telegram']))} Telegram channels are in, which is what "

@@ -51,9 +51,9 @@ SOURCES: tuple[Source, ...] = (
         "hn", "Hacker News", "hn",
         "https://hn.algolia.com/api/v1/search_by_date", "en",
         # Not "searchable": printed bare in a block heading it reads as though
-        # the other twenty-eight are not, which would make wire_search cover
-        # one source. It means the search happens at the origin, in Hacker
-        # News's own index, rather than over what a fetch brought back.
+        # no other source is, which would make wire_search cover one source. It
+        # means the search happens at the origin, in Hacker News's own index,
+        # rather than over what a fetch brought back.
         ("community", "origin-search"),
         "The only source that can be searched at its origin. 10k requests/hour, no key.",
         aggregator=True,
@@ -271,8 +271,10 @@ def by_id(source_id: str) -> Source | None:
 def resolve(selectors: list[str] | None) -> tuple[Source, ...]:
     """Accept ids and tags in the same list: ``["early", "hn"]``.
 
-    Nobody remembers twenty-two ids. Asking for a theme is the common case, so both
-    resolve through one argument instead of two.
+    Nobody remembers every id in the catalogue, and the count has changed four
+    times. Asking for a theme is the common case, so both resolve through one
+    argument instead of two — and the tools now print the tag list, generated
+    from here, because a vocabulary the caller cannot see is one it cannot use.
     """
     if not selectors:
         return SOURCES

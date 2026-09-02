@@ -571,3 +571,44 @@ async def test_every_tool_states_the_build_that_answered(server):
         out = await call(server, name, **args)
         assert out.startswith(f"CABLEGRAM v{__version__}"), (
             f"{name} opens with {out.splitlines()[0][:40]!r}")
+
+
+@pytest.mark.anyio
+async def test_every_tag_a_caller_can_select_by_is_named_where_it_is_selected(server):
+    """The catalogue's fifteen tags are the vocabulary for choosing a source,
+    and not one of them appeared in any description. The only place to learn
+    them was wire_sources, which costs about 1,500 tokens — so the map cost
+    more than most of the calls it would have improved.
+
+    What a reader did learn for free was `sources=['ru']`, the single selector
+    example on the whole surface and the most expensive call there is at 20-36
+    seconds, because six of the seven Russian sources are Telegram channels.
+    The expensive selector arrived by accident; the cheap ones did not arrive.
+    A model after the Chinese labs has `weights` — six sources, under a second
+    — and no way to find out.
+
+    Generated from the catalogue rather than written down, so a tag added
+    tomorrow appears on its own.
+
+    Which is also the limit of this test, and worth saying rather than leaving
+    to be discovered: while the menu is generated it cannot fail for a new tag
+    — measured, adding one to the catalogue keeps it green, because the tag
+    reaches the description by the same route the test reads it. What it does
+    catch is the regression that actually happens: somebody replacing the
+    interpolation with a hand-written list, which then rots. Mutated that way
+    it names the ten tags that fall out.
+    """
+    from cablegram.sources import SOURCES
+
+    tags = {tag for s in SOURCES for tag in s.tags}
+    texts = {t.name: t.description or "" for t in await server.list_tools()}
+    for name in ("wire_latest", "wire_search"):
+        missing = sorted(t for t in tags if t not in texts[name])
+        assert not missing, (
+            f"{name} takes `sources` and never names {missing}; the only way "
+            f"to learn them is wire_sources at ~1,500 tokens")
+
+    # And the languages, which are the other half of the same argument.
+    for name in ("wire_latest", "wire_search"):
+        for lang in sorted({s.lang for s in SOURCES}):
+            assert lang in texts[name], f"{name} never names the language {lang}"
