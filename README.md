@@ -71,7 +71,7 @@ above.*
 **What it costs.** A reply is priced by what the sources published, not by this
 code, so these are ranges from repeated measurement rather than figures:
 
-    24h, everything, defaults        ~5,200 tokens
+    24h, everything, defaults        ~5,900 tokens
     6h,  everything, defaults        2,500-3,400
     6h,  three busy sources          1,000-1,400
     6h,  three, limit_per_source=2   ~300
@@ -90,8 +90,7 @@ adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
 namespaces on it, and three sections of a lab that publishes no feed, read out
-of the data its own pages ship. 457 tests covering 97% of 1,214 statements, on
-3.12 and 3.14.
+of the data its own pages ship. 459 tests at 96% coverage, on 3.12 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
 
@@ -159,8 +158,8 @@ which carried the same URL — not to keep anything.
 
 This has a cost and it is worth stating: **`wire_search` cannot reach past what
 the feeds are serving today**, and the floor is lower than it sounds. Measured
-as the oldest item each feed actually served — the same quantity every reply
-prints on its COVER line:
+as the oldest item each feed actually served — the same quantity `wire_search`
+prints on its COVER line, one floor per source:
 
     openai         2015      the whole back catalogue, in one fetch
     anthropic      2021
