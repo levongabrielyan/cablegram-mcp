@@ -207,13 +207,40 @@ these are things it would reasonably do and does not:
 * **Nothing checks a source's terms for you.** The endpoints are public and the
   requests are bounded and rate-limited, but the responsibility is yours.
 
+## How this was built
+
+Every reply this server sends is a claim about the world that nobody checks —
+the reader is a model, and a model cannot tell a quiet day from a broken fetch.
+So the work is mostly finding the places where it says something it does not
+know, and the commit history is the record of that. A few of them, verbatim:
+
+    Refuse a window that ends before it starts
+    Stop the ENGINE line claiming an index ran over nothing
+    Report no floor for a call that consulted no feed
+    Declare the source ceiling where the window is stated, not only in the catalogue
+    Date the window fixtures relative to now, so the suite stops expiring
+    Serve one hit per story, not the post and the link it carried
+
+Each one names the measurement that found it. `since=2027-01-01` produced a
+window ending before it began and a line underneath reading `SILENT hn
+(answered, published nothing in this window)`. `hours=10000000` wrote the year
+885 without its leading zero, and because those timestamps are compared as
+strings it excluded all 982 items and reported the same affirmative silence.
+Seven tests went green to red overnight with no code change, and CI stayed green
+only because it runs on push and nobody had pushed.
+
+    git log --format='%s%n%n%b'
+
 ## Design
 
 [`docs/design.md`](https://github.com/levongabrielyan/cablegram-mcp/blob/main/docs/design.md)
-covers why the identity of an item is a pure function of its URL, why a failure
-is a value rather than an exception, why the full-text index needs a trigram
-tokenizer for Chinese to work at all, and what this server deliberately does not
-do.
+is the reasoning rather than the API: why the identity of an item is a pure
+function of its URL and what breaks in each direction when that is wrong, why a
+failure is a value rather than an exception, why the full-text index needs a
+trigram tokenizer for Chinese to work at all, why third-party input is treated
+as hostile, and what this server deliberately does not do. It carries a
+*Marking / Without it* table for every mark a reply can print — what each one
+says, and what a reader would conclude if it were absent.
 
 ## Notes
 

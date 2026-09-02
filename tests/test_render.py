@@ -6,6 +6,9 @@ article, a capture time read as a publication time. The tests are named after
 the wrong conclusion, not after the format.
 """
 
+import pathlib
+import re
+
 from cablegram.render import (estimate_tokens, render_latest, render_read,
                               render_search, render_sources)
 
@@ -499,3 +502,30 @@ def test_coverage_is_stated_per_source_and_not_as_one_number():
     line = next(l for l in out.splitlines() if l.startswith("COVER"))
     assert "hn=2026-08-31" in line, "the shallow source states its own floor"
     assert "openai=2015-12-11" in line, "and the deep one states its own"
+
+
+def test_every_mark_a_reply_can_print_is_explained_in_the_design_notes():
+    """The *Marking / Without it* table is the argument for this whole server —
+    each row is a mark and the false conclusion a reader would reach if it were
+    absent. The README points at it as covering every mark.
+
+    It covered six of ten. SILENT, CEILING, COVER, UNKNOWN SELECTOR, BUDGET and
+    DEFERRED were all added to the renderer after the table was written, so the
+    page that explains why the marks exist did not mention the ones added
+    because a reader could not work something out. This fails when the next one
+    lands.
+    """
+    root = pathlib.Path(__file__).parent.parent
+    renderer = (root / "src" / "cablegram" / "render.py").read_text()
+    notes = (root / "docs" / "design.md").read_text()
+
+    marks = set(re.findall(
+        r'"(DOWN|SILENT|PENDING|CUT|CEILING|COVER|UNKNOWN SELECTOR|BUDGET|DEFERRED)',
+        renderer))
+    assert len(marks) >= 8, f"the pattern found only {sorted(marks)}"
+
+    table = notes.split("| Marking | Without it |", 1)[1].split("\n\n", 1)[0]
+    missing = sorted(m for m in marks if m not in table)
+    assert not missing, (
+        f"the design notes explain no reader consequence for {missing}; the "
+        f"README calls that table the one covering every mark a reply prints")

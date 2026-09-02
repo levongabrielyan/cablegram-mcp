@@ -23,6 +23,12 @@ Concretely, the output states:
 | `PENDING` | A source with no adapter reported as broken buries the one that is actually broken |
 | `body=description 240c` | Reporting *how much* of an article arrived, without guessing whether it is all of it |
 | `"0 hits" does NOT mean nobody is talking about it` | The single most likely false conclusion this server can cause |
+| `SILENT openai` | A healthy source that published nothing stops appearing, and a source missing from a list cannot be known to have been asked |
+| `CEILING hn` | A source that served everything it holds leaves the window in the header wider than the answer beneath it: two days asked for, about thirty hours answered, and nothing else distinguishes them |
+| `COVER hn=2026-08-31` | Coverage is per source and wildly uneven. One date for the whole call is the deepest feed in it, which may have matched nothing — eleven years of apparent reach behind a miss |
+| `UNKNOWN SELECTOR qbitia` | A mistyped selector returns zero exactly like a real absence, and nothing was fetched to produce it |
+| `BUDGET max_tokens=3000` | Trimming to fit is a different answer from the one asked for, and every per-source total stays true only if the trim is declared |
+| `DEFERRED a3f9c2e1 b7d2…` | A body that did not fit, dropped silently, is indistinguishable from an item that has none |
 
 ## Date-filtered, never ranked
 
