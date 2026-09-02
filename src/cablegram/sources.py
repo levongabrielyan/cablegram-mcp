@@ -50,12 +50,15 @@ SOURCES: tuple[Source, ...] = (
     Source(
         "hn", "Hacker News", "hn",
         "https://hn.algolia.com/api/v1/search_by_date", "en",
-        # Not "searchable": printed bare in a block heading it reads as though
-        # no other source is, which would make wire_search cover one source. It
-        # means the search happens at the origin, in Hacker News's own index,
-        # rather than over what a fetch brought back.
-        ("community", "origin-search"),
-        "The only source that can be searched at its origin. 10k requests/hour, no key.",
+        # No tag for searching at the origin. hn.search_url can build one —
+        # Algolia takes a query — and nothing calls it that way: poll.py fetches
+        # by date only and wire_search runs over what came back, like every
+        # other source. The tag said otherwise in every block heading, beside a
+        # CEILING line saying the same fetch had served all it could.
+        ("community",),
+        "The Algolia index: 10k requests/hour, no key, a thousand rows a query, and "
+        "the only source that links out. Searchable at its origin in principle; "
+        "this build does not, and says so here rather than in a tag.",
         aggregator=True,
     ),
     Source(

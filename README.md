@@ -38,24 +38,28 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.2.1 | 2026-09-02T00:03:15Z..2026-09-02T08:03:15Z
-SILENT data_secrets  (answered, published nothing in this window)
+CABLEGRAM v0.2.1 | 2026-09-02T05:17:42Z..2026-09-02T13:17:42Z
 CEILING cls hn  (returned everything it can serve, so this window is wider than its answer)
         What falls outside what they served is unseen, not absent, and their totals on
         CUT count what they served rather than what the window holds.
-CUT   cls=2/24  hn=2/233   (newest kept)
+CUT   cls=2/21  hn=2/330   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 2/24
--- 09-02
-9a39aa030fad 08:01 AI教母披露“里程碑式”成果！全球首个多模态世界模型来了 可用于机器人预训练
-a091cd733825 07:46 德银：AI时代光网络硬件商将成最大赢家 首选Coherent与Lumentum
+## cls zh early,finance 2/21
+-- 2026-09-02
+14f5a0d51cc4 13:08 财联社9月2日电，KKR聘请Equinix和AES前高管，推进100亿美元的AI项目。
+57b590826a0d 13:05 勃林格殷格翰与Owkin达成AI药物研发许可协议
 
-## hn en community,origin-search 2/233
--- 09-02
-b004a9ab300c 08:01 Why Spec-Driven Development Tools Fail in the Enterprise (martinelli.ch)
-ecb6d57923b2 08:01 When Claude Code went rogue, years of Bengaluru heritage work disappeared (deccanherald.com)
+## data_secrets ru telegram 2/2
+-- 2026-09-02
+3f764e5bef12 12:04 Раз в сто лет Илья Суцкевер выходит из пещеры и пишет в X что-нибудь жуткое
+0dc80112bdb2 08:09 Fable 5.1 это конечно хорошо, но вы видели, что выпустил стартап Фей-Фей Ли?
+
+## hn en community 2/330
+-- 2026-09-02
+b1b75e4589fd 13:16 Elevating Antigravity agent skills, Part 2: Image generation (medium.com)
+1931f5174f8b 13:14 A Beginner's Deep Dive Guide to Entra Passkeys (emsroute.com)
 ```
 
 *Eight hours of three sources at `limit_per_source=2`, verbatim, and

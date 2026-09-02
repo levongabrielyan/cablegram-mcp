@@ -1,9 +1,11 @@
 """Hacker News through the Algolia index. No key, no auth, 10,000 requests an hour.
 
-It earns its place twice over. It is the only source that can be searched at
-its origin instead of only in what was just fetched, and it is the only one that links
-out — so the same URL arriving here and on a Chinese feed is one story seen
-twice, which is where the cross-source count comes from.
+It earns its place by linking out: every other source publishes its own URLs,
+so the same article arriving here and on a Chinese feed is one item with two
+carriers named on it, and this is the only source that can make that happen.
+`search_url` can also ask Algolia for a term — the index supports it — but this
+build never does: poll.py fetches by date and wire_search runs over the result,
+as for every other source. A tag once claimed otherwise.
 
 Two properties decide the code below, both measured against the live endpoint:
 
