@@ -584,7 +584,14 @@ def build(rows_from=None) -> MCPServer:
             "which sources you actually searched.\n"
             "Chinese and Russian sources are indexed in their own language: a company "
             "is 智谱 here and Zhipu on Hacker News. If a query comes back empty, retry "
-            "it transliterated or translated before concluding anything."
+            "it transliterated or translated before concluding anything.\n"
+            "The query is ONE exact phrase, matched as a substring of the headline. "
+            "'Claude Code' finds headlines containing those two words in that order "
+            "and nothing else: measured on a week of Hacker News, 'Claude Code' 10, "
+            "'Anthropic Claude' 0, 'GPT 5' 0 and 'GPT-5' 1. To find headlines that "
+            "mention two things, search each and compare. Under three characters "
+            "the index cannot be used and a plain substring scan runs instead, which "
+            "is case-blind only for ASCII: 'ИИ' and 'ии' are different queries."
         ),
         annotations=READ_ONLY,
     )
