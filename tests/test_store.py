@@ -1,8 +1,13 @@
 """The write path. Everything here is about what gets lost silently.
 
-The archive is the one part of this server that cannot be rebuilt: the feeds no
-longer hold what it holds. So a bug on this path does not cost a request, it
-costs history — and history goes missing without an error, which is why these
+These tests used to open by calling the archive the one part of the server that
+could not be rebuilt. There is no archive: every call builds a database in
+memory, fills it, answers, and throws it away.
+
+What that changes is the cost, not the care. A bug here no longer loses history
+— there is none — it loses part of the answer being written right now, and it
+does it without an error. A source that stored nine of eleven entries returns a
+reply that looks exactly like a quiet day for the other two. That is why these
 tests are heavier than the code they cover.
 """
 

@@ -246,12 +246,22 @@ def _record_reference(
     the six Telegram channels could never be named as carrying an article at
     all.
 
-    The article is archived if it is not already there, with the referring
-    post's headline standing in until its own feed supplies a better one. That
-    placeholder is the point rather than a compromise: it means an article
-    reaches the reply on the strength of somebody linking it, days before the
-    outlet's own feed carries it — which is the whole reason these sources are
-    in the list.
+    The article is stored if it is not already there, with the referring post's
+    headline standing in until a feed in the same pass supplies a better one.
+
+    That last clause is the whole of it, and it used to say "days before the
+    outlet's own feed carries it" — true when there was an archive and false
+    now: nothing survives a call, so there is no later pass to be early for.
+    What this buys today is inside one call. A channel links an article, a feed
+    in the same fetch published it, and the channel is named among its carriers
+    — which is the only way six Telegram sources, whose every URL is a
+    permalink to their own post, can be credited with carrying anything.
+
+    When no feed in that pass carried it, the row is unreachable: listings and
+    search both filter `via = 'feed'`, so it is neither shown nor searched, and
+    the process cache only holds what a reply printed. That is not a leak worth
+    closing — the database is thrown away with the reply — but it is the reason
+    not to go looking for where those items surface.
     """
     link = (link or "").strip()
     if not link:
