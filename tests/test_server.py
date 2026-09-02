@@ -612,3 +612,43 @@ async def test_every_tag_a_caller_can_select_by_is_named_where_it_is_selected(se
     for name in ("wire_latest", "wire_search"):
         for lang in sorted({s.lang for s in SOURCES}):
             assert lang in texts[name], f"{name} never names the language {lang}"
+
+
+@pytest.mark.anyio
+async def test_the_tag_menu_prices_a_tag_on_the_axis_the_cost_note_names(server):
+    """The menu listed source counts, and the COST paragraph three lines below
+    says outright that "language is not the axis, channel count is". For any
+    tag holding a Telegram channel the source count is not merely incomplete,
+    it points the wrong way:
+
+        papers(1)      one channel, fetched alone, three seconds apart
+        researcher(1)  one channel
+        technical(5)   one of the five is a channel and pays the same penalty
+        weights(6)     no channels — 0.47s measured
+
+    The two smallest numbers in the menu were the two slowest calls per source,
+    and the one that looked six times larger was the fastest. A model reading
+    the menu for the cheapest option picked the most expensive.
+    """
+    from cablegram.sources import SOURCES
+
+    channels = {tag for s in SOURCES if s.kind == "telegram" for tag in s.tags}
+    assert channels, "the fixture needs at least one channel-bearing tag"
+
+    texts = {t.name: t.description or "" for t in await server.list_tools()}
+    for name in ("wire_latest", "wire_search"):
+        for tag in sorted(channels):
+            n = sum(1 for s in SOURCES if tag in s.tags)
+            c = sum(1 for s in SOURCES
+                    if tag in s.tags and s.kind == "telegram")
+            priced = f"{tag}({n}, {c} channel{'s' if c > 1 else ''})"
+            assert priced in texts[name], (
+                f"{name} lists {tag} without its channel count; {n} sources "
+                f"reads as cheap and {c} of them are fetched one at a time")
+
+        # And a tag with no channels carries no such note, or the mark stops
+        # marking anything.
+        free = next(t for t in {tag for s in SOURCES for tag in s.tags}
+                    if t not in channels)
+        n = sum(1 for s in SOURCES if free in s.tags)
+        assert f"{free}({n})" in texts[name]

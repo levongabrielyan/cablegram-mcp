@@ -38,36 +38,35 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.2.0 | 2026-09-01T01:45:06Z..2026-09-01T09:45:06Z
+CABLEGRAM v0.2.1 | 2026-09-02T00:03:15Z..2026-09-02T08:03:15Z
+SILENT data_secrets  (answered, published nothing in this window)
 CEILING cls hn  (returned everything it can serve, so this window is wider than its answer)
-        What falls outside what it served is not absent, it is unseen. Narrow the window.
-CUT   cls=2/22  hn=2/235   (newest kept)
+        What falls outside what they served is unseen, not absent, and their totals on
+        CUT count what they served rather than what the window holds.
+CUT   cls=2/24  hn=2/233   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 2/22
--- 09-01
-86fe4fc2f313 09:34 2026年济南人工智能核心产业规模预计达800亿元
-50f39c2a8d03 09:25 财联社9月1日电，百度CFO表示，人工智能业务将很快带来与搜索业务相当的利润。
+## cls zh early,finance 2/24
+-- 09-02
+9a39aa030fad 08:01 AI教母披露“里程碑式”成果！全球首个多模态世界模型来了 可用于机器人预训练
+a091cd733825 07:46 德银：AI时代光网络硬件商将成最大赢家 首选Coherent与Lumentum
 
-## data_secrets ru telegram 1/1
--- 09-01
-5b36070d1786 08:18 Anthropic выпустили большую статью о том, как они улучшают безопасность в век побегов агентов из лабораторий
-
-## hn en community,origin-search 2/235
--- 09-01
-7dcd951ed6d0 09:44 A permissioned token and a honeypot look identical on-chain (xroot.dev)
-1550a166e5c4 09:43 Show HN: HyperMarkdown, streaming Markdown renderer for React (github.com)
+## hn en community,origin-search 2/233
+-- 09-02
+b004a9ab300c 08:01 Why Spec-Driven Development Tools Fail in the Enterprise (martinelli.ch)
+ecb6d57923b2 08:01 When Claude Code went rogue, years of Bengaluru heritage work disappeared (deccanherald.com)
 ```
 
-*Eight hours of three sources at `limit_per_source=2`, verbatim, in 2.7
-seconds and 325 tokens. The header states the window and nothing else:
-every source asked for is either a block below or named on a line above,
-so there is no tally to check. `CUT` says what was left out and how much
-there was — 22 items from cls, two printed. `CEILING` is the one that
-matters most: cls and hn served everything they could, so eight hours is
-wider than what those two answered, and what falls outside is unseen
-rather than absent.*
+*Eight hours of three sources at `limit_per_source=2`, verbatim, and
+264 tokens. Three passes took 2.3s, 10.7s and 2.3s — the middle one is a
+Telegram channel being slow, which is what the cost table below is about.
+Every line above the rule is something the reader cannot work out for
+itself: `data_secrets` answered and published nothing, `cls` and `hn`
+served everything they hold so eight hours is wider than what those two
+answered, and 24 items existed from cls where two are printed. There is
+no tally, because every source asked for is either a block or a name
+above.*
 
 **What it costs.** A reply is priced by what the sources published, not by this
 code, so these are ranges from repeated measurement rather than figures:

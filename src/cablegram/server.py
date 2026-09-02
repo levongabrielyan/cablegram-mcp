@@ -53,10 +53,29 @@ LIVE_DEADLINE = 45.0
 # selector arrived by accident and the cheap ones did not arrive at all: a model
 # after the Chinese labs has `weights`, six sources in under a second, and no
 # way to find out.
+#
+# The channel count travels with it because the source count alone is an
+# inverted signal, and the COST paragraph three lines below says so outright:
+# "language is not the axis, channel count is". Measured against the catalogue:
+#
+#     papers(1)      one Telegram channel, serialised, three seconds apart
+#     researcher(1)  one Telegram channel
+#     technical(5)   one of the five is a channel, and pays the same penalty
+#     weights(6)     no channels at all — 0.47s measured
+#
+# The two smallest numbers in the menu were the two slowest calls per source,
+# and the one that looked six times larger was the fastest. A model reading the
+# menu for the cheap option picked the expensive one.
 def _tag_menu() -> str:
     counted = Counter(tag for s in SOURCES for tag in s.tags)
-    return ", ".join(f"{tag}({n})" for tag, n in
-                     sorted(counted.items(), key=lambda kv: (-kv[1], kv[0])))
+    channels = Counter(tag for s in SOURCES if s.kind == "telegram"
+                       for tag in s.tags)
+    out = []
+    for tag, n in sorted(counted.items(), key=lambda kv: (-kv[1], kv[0])):
+        c = channels.get(tag, 0)
+        out.append(f"{tag}({n})" if not c
+                   else f"{tag}({n}, {c} channel{'s' if c > 1 else ''})")
+    return ", ".join(out)
 
 # Dispatches this process can still resolve an id for. Nothing is kept between
 # runs, so this is the whole of wire_read's reach.
@@ -392,7 +411,10 @@ def build(rows_from=None) -> MCPServer:
             "is no tally to read: count them if you need the number.\n"
             "`sources` takes ids, tags and languages in one list, so ['weights', "
             "'hn'] is a legal request. Languages: en, zh, ru. Tags, with how many "
-            f"sources carry each — {_tag_menu()}. Ask for the narrowest thing that "
+            f"sources carry each — {_tag_menu()}. A channel count is there because "
+            "channels are the price: they are fetched one at a time. `lab` and "
+            "`launches` each mix blog posts with model-repo listings; `weights` is "
+            "the six lab namespaces on their own. Ask for the narrowest thing that "
             "answers the question; wire_sources has the full catalogue but costs "
             "about 1,500 tokens, and you should not need it to make a choice.\n"
             "`max_tokens` (default 12000) bounds the reply. Over budget, the "
@@ -544,7 +566,10 @@ def build(rows_from=None) -> MCPServer:
             "source with nothing to say.\n"
             "`sources` takes ids, tags and languages in one list, so ['weights', "
             "'hn'] is a legal request. Languages: en, zh, ru. Tags, with how many "
-            f"sources carry each — {_tag_menu()}. Searching a tag rather than "
+            f"sources carry each — {_tag_menu()}. A channel count is there because "
+            "channels are the price: they are fetched one at a time. `lab` and "
+            "`launches` each mix blog posts with model-repo listings; `weights` is "
+            "the six lab namespaces on their own. Searching a tag rather than "
             "everything is narrower and usually far cheaper, and the reply names "
             "which sources answered.\n"
             "`max_tokens` (default 8000) bounds the reply; over budget the rows are "
