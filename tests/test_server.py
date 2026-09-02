@@ -652,3 +652,60 @@ async def test_the_tag_menu_prices_a_tag_on_the_axis_the_cost_note_names(server)
                     if t not in channels)
         n = sum(1 for s in SOURCES if free in s.tags)
         assert f"{free}({n})" in texts[name]
+
+
+@pytest.mark.anyio
+async def test_reading_an_item_dates_it_by_its_publisher_not_by_who_carried_it_first():
+    """The listing was fixed to date each block by its own source's sighting.
+    wire_read was not, and it is the tool that names a publisher.
+
+    It serves from the process cache, which holds one row per id — the last one
+    `remember` saw, and rows arrive ordered by source, so for an item two
+    sources carried it is whichever sorts first alphabetically. That row mixes
+    two levels: `first_source` is a fact about the item, `published` is a fact
+    about that one sighting. Measured, OpenAI publishing at T-10h and Hacker
+    News carrying it at T-1h:
+
+        ## e657a4dcf6ea openai en 2026-09-02T12:02:27Z ... [hn,openai]
+        Lo que OpenAI escribió
+
+    "OpenAI published this at 12:02". OpenAI published it at 03:02; 12:02 is
+    when somebody submitted it to Hacker News. Nine hours wrong, under the
+    publisher's name, with the publisher's headline and body, and no `~` to say
+    the date is borrowed. Found by a reviewer building exactly this fixture;
+    the commit that fixed the listing (0eda5d0) claimed to have covered it.
+
+    hn sorts before openai, so hn's row is the one cached — that is the
+    accident this test is built to hit, and the reason the pair is not
+    symmetrical.
+    """
+    url = "https://openai.example/one-post"
+    published = NOW - timedelta(hours=10)
+    submitted = NOW - timedelta(hours=1)
+    stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def rows():
+        db = connect()
+        store_entries(db, by_id("openai"),
+                      [Entry("What OpenAI wrote", url, published, "the post",
+                             "description")], fetched_at=stamp)
+        store_entries(db, by_id("hn"),
+                      [Entry("Submitted to HN", url, submitted, None, None)],
+                      fetched_at=stamp)
+        return db
+
+    server = build(rows)
+    await call(server, "wire_latest", hours=24)
+    out = await call(server, "wire_read", ids=[item_id(url)])
+    heading = next(l for l in out.splitlines() if l.startswith("## "))
+
+    assert " openai " in heading, heading
+    assert published.strftime("%Y-%m-%dT%H:%M") in heading, (
+        f"the item's date is when its publisher published it:\n{heading}")
+    assert submitted.strftime("T%H:%M") not in heading, (
+        f"that is when Hacker News carried it, not when OpenAI published it:\n"
+        f"{heading}")
+    assert "~" not in heading.split(" openai ")[1][:1], (
+        "the publisher's own exact date is not borrowed")
+    assert "What OpenAI wrote" in out and "Submitted to HN" not in out, (
+        "and the headline is the publisher's, for the same reason")

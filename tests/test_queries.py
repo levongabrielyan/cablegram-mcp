@@ -175,8 +175,12 @@ def test_search_says_which_engine_answered(db):
 # is deliberately not here: latest_items and search_items return the headline of
 # the source that carried it, items_by_ids the item's own, and that difference is
 # on purpose.
-ITEM_LEVEL = ("id", "url", "url_norm", "lang", "published", "date_exact",
-              "target_host", "first_source", "via", "sources")
+# Facts about the ITEM. `published` and `date_exact` are deliberately absent:
+# on a listing row they are the sighting's, by design, and differ across the
+# two rows one URL two sources carried. The item's own date travels as
+# `item_published`, and that is the one every path has to agree on.
+ITEM_LEVEL = ("id", "url", "url_norm", "lang", "item_published", "item_date_exact",
+              "item_title", "target_host", "first_source", "via", "sources")
 
 
 def test_every_read_path_reports_the_same_facts_about_the_same_item(db):
@@ -201,17 +205,30 @@ def test_every_read_path_reports_the_same_facts_about_the_same_item(db):
                   [Entry("BFL выпустили FLUX Video Upscale", "https://t.me/ai_newz/1",
                          NOW, None, None, links=(linked,))],
                   fetched_at=iso(NOW))
+    # One URL two sources carried, at different times and under different
+    # headlines. The fixture had none, so this test passed while wire_read
+    # printed Hacker News's submission time under OpenAI's name: the paths
+    # agreed on every item that had only one sighting to disagree about.
+    shared = "https://openai.example/shared-post"
+    store_entries(db, by_id("openai"),
+                  [Entry("What OpenAI wrote", shared, NOW - timedelta(hours=10),
+                         "the post", "description")], fetched_at=iso(NOW))
+    store_entries(db, by_id("hn"),
+                  [Entry("Submitted to HN", shared, NOW - timedelta(hours=1),
+                         None, None)], fetched_at=iso(NOW))
 
     since = iso(NOW - timedelta(days=7))
     # The linked article is deliberately absent: latest_items and search_items
     # both filter `via = 'feed'` now, so an article nothing published under its
     # own feed reaches wire_read by id and by no other route. Asserted below
     # rather than left implied.
-    ids = [item_id("https://hn.example/0")]
+    ids = [item_id("https://hn.example/0"), item_id(shared)]
     paths = {
         "latest_items": latest_items(db, since=since),
         "search_items": search_items(db, "GLM", since=since)
-                        + search_items(db, "FLUX", since=since),
+                        + search_items(db, "FLUX", since=since)
+                        + search_items(db, "OpenAI", since=since)
+                        + search_items(db, "Submitted", since=since),
         "items_by_ids": items_by_ids(db, ids),
     }
 

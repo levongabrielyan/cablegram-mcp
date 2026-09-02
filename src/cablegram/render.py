@@ -275,10 +275,18 @@ def render_read(rows: list[dict], *, requested: list[str],
         body = (f" body={row['body_src']} {len(row['body'])}c" if row.get("body")
                 else " body=none")
         borrowed = row.get("via") == "link"
-        mark = "~" if borrowed or not row.get("date_exact", 1) else ""
+        # Every fact on this heading is about the item: who published it, in
+        # what language, when. The cached row a listing left behind is one
+        # source's sighting, and its `published` is that source's — for an item
+        # two sources carried, the alphabetically first one's. Read the item's
+        # date, which travels under its own name, and fall back to the
+        # sighting's only for a row that predates that column.
+        when = row.get("item_published") or row["published"]
+        exact = row.get("item_date_exact", row.get("date_exact", 1))
+        mark = "~" if borrowed or not exact else ""
         out = []
         out.append(f"\n## {row['id']} {row.get('first_source', '')} {row.get('lang','')} "
-                   f"{mark}{row['published']}{body}{cross}")
+                   f"{mark}{when}{body}{cross}")
         out.append(f"url {row['url']}")
         out.append(row.get("item_title") or row["title"])
         if row.get("body"):

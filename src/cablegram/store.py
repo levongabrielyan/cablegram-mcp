@@ -463,6 +463,22 @@ _ITEM_COLUMNS = (
     # was a Russian channel's paraphrase printed under `openai en`, with a date
     # in it that OpenAI's post does not contain.
     "       i.title AS item_title,"
+    # The item's own date, under its own name, for the same reason as its
+    # headline. wire_read serves from the process cache, which holds one row
+    # per id: the last one `remember` saw, and rows arrive ordered by source, so
+    # for an item two sources carried it is whichever sorts first. That row's
+    # `published` is that sighting's. Printed beside `first_source`, which is
+    # the item's, it read:
+    #
+    #     ## e657a4dcf6ea openai en 2026-09-02T12:02:27Z ... [hn,openai]
+    #
+    # OpenAI published at 03:02; 12:02 is when somebody submitted it to Hacker
+    # News, which sorts before "openai" and so owned the cached row. Nine hours
+    # wrong under the publisher's name, with no `~`. The listing had been fixed
+    # to date each block by its own source (0eda5d0); wire_read had not, because
+    # it never reads the item table — only these rows. Now the row carries both
+    # dates, each under the name that says whose it is.
+    "       i.published AS item_published, i.date_exact AS item_date_exact,"
     # Both of these are facts about the item, and both were computed by
     # items_by_ids alone. That was invisible while wire_read only ever read the
     # file; serving live, it reads rows these other two queries produced, and a
