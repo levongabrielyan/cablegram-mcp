@@ -1,6 +1,6 @@
 """URL normalisation and stable item identity.
 
-Every archived item is keyed by ``item_id(url)``. That id appears in tool output
+Every item is keyed by ``item_id(url)``. That id appears in tool output
 and in every reply, so this module's behaviour is frozen: changing it reassigns
 every id ever issued.
 
@@ -13,8 +13,8 @@ Two rules drive the details below, and both come from the same asymmetry:
 * **Merging two articles is unrecoverable.** ``url_norm`` is UNIQUE, so the
   second one never reaches the reply and nothing reports it.
 * **Splitting one article is a duplicate**, which is recoverable — though not
-  harmless: every split quietly lowers the cross-source count, so a story seen
-  in six feeds may report four, and a wrong count looks like no failure at all.
+  harmless: every split hides that two sources carried one story, so a story
+  six feeds ran names fewer carriers than it had, and nothing reports the gap.
 
 Both are bad; only one is permanent. So every judgement call here errs towards
 keeping URLs apart.
@@ -30,7 +30,7 @@ __all__ = ["normalise", "item_id", "ID_LENGTH", "IDENTITY", "IDENTITY_RECIPE",
            "NORMALISE_VERSION", "id_recipe"]
 
 # 12 hex = 48 bits. A 50% chance of collision arrives at ~19.7 million items;
-# this archive grows by ~200k a year. At 8 hex that point was 77k items — five
+# the feeds run to ~200k items a year. At 8 hex that point was 77k items — five
 # months — and a collision means a real article silently rejected by the PRIMARY
 # KEY, in the one part of the system that cannot be rebuilt.
 ID_LENGTH = 12
@@ -42,9 +42,11 @@ ID_LENGTH = 12
 # than silently archiving everything it already holds a second time.
 NORMALISE_VERSION = 1
 
-# The algorithm, as one string. Stamped into every archive on creation and
-# checked on every open: a change here reassigns every id ever issued, so an
-# archive carrying a different value refuses to open. See archive.connect().
+# The algorithm, as one string. It used to be stamped into an archive file and
+# checked on open; there is no file now, so nothing checks it at runtime. It is
+# kept because ids appear in every reply and a caller may hold one across
+# calls: a change here reassigns every id it has in hand, and the version in
+# this string is where that change has to become visible.
 IDENTITY = f"sha1[:{ID_LENGTH}]/v{NORMALISE_VERSION}"
 
 _HOST_PREFIXES = ("www.", "m.", "amp.", "mobile.")
@@ -107,8 +109,8 @@ def _clean_query(query: str) -> str:
 def _clean_path(path: str) -> str:
     """Trailing slashes never distinguish two pages, and the bare root has none.
 
-    Without the second half, ``example.com`` and ``example.com/`` archive as two
-    items — which an earlier test asserted as correct, having been written after
+    Without the second half, ``example.com`` and ``example.com/`` are stored as
+    two items — which an earlier test asserted as correct, having been written after
     the code rather than before it.
     """
     path = unicodedata.normalize("NFC", path)
@@ -119,8 +121,8 @@ def normalise(url: str) -> str:
     """Collapse the many spellings of one page into a single canonical form.
 
     ``m.36kr.com/p/123?utm_source=wechat`` and ``https://36kr.com/p/123/`` are
-    the same article. Without this they archive as two items and the
-    cross-source count — the strongest early signal available — never fires.
+    the same article. Without this they are stored as two items and neither
+    names the other's source among its carriers.
     """
     url = url.strip()
     if not url:
@@ -155,7 +157,7 @@ def id_recipe() -> str:
     this module designed to grow — new tracking parameters appear every month.
     So the change most likely to happen was also the one the version number
     would forget: adding a key changes the id of every URL carrying it, and
-    those re-archive as duplicates with nothing to say so.
+    those are stored again as duplicates with nothing to say so.
 
     This moves on its own. It is deliberately not part of IDENTITY: such a
     change touches a handful of ids, not all of them, so it is recorded rather

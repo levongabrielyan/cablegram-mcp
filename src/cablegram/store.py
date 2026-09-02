@@ -325,19 +325,18 @@ def items_of_source(db: sqlite3.Connection, source_id: str, limit: int = 200) ->
 def record_attempt(db: sqlite3.Connection, fetched: Fetched) -> None:
     """Update what is known about one request. Keyed by URL, not by source.
 
-    Four rules, each protecting something that fails quietly:
+    Two rules, each protecting something that fails quietly:
 
-    * A 304 is a success. The source answered; it simply had nothing new.
-      Counting it as failure turns a quiet week into a fake outage.
     * A failure never touches ``last_ok``. That field is how anyone notices a
       source has been mute for days — overwrite it and the silence is invisible.
-    * A failure never touches the validators either, or the next poll
-      re-downloads a feed the server already has. Neither does a 304: there is
-      no new content, so the stored validators are still the right ones — and
-      relying on the fetcher to echo them back would make a hand-written
-      adapter that forgets able to null them on a success path.
-    * One row per URL. A source can be several requests, and sharing a row sent
-      one endpoint's validator to another.
+    * One row per URL. A source can be several requests, and sharing a row
+      blended one endpoint's state into another's.
+
+    Two rules that used to be here are gone with what they protected. "A 304 is
+    a success" was true for a poller holding a copy of the feed; nothing is held
+    now, so the fetcher reports a 304 as a failure before it ever reaches this
+    function — see fetch.py. And there are no validators to preserve, because no
+    conditional request is ever sent.
     """
     ok = fetched.ok
     with db:

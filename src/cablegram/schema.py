@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_item_pub        ON item(published DESC);
 
 -- One row per source that published the same URL. `item` can only name the
 -- source that got there first, because url_norm is UNIQUE — so without this
--- table the cross-source count reads 1 for everything, which looks like a story
+-- table no item could name more than one carrier, which looks like a story
 -- nobody else picked up rather than like a missing feature.
 --
 -- The headline is kept per sighting: qbitai writes 智谱 where Hacker News writes
