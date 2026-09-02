@@ -92,7 +92,10 @@ SOURCES: tuple[Source, ...] = (
         "https://www.producthunt.com/feed", "en",
         ("launches",),
         "What shipped and is being charged for, which no other source here "
-        "covers. Not AI-only: most of a day is not about this.",
+        "covers. Not AI-only: most of a day is not about this. Its headline is "
+        "the product's name and nothing else, so the listing is unreadable "
+        "without the bodies: `Happy Shrimp` is Alibaba's AI music generator "
+        "and `Murmell` is Google Docs for agents, both in 70 characters.",
     ),
     Source(
         "anthropic", "Anthropic — news", "nextjs",
