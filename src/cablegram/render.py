@@ -445,7 +445,7 @@ def render_search(
             # two sources, a term only hn had, and the reply said "searched
             # back to 2015-12-11" while hn itself reached back one day. The
             # deepest feed in the call set the number for all of them.
-            head.append("COVER " + "  ".join(f"{k}={v}" for k, v in sorted(reach.items()))
+            head.append("COVER " + "  ".join(f"{k}={v[:10]}" for k, v in sorted(reach.items()))
                         + "   (how far back each source could be searched)")
         if not printed and searched:
             # Kept, and only here. It was printed above every reply including

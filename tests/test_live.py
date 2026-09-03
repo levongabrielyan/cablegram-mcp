@@ -438,3 +438,14 @@ async def test_a_source_that_hit_its_ceiling_says_so_where_the_window_is_stated(
     out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
     assert "CEILING" not in out, (
         "that ceiling belongs to an earlier pass, not to this answer")
+
+    # And a cap that fell OUTSIDE the window is not a ceiling on it. The
+    # fixture's oldest row is six hours old; over a four-hour window the source
+    # served back past the window's start, so the window was covered whatever
+    # the cap. Measured on cls over 24h: 47 rows printed, 47 held, no CUT, and
+    # the line above them said "this window is wider than its answer".
+    mark["hit"] = True
+    out = await call(live, "wire_latest", hours=4, sources=["qbitai"])
+    assert "CEILING" not in out, (
+        "the source served rows older than the window start; the cap did not "
+        "truncate this window:\n" + out)

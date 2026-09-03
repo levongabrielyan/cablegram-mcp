@@ -235,7 +235,8 @@ def _down_sources(health: dict, wanted: set[str]) -> dict[str, str]:
     return down
 
 
-def _at_ceiling(health: dict, wanted: set[str]) -> list[str]:
+def _at_ceiling(health: dict, wanted: set[str], floors: dict[str, str],
+                since: str) -> list[str]:
     """Which of `wanted` served everything it could, so the answer is narrower
     than the window printed above it.
 
@@ -253,12 +254,24 @@ def _at_ceiling(health: dict, wanted: set[str]) -> list[str]:
 
     Compared against `last_write` for the same reason wire_sources does it: the
     mark is about the most recent pass, not a permanent tombstone.
+
+    And only when the cap fell inside the window. A source can hit its cap and
+    still reach past the window's start — cls serves a hundred rows, and over
+    24 hours those reach back further than the window does. Measured: 47 rows
+    printed, 47 held, no CUT, and the line above them said "this window is
+    wider than its answer". It was not. The floor each source served is what
+    decides: if the oldest row it returned is older than `since`, the window
+    was covered, whatever the cap.
     """
     out = []
     for sid in sorted(wanted):
         state = health.get(sid) or {}
-        if state.get("at_ceiling") and state["at_ceiling"] == state.get("last_write"):
-            out.append(sid)
+        if not (state.get("at_ceiling") and state["at_ceiling"] == state.get("last_write")):
+            continue
+        floor = floors.get(sid)
+        if floor and floor <= since:
+            continue
+        out.append(sid)
     return out
 
 
@@ -282,7 +295,7 @@ def _reach(db) -> dict[str, str]:
     back catalogue, another serves ten items — so one number cannot state it
     without overstating it for everything except the deepest feed.
     """
-    return {row["source"]: row["floor"][:10] for row in db.execute(
+    return {row["source"]: row["floor"] for row in db.execute(
         "SELECT source, MIN(published) AS floor FROM sighting"
         " WHERE published IS NOT NULL GROUP BY source")}
 
@@ -493,6 +506,7 @@ def build(rows_from=None) -> MCPServer:
             rows = latest_items(db, since=start, sources=sources,
                                 limit_per_source=limit_per_source)
             health = source_health(db)
+            floors = _reach(db)
         remember(rows, health)
 
         wanted = {s.id for s in resolve(sources)}
@@ -506,7 +520,7 @@ def build(rows_from=None) -> MCPServer:
         silent = sorted((wanted & pollable) - set(down)
                         - {r["source"] for r in rows})
         return render_latest(rows, since=start, until=_iso(until), down=down,
-                             ceiling=_at_ceiling(health, wanted),
+                             ceiling=_at_ceiling(health, wanted, floors, start),
                              sources_total=len(wanted), silent=silent,
                              no_adapter=sorted(wanted - pollable), detail=detail,
                              unknown=unknown, limit_per_source=limit_per_source,
@@ -627,7 +641,8 @@ def build(rows_from=None) -> MCPServer:
         return render_search(rows, query=query, since=start, days=days,
                              reach=reach,
                              down=_down_sources(health, {s.id for s in resolve(sources)}),
-                             ceiling=_at_ceiling(health, {s.id for s in resolve(sources)}),
+                             ceiling=_at_ceiling(health, {s.id for s in resolve(sources)},
+                                                 reach, start),
                              unknown=_unknown_selectors(sources),
                              max_tokens=max_tokens)
 
