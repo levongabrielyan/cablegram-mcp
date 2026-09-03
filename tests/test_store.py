@@ -666,3 +666,18 @@ def test_a_search_does_not_serve_a_post_and_its_link_as_two_separate_hits(db):
     assert len(rows) == 1, (
         f"one story, one hit; the search returned {len(rows)}: "
         f"{[(r['id'], r['title']) for r in rows]}")
+
+
+def test_a_quoted_phrase_finds_what_the_bare_phrase_finds(db):
+    """Doubling the quotes turned "Claude Code" into a search for the four
+    characters «"Claude Code"». Measured on a week of Hacker News: the bare
+    phrase found ten, the quoted one none — under a line saying nothing
+    matched. Quoting a phrase is the most natural thing a caller does."""
+    store_entries(db, by_id("hn"),
+                  [Entry("Anthropic ships a Claude Code update", "https://hn.example/cc",
+                         PUB, None, None)], fetched_at=NOW)
+    since = "2026-08-01T00:00:00Z"
+    bare, _ = search_items(db, "Claude Code", since=since)
+    for spelled in ('"Claude Code"', "'Claude Code'", "Claude Code*", "  Claude Code  "):
+        rows, _ = search_items(db, spelled, since=since)
+        assert [r["id"] for r in rows] == [r["id"] for r in bare], spelled

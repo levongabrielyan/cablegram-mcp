@@ -584,6 +584,16 @@ def _fts_query(query: str) -> str:
     something a person could plausibly type. Doubling the quotes inside one
     quoted phrase makes every character literal.
     """
+    query = query.strip()
+    # A caller who quotes a phrase means the phrase. Doubling the quotes made
+    # "Claude Code" search for the four characters «"Claude Code"» and return
+    # nothing, under a line saying nothing matched — while the same words
+    # unquoted found ten. One matching pair of surrounding quotes comes off,
+    # and so does a trailing star, which reads as "prefix" everywhere else and
+    # as a literal here.
+    if len(query) >= 2 and query[0] == query[-1] and query[0] in ("\"", "'"):
+        query = query[1:-1].strip()
+    query = query.rstrip("*").strip()
     return '"' + query.replace('"', '""') + '"'
 
 
