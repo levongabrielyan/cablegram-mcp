@@ -607,3 +607,31 @@ def test_a_search_trim_keeps_the_newest_hits_as_the_cut_line_says():
     newest = [r["id"] for r in sorted(rows, key=lambda r: r["published"], reverse=True)]
     assert set(printed) <= set(newest[:len(printed)]), (
         f"printed {printed[:3]}..., newest are {newest[:3]}...")
+
+
+def test_a_read_marks_a_date_that_is_not_the_publication_time():
+    """An item whose feed gave no date carries the capture time, and
+    `date_exact` says so. The listing prints the `~`; wire_read printed the
+    heading bare, so the moment the server fetched it read as the moment it
+    was published — and a mutant dropping the mark survived every test."""
+    rows = [{**ROW, "id": "a" * 12, "item_published": "2026-08-30T12:00:00Z",
+             "item_date_exact": 0, "sources": "qbitai"}]
+    out = render_read(rows, requested=["a" * 12])
+    heading = next(l for l in out.splitlines() if l.startswith("## "))
+    assert " ~2026-08-30T12:00:00Z" in heading, heading
+
+    exact = [{**ROW, "id": "b" * 12, "item_published": "2026-08-30T12:00:00Z",
+              "item_date_exact": 1, "sources": "qbitai"}]
+    heading = next(l for l in render_read(exact, requested=["b" * 12]).splitlines()
+                   if l.startswith("## "))
+    assert " 2026-08-30T12:00:00Z" in heading and "~" not in heading, heading
+
+
+def test_a_read_with_no_body_says_so():
+    """`body=none` on the heading is a fact; the line under it is the
+    instruction — open the url. Dropped, an item with nothing stored printed a
+    heading and a headline and stopped, which reads as a short article."""
+    rows = [{**ROW, "id": "a" * 12, "body": None, "body_src": None, "sources": "qbitai"}]
+    out = render_read(rows, requested=["a" * 12])
+    assert "body=none" in out
+    assert "no stored body" in out and "`url`" in out, out
