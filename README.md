@@ -38,39 +38,35 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.2.1 | 2026-09-02T05:17:42Z..2026-09-02T13:17:42Z
-CEILING cls hn  (returned everything it can serve, so this window is wider than its answer)
-        What falls outside what they served is unseen, not absent, and their totals on
-        CUT count what they served rather than what the window holds.
-CUT   cls=2/21  hn=2/330   (newest kept)
+CABLEGRAM v0.2.1 | 2026-09-03T00:43:54Z..2026-09-03T08:43:54Z
+CUT   cls=2/25  hn=2/241   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
 
-## cls zh early,finance 2/21
--- 2026-09-02
-14f5a0d51cc4 13:08 财联社9月2日电，KKR聘请Equinix和AES前高管，推进100亿美元的AI项目。
-57b590826a0d 13:05 勃林格殷格翰与Owkin达成AI药物研发许可协议
+## cls zh early,finance 2/25
+-- 2026-09-03
+6060520f9036 08:28 外滩大会下周上海开幕：首次聚焦AI新经济，观众报名人数已突破5万
+f5fd40b8040a 08:02 财联社9月3日电，AI服务器制造商慧与科技（HPE）尽管财报强劲且业绩指引上调，但美股盘前跌近6%。该股今年已累涨近120%。
 
 ## data_secrets ru telegram 2/2
--- 2026-09-02
-3f764e5bef12 12:04 Раз в сто лет Илья Суцкевер выходит из пещеры и пишет в X что-нибудь жуткое
-0dc80112bdb2 08:09 Fable 5.1 это конечно хорошо, но вы видели, что выпустил стартап Фей-Фей Ли?
+-- 2026-09-03
+a616ad4d8e77 08:02 Продолжаем следить за главными конференциями по машинному обучению. 19 сентября команда Data Secrets поедет на Practical ML Conf, чтобы посмотреть всё вживую и рассказать вам о самом интересном. Что точно идем смотреть:
+e2bf7cf25acf 06:13 Правительство США встало на сторону OpenAI в суде по иску об авторских правах NYT против OpenA
 
-## hn en community 2/330
--- 2026-09-02
-b1b75e4589fd 13:16 Elevating Antigravity agent skills, Part 2: Image generation (medium.com)
-1931f5174f8b 13:14 A Beginner's Deep Dive Guide to Entra Passkeys (emsroute.com)
+## hn en community 2/241
+-- 2026-09-03
+be0d90661a35 08:43 The Filesystem Explained [video] (youtube.com)
+fcba7e8174fd 08:43 Ask HN: How much does licensing approach influence purchase decisions? (news.ycombinator.com)
 ```
 
 *Eight hours of three sources at `limit_per_source=2`, verbatim, and
-264 tokens. Three passes took 2.3s, 10.7s and 2.3s — the middle one is a
-Telegram channel being slow, which is what the cost table below is about.
-Every line above the rule is something the reader cannot work out for
-itself: `data_secrets` answered and published nothing, `cls` and `hn`
-served everything they hold so eight hours is wider than what those two
-answered, and 24 items existed from cls where two are printed. There is
-no tally, because every source asked for is either a block or a name
-above.*
+466 tokens. Three passes took 2.3s, 2.3s and 3.3s. Every line above
+the rule is something the reader cannot work out for itself, and this
+morning there was only one: `CUT`, saying cls held 25 dispatches in those
+eight hours and hn 241, two of each printed. No `SILENT`, because all three
+published; no `CEILING`, because none of them served less than the window
+asked for. There is no tally, because every source asked for is either a
+block or a name above.*
 
 **What it costs.** A reply is priced by what the sources published, not by this
 code, so these are ranges from repeated measurement rather than figures:
