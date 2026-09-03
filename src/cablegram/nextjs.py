@@ -68,6 +68,23 @@ _POST = re.compile(
 )
 _SUMMARY = re.compile(r'"summary":"(?P<text>(?:[^"\\]|\\.)*)"')
 
+# A featured announcement. /news carries a "Newsroom Featured Grid" whose items
+# are not posts: the record is `featuredGridLink`, its date is a bare day, and
+# its URL is site-relative and not under the section. That is where Anthropic
+# put "Introducing Claude Fable 5.1 and Claude Mythos 5.1" on 2026-09-01, and
+# a reader that only took `post` records served 272 items without it. Measured
+# from the model's side: wire_search "Fable 5.1" over a week found it on Hacker
+# News, Product Hunt and TestingCatalog and not on anthropic — under a COVER
+# line vouching that anthropic had been searched back to 2021. The one outlet
+# that published the week's biggest launch was the one that could not see it.
+_FEATURED = re.compile(
+    r'"_type":"featuredGridLink",'
+    r'"date":"(?P<when>20\d\d-\d\d-\d\d[^"]*)",'
+    r'(?P<mid>(?:(?!"_type").){0,2000}?)'
+    r'"title":"(?P<title>(?:[^"\\]|\\.)*)",'
+    r'"url":"(?P<url>[^"]+)"'
+)
+
 
 def _unescape(raw: str) -> str:
     """The matched text is still JSON-escaped one level down."""
@@ -108,8 +125,27 @@ def parse_next_payload(raw: bytes, *, base: str) -> list[Entry]:
     )
 
     base = base.rstrip("/")
+    origin = base.split("/", 3)[0] + "//" + base.split("/", 3)[2]
     entries: list[Entry] = []
     seen: set[str] = set()
+    for card in _FEATURED.finditer(payload):
+        url = card["url"]
+        url = url if url.startswith("http") else origin + "/" + url.lstrip("/")
+        if url in seen:
+            continue
+        seen.add(url)
+        title = _unescape(card["title"]).strip()
+        if not title:
+            continue
+        summary = _SUMMARY.search(card["mid"])
+        body = _unescape(summary["text"]).strip() if summary else None
+        entries.append(Entry(
+            title=title,
+            url=url,
+            published=_when(card["when"]),
+            body=body or None,
+            body_src="summary" if body else None,
+        ))
     for post in _POST.finditer(payload):
         slug = post["slug"]
         # A featured post is listed twice, once in the hero block and once in

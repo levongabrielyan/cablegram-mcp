@@ -117,3 +117,28 @@ def test_a_section_that_stamps_a_bare_date_is_still_read():
     # UTC, not the machine's zone: astimezone() on a naive datetime read it as
     # local time and filed the post a day early under CEST.
     assert entry.published.isoformat() == "2026-05-25T00:00:00+00:00"
+
+
+def test_a_featured_announcement_that_is_not_a_post_is_still_read():
+    """/news carries a "Newsroom Featured Grid" whose items are `featuredGridLink`
+    records, not posts: a bare date, a site-relative URL outside the section.
+    That is where "Introducing Claude Fable 5.1 and Claude Mythos 5.1" sat on
+    2026-09-01, and a reader taking only `post` records served 272 items
+    without it.
+
+    From the model's side: wire_search "Fable 5.1" over a week found it on
+    Hacker News, Product Hunt and TestingCatalog and not on anthropic, under a
+    COVER line vouching that anthropic had been searched back to 2021. A model
+    concludes Anthropic has not announced it. The fixture is 1,570 bytes cut
+    from the live page that day: the card, then the post that follows it.
+    """
+    raw = (pathlib.Path(__file__).parent / "samples"
+           / "anthropic_news_featured.html").read_bytes()
+    entries = parse_next_payload(raw, base="https://www.anthropic.com/news")
+    titles = [e.title for e in entries]
+    assert "Introducing Claude Fable 5.1 and Claude Mythos 5.1" in titles, titles
+    card = next(e for e in entries if e.title.startswith("Introducing Claude Fable"))
+    assert card.url == "https://www.anthropic.com/claude-fable-and-mythos-5-1"
+    assert card.published.isoformat().startswith("2026-09-01")
+    assert card.body and "coding and knowledge work" in card.body
+    assert "Previewing the Model Hardware Standard" in titles, "and the post beside it"
