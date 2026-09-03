@@ -457,3 +457,16 @@ async def test_a_source_that_hit_its_ceiling_says_so_where_the_window_is_stated(
     assert "CEILING" not in out, (
         "the source served rows older than the window start; the cap did not "
         "truncate this window:\n" + out)
+
+
+@pytest.mark.anyio
+async def test_a_since_at_the_start_of_the_calendar_polls_rather_than_reporting_an_outage(live):
+    """`since=0001-01-01` parsed, rounded up past the year 1, and the poller's
+    own subtraction overflowed inside opened() — which swallows exceptions so
+    that a failed pass still reports its DOWN lines. The reply was
+    `DOWN qbitai=never polled` for a source nobody had asked: an overflow
+    reported as an outage, under the header of a window that had been
+    accepted."""
+    out = await call(live, "wire_latest", since="0001-01-01", sources=["qbitai"])
+    assert "never polled" not in out, out
+    assert "GLM-5 released" in out, "the source answered and its items are inside any window"

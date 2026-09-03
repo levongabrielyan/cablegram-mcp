@@ -495,6 +495,14 @@ def build(rows_from=None) -> MCPServer:
             span = until - datetime.strptime(start, "%Y-%m-%dT%H:%M:%SZ").replace(
                 tzinfo=timezone.utc)
             hours = max(hours, ceil(span.total_seconds() / 3600))
+            hours = min(hours, int((until - datetime.min.replace(tzinfo=timezone.utc))
+                                   / timedelta(hours=1)) - 24)
+            # And no wider than the calendar. `since=0001-01-01` parsed,
+            # rounded up past the year 1, and the poller's own subtraction
+            # overflowed — inside opened(), which swallows exceptions so that
+            # a failed pass still reports its DOWN lines. The reply was
+            # `DOWN qbitai=never polled` for a source that had never been
+            # asked: an overflow reported as an outage.
         else:
             start = _ago(until, "hours", hours)
         if detail not in _DETAIL:
