@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx2
 import pytest
-from dates import rss_date
+from dates import hub_date, rss_date
 
 from cablegram.fetch import Fetched
 from cablegram.poll import poll_once
@@ -163,7 +163,7 @@ def test_source_health_carries_the_two_facts_only_it_can_report(db):
 # ── the poller ──────────────────────────────────────────────────────────────
 
 HUB_PAGE = json.dumps([
-    {"id": f"org/model-{i}", "createdAt": "2026-08-30T10:00:00.000Z",
+    {"id": f"org/model-{i}", "createdAt": hub_date(6),
      "likes": 10, "downloads": 20, "trendingScore": 5}
     for i in range(50)
 ]).encode()

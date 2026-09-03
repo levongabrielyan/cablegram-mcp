@@ -216,9 +216,12 @@ async def test_search_says_how_far_back_the_archive_really_goes(server):
 @pytest.mark.anyio
 async def test_an_unknown_source_selector_is_named(server):
     """wire_latest(sources=["deepseek"]) answered 0 items | 0/0 sources: a
-    plausible empty reply to a typo."""
-    out = await call(server, "wire_latest", sources=["deepseek"])
-    assert "deepseek" in out
+    plausible empty reply to a typo — back when deepseek was not a source.
+    It is one now, so this test passed by listing a real source's block and
+    asserted nothing about typos at all. Measured: with _unknown_selectors
+    returning [] it stayed green."""
+    out = await call(server, "wire_latest", sources=["deepseeek"])
+    assert "UNKNOWN SELECTOR deepseeek" in out, out
 
 
 @pytest.mark.anyio

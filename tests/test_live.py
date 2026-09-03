@@ -18,6 +18,7 @@ through fetch and parse, with the network answering from a fixture.
 """
 
 import re
+from datetime import datetime, timedelta, timezone
 
 import httpx2
 import pytest
@@ -363,7 +364,9 @@ async def test_a_since_in_the_future_is_refused_not_answered(live):
     inside it.
     """
     with pytest.raises(ToolError) as raised:
-        await call(live, "wire_latest", since="2027-01-01T00:00:00Z",
+        await call(live, "wire_latest",
+                   since=(datetime.now(timezone.utc) + timedelta(days=1))
+                   .strftime("%Y-%m-%dT%H:%M:%SZ"),
                    sources=["qbitai"])
     assert "future" in str(raised.value)
 

@@ -30,3 +30,8 @@ def rss_date(hours: float) -> str:
 def iso_date(hours: float) -> str:
     """A Telegram `<time datetime=...>` for a moment `hours` before now."""
     return _ago(hours).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
+def hub_date(hours: float) -> str:
+    """A Hugging Face `createdAt` for a moment `hours` before now."""
+    return _ago(hours).strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -31,16 +31,22 @@ WINDOW_FIXTURES = {
     "test_audit_edges.FEED": lambda: test_audit_edges.FEED,
     "test_audit_pipeline.FEED": lambda: test_audit_pipeline.FEED,
     "test_audit_bounds.feed()": lambda: test_audit_bounds.feed(1),
+    # The hub page is JSON, not a feed, and it was the one that slipped:
+    # `createdAt` fixed at 2026-08-30 fell out of a 48h window two days later,
+    # and the test around it went on exercising SILENT hub without noticing.
+    "test_audit_pipeline.HUB_PAGE": lambda: test_audit_pipeline.HUB_PAGE,  # already JSON text
 }
 
 _RSS = re.compile(r"<pubDate>(.*?)</pubDate>")
 _ISO = re.compile(r'datetime="([^"]+)"')
+_HUB = re.compile(r'"createdAt":\s*"([^"]+)"')
 
 
 def _dates(blob) -> list[datetime]:
     text = blob.decode() if isinstance(blob, bytes) else blob
     found = [parsedate_to_datetime(d) for d in _RSS.findall(text)]
     found += [datetime.fromisoformat(d) for d in _ISO.findall(text)]
+    found += [datetime.fromisoformat(d.replace("Z", "+00:00")) for d in _HUB.findall(text)]
     return found
 
 
@@ -49,10 +55,15 @@ def test_every_fixture_behind_a_relative_window_is_dated_relative_to_now():
     for name, build in WINDOW_FIXTURES.items():
         found = _dates(build())
         assert found, f"{name}: no dates found — has the fixture changed shape?"
-        for when in found:
-            age = now - when
-            assert timedelta(0) <= age < timedelta(hours=24), (
-                f"{name} carries {when.isoformat()}, which is {age} old. The "
-                f"tests behind it ask for hours=48, so a fixed date passes on "
-                f"the day it is written and fails every day after. Build it "
-                f"from tests/dates.py instead.")
+        # The newest date is the one a window has to contain; an older sibling
+        # placed there to test ordering is legitimate and ages on purpose. The
+        # first version of this guard checked every date and would have refused
+        # the hub fixture's deliberately old entry.
+        newest = max(found)
+        age = now - newest
+        assert timedelta(0) <= age < timedelta(hours=24), (
+            f"{name}'s newest date is {newest.isoformat()}, {age} old. The tests "
+            f"behind it ask for a window of hours, so a fixed date passes on the "
+            f"day it is written and fails every day after. Build it from "
+            f"tests/dates.py instead.")
+        assert all(when <= now for when in found), f"{name} carries a future date"

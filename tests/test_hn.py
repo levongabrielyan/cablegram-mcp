@@ -98,8 +98,8 @@ def test_a_bare_window_uses_the_chronological_endpoint():
 
 
 def test_a_term_search_uses_the_relevance_endpoint():
-    assert search_url(query="lovable", since=0).rstrip("?").endswith(
-        tuple(["hitsPerPage=100", "0"])) or "/search?" in search_url(query="lovable", since=0)
+    url = search_url(query="lovable", since=0)
+    assert "/search?" in url and "query=lovable" in url, url
 
 
 def test_only_stories_are_requested():
