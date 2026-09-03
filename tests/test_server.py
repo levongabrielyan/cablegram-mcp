@@ -740,9 +740,17 @@ async def test_the_cache_keeps_what_the_latest_reply_printed_even_if_it_was_cach
     try:
         await call(server, "wire_latest", hours=24, limit_per_source=2)
         listing = await call(server, "wire_latest", hours=24, limit_per_source=4)
-        first = re.findall(r"^(\w{12}) \d{2}:\d{2} ", listing, re.M)[0]
-        out = await call(server, "wire_read", ids=[first])
-        assert "UNKNOWN" not in out, (
-            f"{first} is the first line of the reply that just produced it")
+        printed = re.findall(r"^(\w{12}) \d{2}:\d{2} ", listing, re.M)
+        # Every id that fits has to resolve, not only the first. The first
+        # version of this test read line one alone and passed with the fault
+        # in place: under the old order it was the SECOND line that fell out,
+        # because the first call had cached the two newest and the second
+        # call's re-assignments left them exactly where they were. A test that
+        # checks one position checks an accident.
+        for iid in printed[:server_mod.SEEN_LIMIT]:
+            out = await call(server, "wire_read", ids=[iid])
+            assert "UNKNOWN" not in out, (
+                f"{iid} is line {printed.index(iid) + 1} of the reply that just "
+                f"produced it, and the cache holds {server_mod.SEEN_LIMIT}")
     finally:
         server_mod.SEEN_LIMIT = saved
