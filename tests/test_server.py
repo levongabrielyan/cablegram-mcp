@@ -757,3 +757,59 @@ async def test_the_cache_keeps_what_the_latest_reply_printed_even_if_it_was_cach
                 f"produced it, and the cache holds {server_mod.SEEN_LIMIT}")
     finally:
         server_mod.SEEN_LIMIT = saved
+
+
+def _two_dates():
+    old = NOW - timedelta(days=3)
+
+    def rows():
+        db = connect()
+        store_entries(db, by_id("qbitai"),
+                      [Entry("GLM today", "https://qbitai.example/today", NOW, None, None),
+                       Entry("GLM three days ago", "https://qbitai.example/old", old,
+                             None, None)],
+                      fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        store_entries(db, by_id("hn"),
+                      [Entry(f"GLM on HN {i}", f"https://hn.example/glm{i}", NOW, None, None)
+                       for i in range(3)],
+                      fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        record_attempt(db, Fetched("qbitai", url=by_id("qbitai").url, ok=True, body=b"x",
+                                   status=200, fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
+        record_attempt(db, Fetched("hn", url=by_id("hn").url, ok=True, body=b"x",
+                                   status=200, fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ")))
+        return db
+    return build(rows), old
+
+
+@pytest.mark.anyio
+async def test_cover_names_how_far_back_a_source_reached_not_its_newest_item():
+    """COVER is the floor: the oldest item each source served. With MIN turned
+    into MAX it printed today's date as "how far back", for a source whose
+    catalogue reaches back three days — eleven years, on openai."""
+    server, old = _two_dates()
+    out = await call(server, "wire_search", query="GLM", days=7)
+    cover = next(l for l in out.splitlines() if l.startswith("COVER"))
+    assert f"qbitai={old.strftime('%Y-%m-%d')}" in cover, cover
+
+
+@pytest.mark.anyio
+async def test_a_search_cut_counts_each_source_on_its_own():
+    """`source_total` is per source. Made global, the reply said
+    `CUT qbitai=1/5` for a source that held two — and every CUT line in the
+    reply carried the same total."""
+    server, _ = _two_dates()
+    out = await call(server, "wire_search", query="GLM", days=7, limit_per_source=1)
+    cut = next(l for l in out.splitlines() if l.startswith("CUT"))
+    assert "hn=1/3" in cut and "qbitai=1/2" in cut, cut
+
+
+@pytest.mark.anyio
+async def test_sources_reports_the_newest_item_a_source_holds():
+    """`newest` is MAX(published). As MIN it reported openai's newest item as
+    2015-12-11, beside OK — a source that publishes daily, described as a
+    decade silent."""
+    server, old = _two_dates()
+    await call(server, "wire_latest", hours=24 * 7)
+    out = await call(server, "wire_sources")
+    row = next(l for l in out.splitlines() if l.startswith("qbitai"))
+    assert NOW.strftime("%Y-%m-%d") in row and old.strftime("%Y-%m-%d") not in row, row

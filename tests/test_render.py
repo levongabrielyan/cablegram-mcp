@@ -571,3 +571,39 @@ def test_a_newline_in_a_body_or_title_cannot_forge_a_block_in_a_read():
     assert len([l for l in out.splitlines() if l.startswith("## ")]) == 1, out
     assert not [l for l in out.splitlines() if l.startswith("-- ")], out
     assert "fffffffffff0 09:00" not in _structure(out), out
+
+
+def _many(n: int, source: str = "hn") -> list[dict]:
+    """Rows as the query hands them over: newest first within a source. The
+    renderer trusts that order — the trim keeps the first N — so a fixture
+    that shuffles them tests nothing about the trim and fails for its own
+    reason. Measured: the first version of this shuffled, and did."""
+    rows = [{"id": f"{i:012x}", "source": source, "title": f"Story number {i} about agents",
+             "published": f"2026-08-{1 + i % 28:02d}T{i % 24:02d}:00:00Z", "lang": "en",
+             "tags": "community", "source_total": n, "date_exact": 1} for i in range(n)]
+    return sorted(rows, key=lambda r: r["published"], reverse=True)
+
+
+def test_a_search_over_budget_is_trimmed_and_says_so():
+    """`max_tokens` on wire_search: with the trim removed, 300 rows came back
+    as 9,965 tokens against a budget of 500, and nothing in the reply said the
+    budget had been ignored. render.py's trim loop was in the uncovered 4%."""
+    rows = _many(300)
+    out = render_search(rows, query="agents", since="s", days=30,
+                        reach={"hn": "2026-08-01"}, max_tokens=500)
+    printed = re.findall(r"^(\w{12}) \d{2}:\d{2} ", out, re.M)
+    assert len(printed) < 300, "nothing was trimmed"
+    assert estimate_tokens(out) <= 500 or out.startswith("BUDGET"), estimate_tokens(out)
+
+
+def test_a_search_trim_keeps_the_newest_hits_as_the_cut_line_says():
+    """`CUT hn=5/300 (newest kept)`. With the trim keeping the OLDEST five the
+    line still printed "newest kept" — the label and the rows disagreed and
+    nothing compared them."""
+    rows = _many(300)
+    out = render_search(rows, query="agents", since="s", days=30,
+                        reach={"hn": "2026-08-01"}, max_tokens=500)
+    printed = re.findall(r"^(\w{12}) \d{2}:\d{2} ", out, re.M)
+    newest = [r["id"] for r in sorted(rows, key=lambda r: r["published"], reverse=True)]
+    assert set(printed) <= set(newest[:len(printed)]), (
+        f"printed {printed[:3]}..., newest are {newest[:3]}...")

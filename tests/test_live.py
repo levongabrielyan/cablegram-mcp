@@ -64,6 +64,16 @@ def live(monkeypatch, tmp_path):
             return httpx2.Response(200, content=FEED)
         if "t.me" in url:
             return httpx2.Response(200, content=CHANNEL.encode())
+        if "algolia" in url:
+            # Exactly the cap: the one shape that has to produce CEILING, and
+            # the one no test had ever sent through poll_once.
+            import json, time
+            from cablegram.poll import HN_MAX
+            now = int(time.time())
+            hits = [{"objectID": str(i), "title": f"HN story {i}",
+                     "url": f"https://hn.example/{i}", "created_at_i": now - 60 * i}
+                    for i in range(HN_MAX)]
+            return httpx2.Response(200, content=json.dumps({"hits": hits}).encode())
         return httpx2.Response(503)
 
     def patched(*args, **kwargs):
@@ -473,3 +483,85 @@ async def test_a_since_at_the_start_of_the_calendar_polls_rather_than_reporting_
     out = await call(live, "wire_latest", since="0001-01-01", sources=["qbitai"])
     assert "never polled" not in out, out
     assert "GLM-5 released" in out, "the source answered and its items are inside any window"
+
+
+# ── guards for what survived a 160-mutant run over correct code ─────────────
+#
+# A reviewer mutated the search and listing paths and found that several lines
+# a model relies on had no test at all: the code was right and nothing would
+# notice it going wrong. Each test below names the mutant it exists to kill.
+
+
+@pytest.mark.anyio
+async def test_a_search_asks_the_sources_for_the_days_it_prints(live, monkeypatch):
+    """`opened(sources, days * 24)`. With the `* 24` gone, a seven-day search
+    fetched seven HOURS and printed `last 7d` over them — and hn, which takes
+    the window in its query, went from 5/11 to 1/1 with no CUT to say so."""
+    import cablegram.server as server_mod
+
+    asked = []
+    real = server_mod.poll_once
+
+    async def spy(db, sources, **kwargs):
+        asked.append(kwargs.get("window_hours"))
+        return await real(db, sources, **kwargs)
+
+    monkeypatch.setattr(server_mod, "poll_once", spy)
+    await call(live, "wire_search", query="GLM", days=3, sources=["qbitai"])
+    assert asked and asked[0] >= 3 * 24, f"three days asked for; the poller was handed {asked}"
+
+
+@pytest.mark.anyio
+async def test_an_id_a_search_printed_can_be_read(live):
+    """wire_search calls remember() like wire_latest does. Without it, every
+    id a search printed came back `not fetched in this session` — from the
+    reply that had just produced it."""
+    out = await call(live, "wire_search", query="GLM", days=7, sources=["qbitai"])
+    ids = re.findall(r"^~?(\w{12}) \d{2}:\d{2} ", out, re.M)
+    assert ids, out
+    assert "UNKNOWN" not in await call(live, "wire_read", ids=ids[:1])
+
+
+@pytest.mark.anyio
+async def test_a_block_lists_the_newest_dispatch_first(live):
+    """The description says "newest first within each". Reversed, the tool
+    still passed every test: nothing read the order of two lines."""
+    out = await call(live, "wire_latest", hours=48, sources=["qbitai"])
+    lines = [l for l in out.splitlines() if re.match(r"^\w{12} \d{2}:\d{2} ", l)]
+    titles = [l.split(" ", 2)[2] for l in lines]
+    assert titles.index("Second story") < titles.index("GLM-5 released"), titles
+
+
+@pytest.mark.anyio
+async def test_a_language_is_a_selector_not_a_typo(live):
+    """`sources=["ru"]` resolves to the Russian sources. Flagged UNKNOWN, the
+    reply carried "UNKNOWN SELECTOR ru" directly above the Russian blocks it
+    had just fetched."""
+    out = await call(live, "wire_latest", hours=48, sources=["ru"])
+    assert "UNKNOWN SELECTOR" not in out, out.splitlines()[:4]
+    assert "## ai_newz" in out, "the channel the fixture serves is Russian"
+
+
+@pytest.mark.anyio
+async def test_health_describes_the_last_call_and_not_the_ones_before(live):
+    """`session` is cleared before each call's health is stored. Without the
+    clear, a source asked for two calls ago still read OK in wire_sources —
+    "not in last call" is the fact that stops that."""
+    await call(live, "wire_latest", hours=48, sources=["qbitai"])
+    await call(live, "wire_latest", hours=48, sources=["openai"])
+    out = await call(live, "wire_sources")
+    row = next(l for l in out.splitlines() if l.startswith("qbitai"))
+    assert "not in last call" in row, row
+
+
+
+@pytest.mark.anyio
+async def test_hacker_news_at_its_cap_says_ceiling(live):
+    """The one source that hits its ceiling every day, and no test had ever
+    sent it through poll_once with rows: the branch that sets at_ceiling for
+    hn was in the uncovered 4%, and a mutant that never set it survived the
+    whole suite. The fixture answers Algolia with exactly HN_MAX hits, all
+    inside the window, so the cap fell inside it."""
+    out = await call(live, "wire_latest", hours=48, sources=["hn"], limit_per_source=3)
+    assert re.search(r"^CEILING .*\bhn\b", out, re.M), out.splitlines()[:5]
+    assert "CUT   hn=3/" in out
