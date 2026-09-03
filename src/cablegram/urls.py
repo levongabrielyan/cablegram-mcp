@@ -127,11 +127,21 @@ def normalise(url: str) -> str:
     url = url.strip()
     if not url:
         return ""
+    # Only pages. A feed carrying `javascript:void(0)`, `mailto:` or `data:`
+    # in <link> was normalised to `https://javascript:void(0)` and stored as
+    # an item, then served with "Open `url` for the text". A scheme that is
+    # not http(s) names something a reader cannot open, so it is not an item.
+    scheme_end = url.find(":")
+    if scheme_end > 0 and "//" not in url[:scheme_end + 3] and \
+            url[:scheme_end].replace("+", "").replace("-", "").replace(".", "").isalpha():
+        return ""
 
     parts = urlsplit(url if "//" in url else f"//{url}", scheme="https")
     scheme = parts.scheme.lower() or "https"
     if scheme == "http":
         scheme = "https"
+    if scheme != "https":
+        return ""
 
     host = _clean_host(parts.netloc)
     if not host:

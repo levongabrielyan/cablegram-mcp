@@ -174,3 +174,18 @@ def test_the_recipe_is_declared_and_matches_it(tmp_path):
     from cablegram.urls import IDENTITY, NORMALISE_VERSION
 
     assert IDENTITY == f"sha1[:{ID_LENGTH}]/v{NORMALISE_VERSION}"
+
+
+@pytest.mark.parametrize("junk", ["javascript:void(0)", "mailto:x@y.z", "data:text/html,hi",
+                                  "file:///etc/passwd", "ftp://x.test/a"])
+def test_a_link_that_is_not_a_page_is_not_an_item(junk):
+    """`javascript:void(0)` normalised to `https://javascript:void(0)`, was
+    stored as an item, and was served with "Open `url` for the text". A scheme
+    that is not http(s) names something a reader cannot open."""
+    assert normalise(junk) == ""
+
+
+def test_a_scheme_less_url_is_still_a_page():
+    """The rule above must not eat `example.com/x`, which feeds do write."""
+    assert normalise("example.com/x") == "https://example.com/x"
+    assert normalise("//example.com/x") == "https://example.com/x"

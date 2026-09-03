@@ -123,6 +123,10 @@ def _store_one(
         return "skipped", 0
 
     url_norm = normalise(url)
+    if not url_norm:
+        # Not a page: a javascript:, mailto:, data: or file: link. Nothing a
+        # reader could open, so nothing to store.
+        return "skipped", 0
     iid = item_id(url)
 
     # A feed that gives no date is not a feed with no news. Using the capture
