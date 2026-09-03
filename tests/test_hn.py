@@ -1,7 +1,6 @@
 """Hacker News through the Algolia index: no key, no auth, 10k requests an hour.
 
-The only source that can be searched at its origin rather than in the local
-archive, and the only one that links out — which is what makes it the bridge
+The only source that links out — which is what makes it the bridge
 between an English-language headline and the Chinese or Russian one for the
 same story.
 

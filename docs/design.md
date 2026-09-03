@@ -85,8 +85,10 @@ Full-text search uses `tokenize='trigram'`. With SQLite's default tokenizer
 every Chinese query returns zero hits, silently — Chinese has no spaces, so a
 whole headline becomes one token. Terms shorter than three characters cannot use
 a trigram index at all, and the common Chinese company names are exactly two, so
-those fall back to a substring scan. The output says which engine answered,
-because their recall differs.
+those fall back to a substring scan. Their recall differs; the reply used to
+name the engine and no longer does, because a line about the server is one
+more line able to contradict the rest, and it did. The tool description says
+what a query is instead.
 
 ## Failure handling
 

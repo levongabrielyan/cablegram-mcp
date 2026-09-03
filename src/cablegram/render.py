@@ -278,7 +278,7 @@ def render_read(rows: list[dict], *, requested: list[str],
                       f"thousand items and starts empty.")
         header.append("        Re-run wire_latest or wire_search for the same window "
                       "and the same `sources` — an id from a call that asked for "
-                      "other sources will not come back.")
+                      "other sources may not be in the cache.")
     header.append("---")
 
     chunks: list[tuple[str, list[str]]] = []

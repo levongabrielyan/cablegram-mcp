@@ -195,7 +195,7 @@ SOURCES: tuple[Source, ...] = (
         "tencent", "Tencent Hunyuan", "hub",
         "https://huggingface.co/tencent", "en",
         ("lab", "launches", "weights"),
-        "Eight releases in seven days, three of which the trending list "
+        "Measured 2026-08-31: eight releases in seven days, three of which the trending list "
         "carried.",
         author="tencent",
     ),

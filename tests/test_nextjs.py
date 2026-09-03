@@ -87,8 +87,11 @@ def test_a_page_with_no_records_yields_nothing_rather_than_raising():
     a quiet week. That is the correct reading for an undocumented format, and it
     is why this source is marked fragile.
 
-    /engineering is exactly this case today — a different template, 0 records of
-    25 pages — so it is not in the catalogue.
+    /engineering was believed to be this case — "a different template, 0 records
+    of 25 pages" — and was not: the regex required a time and that section
+    stamps a bare date. It is in the catalogue and serves its records. The
+    sentence is kept as the record of a measurement of the expression rather
+    than of the page.
     """
     assert parse_next_payload(b"<html><body>nothing here</body></html>", base=BASE) == []
 

@@ -96,8 +96,8 @@ def _mark_failed(db: sqlite3.Connection, fetched, source: Source, why: str) -> N
     model reads that as a quiet source.
 
     record_attempt(ok=False) already does the right thing: it leaves `last_ok`
-    alone so the silence stays visible, keeps the validators, and writes the
-    reason — which until now was caught and discarded.
+    alone so the silence stays visible, and writes the reason — which until now
+    was caught and discarded.
     """
     record_attempt(db, replace(fetched, ok=False, url=source.url, error=why[:200]))
 
@@ -179,7 +179,7 @@ async def poll_once(
     for source, fetched in zip(targets, results, strict=True):
         # The signature makes cls.cn's URL different every call, so the state is
         # keyed on the catalogue URL — otherwise source_state would grow a row
-        # per poll and never match a stored validator.
+        # per poll and the health of one source would be split across them.
         record_attempt(db, replace(fetched, url=source.url))
 
         if not fetched.ok:
@@ -250,10 +250,11 @@ async def poll_once(
         report.at_ceiling = (returned if returned is not None
                              else len(entries)) >= _ceiling(source)
         if report.at_ceiling:
-            # Recorded in `meta`, which is (k, v) and cannot change shape.
-            # source_state has no room for it and _seal refuses an archive whose
-            # columns moved, so a new column would kill every archive in
-            # existence to report one flag.
+            # Recorded in `meta`, which is (k, v). It went there when the
+            # database was a file whose schema was checked on open, so that a
+            # new column would not refuse every existing archive; the database
+            # is in memory now and the reason is gone, but the row is read from
+            # here by source_health and there is nothing to gain by moving it.
             with db:
                 db.execute("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)",
                            (f"ceiling:{source.id}", now))

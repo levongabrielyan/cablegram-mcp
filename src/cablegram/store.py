@@ -431,10 +431,10 @@ def source_health(db: sqlite3.Connection) -> dict[str, dict]:
     with five endpoints is alive if any of them answered, and its most recent
     error is worth showing even when another endpoint is fine.
     """
-    # `at_ceiling` lives in meta rather than in a column of its own: _seal
-    # compares the shape of the schema and refuses an archive whose columns
-    # moved, so adding one to report a flag would kill every archive already on
-    # disk. meta is (k, v) and cannot change shape.
+    # `at_ceiling` lives in meta rather than in a column of its own. It went
+    # there when the database was a file whose schema was checked on open;
+    # the database is in memory now, and the row simply stays where the
+    # poller writes it.
     ceilings = {row["k"].split(":", 1)[1]: row["v"] for row in
                 db.execute("SELECT k, v FROM meta WHERE k LIKE 'ceiling:%'")}
     # The newest thing each source has actually published, which is a different
@@ -507,7 +507,8 @@ _ITEM_COLUMNS = (
     #
     # `via` is the one that lies. 'link' means nothing has published this under
     # its own feed, so the headline, language, source and date all belong to
-    # whoever linked it — 59 items in the archive today. Missing, wire_read
+    # whoever linked it — measured at 59 items when there was a file to count.
+    # Missing, wire_read
     # printed a Telegram channel's Russian post as that channel's own dispatch
     # about an English blog it never wrote.
     "       CASE WHEN EXISTS (SELECT 1 FROM sighting x"
@@ -627,9 +628,12 @@ def search_items(
     limit_per_source: int = 25,
     until: str | None = None,
 ) -> tuple[list[dict], str]:
-    """Search the archived headlines, and say which engine answered.
+    """Search the headlines this pass fetched, and say which engine answered.
 
-    Returns (rows, engine). The engine matters to the caller: "GLM" runs on the
+    Returns (rows, engine). The engine is no longer printed — the ENGINE line
+    was one more sentence about the server able to contradict the rest of the
+    reply — but the two engines have different recall, and the caller that
+    tests this needs to know which one it exercised. "GLM" runs on the
     trigram index and "GL" cannot, so it falls to a substring scan with
     different recall. Two queries answered by different engines are not
     comparable, and nothing in the output would otherwise say so.

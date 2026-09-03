@@ -38,8 +38,9 @@ ID_LENGTH = 12
 # Bumped only when a change in this module reassigns ids that were already
 # issued. Adding a tracking key to the denylist does not qualify: it leaves
 # essentially every existing id alone. Rewriting how the path or host is treated
-# does, and an archive stamped with the old value then refuses to open rather
-# than silently archiving everything it already holds a second time.
+# does. When there was an archive file it was stamped with this and refused to
+# open under another value, rather than storing everything it held a second
+# time; now the number is where a change to the recipe becomes visible.
 NORMALISE_VERSION = 1
 
 # The algorithm, as one string. It used to be stamped into an archive file and

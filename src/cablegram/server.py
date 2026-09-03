@@ -428,8 +428,8 @@ def build(rows_from=None) -> MCPServer:
             "declared CUT (hn=25/57) means more exist in the window; raise "
             "limit_per_source or narrow the window. A source on the CEILING line "
             "served everything it can, so the window in the header is wider than "
-            "what that source answered — hn holds a thousand rows, which is about "
-            "thirty hours.\n"
+            "what that source answered — hn holds a thousand rows, which reaches back "
+            "between twenty and thirty-five hours depending on the day.\n"
             "The header states the window and nothing else. Every source asked for "
             "is either a block below or named on DOWN, PENDING or SILENT, so there "
             "is no tally to read: count them if you need the number.\n"
@@ -562,9 +562,10 @@ def build(rows_from=None) -> MCPServer:
             "cite it as an excerpt or open the url — never as the article. "
             "`body=none` means nothing was stored for THAT item; most sources ship "
             "bodies for some items and not others, so it says nothing about the "
-            "source. `body=hub` is not article text at all — it is a trend score and "
-            "two counts, so its short length is the format rather than a truncation, "
-            "and there is no fuller version to open.\n"
+            "source. `body=hub` is not article text at all — it is the repo's task, "
+            "two counts, and on the global list the trend score it was ordered on; "
+            "its short length is the format rather than a truncation, and there is "
+            "no fuller version to open.\n"
             "COST: bodies are the expensive path — forty long ones run to roughly "
             "40,000 tokens, eight times the listing that handed you the ids. Ask for "
             "the handful you actually need, not everything a listing offered. Whatever "
@@ -621,7 +622,8 @@ def build(rows_from=None) -> MCPServer:
             "it transliterated or translated before concluding anything.\n"
             "The query is ONE exact phrase, matched as a substring of the headline. "
             "'Claude Code' finds headlines containing those two words in that order "
-            "and nothing else: measured on a week of Hacker News, 'Claude Code' 10, "
+            "and nothing else: measured on what Hacker News serves (about 35 hours), "
+            "'Claude Code' 10, "
             "'Anthropic Claude' 0, 'GPT 5' 0 and 'GPT-5' 1. To find headlines that "
             "mention two things, search each and compare. Under three characters "
             "the index cannot be used and a plain substring scan runs instead, which "
@@ -644,7 +646,7 @@ def build(rows_from=None) -> MCPServer:
             # searched at all.
             raise ToolError(
                 "`query` is empty, so nothing would be searched — and the reply "
-                "would come back `0 shown hits`, which reads as an answer. Pass a "
+                "would come back as an empty search, which reads as an answer. Pass a "
                 "term, or use wire_latest if what you want is a whole window."
             )
         start = _ago(_now(), "days", days)
