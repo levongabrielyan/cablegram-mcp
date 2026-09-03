@@ -64,7 +64,14 @@ _AGGREGATORS = tuple(s.id for s in SOURCES if s.aggregator)
 
 
 def _utc_iso(dt) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Zero-pad the year. server._iso learned this yesterday; this did not.
+
+    A feed stamping the year 999 stored `999-09-03T...`, which sorts above
+    every real timestamp as a string, so the item came first in every window
+    and read as the newest thing published. Same bug, other function.
+    """
+    dt = dt.astimezone(timezone.utc)
+    return f"{dt.year:04d}-{dt:%m-%dT%H:%M:%SZ}"
 
 
 def store_entries(
@@ -516,8 +523,15 @@ def latest_items(
     since: str,
     sources: list[str] | None = None,
     limit_per_source: int | None = None,
+    until: str | None = None,
 ) -> list[dict]:
-    """Items seen since `since`, grouped by the source that carried them.
+    """Items seen since `since` and no later than `until`, grouped by source.
+
+    The upper bound was missing. A feed stamping a post an hour ahead put it at
+    the top of every window under a header that ended an hour earlier; one
+    stamped 2030 led a 48-hour listing and wire_sources reported the source
+    OK with `newest 2030-01-01`. Nothing said the date was impossible. A window
+    has two ends, and the reply prints both.
 
     One row per (source, item): a story two feeds ran appears under both, which
     is what "what did this source carry" means. `source_total` is the count
@@ -526,10 +540,13 @@ def latest_items(
     wanted = [s.id for s in resolve(sources)] if sources else None
     params: list = [since]
     clause = ""
+    if until:
+        clause += " AND s.published <= ?"
+        params.append(until)
     if wanted is not None:
         if not wanted:
             return []
-        clause = f" AND s.source IN ({','.join('?' * len(wanted))})"
+        clause += f" AND s.source IN ({','.join('?' * len(wanted))})"
         params += wanted
 
     rows = db.execute(
@@ -604,6 +621,7 @@ def search_items(
     since: str,
     sources: list[str] | None = None,
     limit_per_source: int = 25,
+    until: str | None = None,
 ) -> tuple[list[dict], str]:
     """Search the archived headlines, and say which engine answered.
 
@@ -626,8 +644,11 @@ def search_items(
         return [], "none"
 
     clause, params = "", [since]
+    if until:
+        clause += " AND s.published <= ?"
+        params.append(until)
     if wanted is not None:
-        clause = f" AND s.source IN ({','.join('?' * len(wanted))})"
+        clause += f" AND s.source IN ({','.join('?' * len(wanted))})"
         params += wanted
 
     if len(query) >= 3:

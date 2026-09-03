@@ -515,7 +515,8 @@ def build(rows_from=None) -> MCPServer:
 
         with closing(opened(sources, hours)) as db:
             rows = latest_items(db, since=start, sources=sources,
-                                limit_per_source=limit_per_source)
+                                limit_per_source=limit_per_source,
+                                until=_iso(until))
             health = source_health(db)
             floors = _reach(db)
         remember(rows, health)
@@ -642,6 +643,7 @@ def build(rows_from=None) -> MCPServer:
         _positive("limit_per_source", limit_per_source, "items per source")
         with closing(opened(sources, days * 24)) as db:
             rows, _engine = search_items(db, query, since=start, sources=sources,
+                                         until=_iso(_now()),
                                         limit_per_source=limit_per_source)
             reach = _reach(db)
             health = source_health(db)

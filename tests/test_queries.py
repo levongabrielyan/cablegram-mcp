@@ -356,3 +356,33 @@ def test_each_block_shows_when_its_own_source_carried_the_story(db):
             if r["id"] == item_id(url)}
     assert when == {"hn": iso(submitted), "openai": iso(published)}, (
         f"each block states when its own source carried it; got {when}")
+
+
+def test_a_date_after_the_window_ends_is_outside_it(db):
+    """The window had one end. A post stamped an hour ahead sat at the top of
+    every listing under a header that ended an hour earlier; one stamped 2030
+    led a 48-hour window and wire_sources reported the source OK with
+    `newest 2030-01-01`. Nothing said the date was impossible. The header
+    prints both ends; the query now honours both."""
+    ahead = "https://qbitai.example/from-the-future"
+    store_entries(db, by_id("qbitai"),
+                  [Entry("Written tomorrow", ahead, NOW + timedelta(days=2),
+                         None, None)], fetched_at=iso(NOW))
+    since, until = iso(NOW - timedelta(days=7)), iso(NOW)
+    assert item_id(ahead) not in {r["id"] for r in latest_items(db, since=since, until=until)}
+    assert not search_items(db, "tomorrow", since=since, until=until), (
+        "search has the same two ends")
+    # And without an upper bound it is still there: the bound is a parameter,
+    # not a filter applied behind the caller's back.
+    assert item_id(ahead) in {r["id"] for r in latest_items(db, since=since)}
+
+
+def test_a_stored_year_under_1000_sorts_where_it_belongs():
+    """server._iso learned to zero-pad the year yesterday; store._utc_iso had
+    the same bug. A feed stamping the year 999 stored `999-09-03T...`, which
+    sorts above every real timestamp as a string and led every window as the
+    newest thing published."""
+    from cablegram.store import _utc_iso
+    stamped = _utc_iso(datetime(999, 9, 3, tzinfo=timezone.utc))
+    assert stamped.startswith("0999-"), stamped
+    assert stamped < "2026-01-01T00:00:00Z", "and therefore it sorts as the past"
