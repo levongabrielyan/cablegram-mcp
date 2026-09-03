@@ -123,8 +123,9 @@ SOURCES: tuple[Source, ...] = (
         "https://www.anthropic.com/engineering", "en",
         ("lab", "official", "technical"),
         "The engineering section. Same reader, same fragility, and the one that "
-        "publishes a bare date with no time — read as UTC, which is what the "
-        "other two sections stamp.",
+        "publishes a bare date with no time — read as midnight UTC, which is "
+        "what the other two sections stamp, and marked `~` because the hour "
+        "is a fill.",
         fragile=True,
     ),
     Source(

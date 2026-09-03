@@ -145,3 +145,25 @@ def test_a_featured_announcement_that_is_not_a_post_is_still_read():
     assert card.published.isoformat().startswith("2026-09-01")
     assert card.body and "coding and knowledge work" in card.body
     assert "Previewing the Model Hardware Standard" in titles, "and the post beside it"
+
+
+def test_a_bare_date_is_marked_as_not_the_hour():
+    """/engineering stamps every post `2026-05-25`, and the featured cards on
+    /news do the same; the reader files them at midnight UTC. Midnight is a
+    fill. Unmarked, wire_read printed the Fable 5.1 announcement as
+    `2026-09-01T00:00:00Z` with the same authority as a post stamped to the
+    minute, and a model quoting the hour quoted one nobody wrote. Atom's
+    <updated>-only entries already carry the mark; this is the same fact."""
+    post = json.dumps('[{"_type":"post","publishedOn":"2026-05-25","slug":{"_type":"slug","current":"how-we-contain-claude"},"title":"How we contain Claude"}]')
+    doc = f'<script>self.__next_f.push([1,{post}])</script>'.encode()
+    entry = parse_next_payload(doc, base="https://www.anthropic.com/engineering")[0]
+    assert entry.date_exact is False, "a bare date has no hour to be exact about"
+
+    raw = (pathlib.Path(__file__).parent / "samples"
+           / "anthropic_news_featured.html").read_bytes()
+    entries = parse_next_payload(raw, base="https://www.anthropic.com/news")
+    card = next(e for e in entries if e.title.startswith("Introducing Claude Fable"))
+    assert card.date_exact is False, card
+    post = next(e for e in entries if not e.title.startswith("Introducing Claude Fable"))
+    assert post.date_exact is True, "the post beside it is stamped to the second"
+

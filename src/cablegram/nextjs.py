@@ -101,7 +101,8 @@ def _when(raw: str) -> datetime | None:
     astimezone() on a naive datetime reads it in the machine's local zone: in
     CEST that lands on 2026-05-24T22:00Z and files the post a day early. The
     site stamps its other two sections in UTC, so UTC is what the bare date
-    means — and guessing the reader's zone is not a property of the post.
+    means — and guessing the reader's zone is not a property of the post. The
+    hour is still a fill; `_exact` says so and the output marks it.
     """
     try:
         when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
@@ -110,6 +111,19 @@ def _when(raw: str) -> datetime | None:
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
     return when.astimezone(timezone.utc)
+
+
+def _exact(raw: str) -> bool:
+    """Whether the stamp carries a time of day at all.
+
+    A bare `2026-05-25` becomes midnight UTC above, and midnight is a fill,
+    not the hour the post went up. Unmarked, wire_read printed the Fable 5.1
+    announcement as `2026-09-01T00:00:00Z` with the same authority as a post
+    stamped to the minute. Measured on 2026-09-03: /engineering writes the
+    bare date on 25 of 25 posts, /news on both of its featured cards, and the
+    other 440 records carry a full timestamp.
+    """
+    return "T" in raw
 
 
 def parse_next_payload(raw: bytes, *, base: str) -> list[Entry]:
@@ -143,6 +157,7 @@ def parse_next_payload(raw: bytes, *, base: str) -> list[Entry]:
             title=title,
             url=url,
             published=_when(card["when"]),
+            date_exact=_exact(card["when"]),
             body=body or None,
             body_src="summary" if body else None,
         ))
@@ -163,6 +178,7 @@ def parse_next_payload(raw: bytes, *, base: str) -> list[Entry]:
             title=title,
             url=f"{base}/{slug}",
             published=_when(post["when"]),
+            date_exact=_exact(post["when"]),
             body=body or None,
             body_src="summary" if body else None,
         ))
