@@ -203,9 +203,13 @@ def _ago(until: datetime, name: str, value: int) -> str:
     try, which for a window argument is indistinguishable from the server being
     broken.
     """
-    step = timedelta(**{name: _positive(name, value, name)})
+    value = _positive(name, value, name)
     try:
-        return _iso(until - step)
+        # Both the timedelta and the subtraction can overflow. The first was
+        # outside this block, so `hours=10**20` reached the model as "Error
+        # executing tool" with no text — the exact silence this function
+        # exists to replace.
+        return _iso(until - timedelta(**{name: value}))
     except OverflowError:
         floor = datetime.min.replace(tzinfo=timezone.utc)
         widest = int((until - floor) / timedelta(**{name: 1}))

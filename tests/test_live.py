@@ -334,6 +334,14 @@ async def test_a_window_past_the_calendar_says_so_instead_of_failing_blank(live)
     message = str(raised.value)
     assert "hours" in message and "calendar" in message
 
+    # The timedelta itself overflows before the subtraction does, and it was
+    # built outside the guard: hours=10**20 reached the model as "Error
+    # executing tool" with no text at all.
+    for huge in (10**20, 2**63):
+        with pytest.raises(ToolError) as raised:
+            await call(live, "wire_latest", hours=huge, sources=["qbitai"])
+        assert "calendar" in str(raised.value), huge
+
     widest = int(re.findall(r"hours=(\d+)", message)[-1])
     out = await call(live, "wire_latest", hours=widest, sources=["qbitai"])
     assert "GLM-5 released" in out, (
