@@ -244,9 +244,15 @@ def parse_feed(raw: bytes) -> list[Entry]:
             continue
 
         body, body_src = _body(item)
-        published = _parse_date(
-            _first(item, "pubDate", f"{_DC}date", f"{_ATOM}published", f"{_ATOM}updated")
-        )
-        entries.append(Entry(title, url, published, body, body_src))
+        # <updated> is when the record last changed, not when the post was
+        # published. Taken as a publication date it filed a 2024 post edited
+        # today as published today, exact, at the top of the window. It is
+        # still the best date the feed offers, so it is kept — marked as not
+        # exact, which is what the `~` on the line means.
+        stamped = _first(item, "pubDate", f"{_DC}date", f"{_ATOM}published")
+        updated = "" if stamped else _first(item, f"{_ATOM}updated")
+        published = _parse_date(stamped or updated)
+        entries.append(Entry(title, url, published, body, body_src,
+                             date_exact=not updated))
 
     return entries

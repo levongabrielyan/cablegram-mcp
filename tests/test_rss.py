@@ -434,3 +434,29 @@ def test_the_flat_bomb_is_still_refused_without_the_tracker():
             b'</title><link>https://e.com/a</link></item></channel></rss>')
     with pytest.raises(ValueError, match="expan|entit"):
         parse_feed(flat)
+
+
+ATOM_UPDATED_ONLY = b"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry><title>Edited today, written in 2024</title>
+    <link href="https://e.com/old-post"/>
+    <updated>2026-09-03T08:00:00Z</updated></entry>
+  <entry><title>Published, properly</title>
+    <link href="https://e.com/new-post"/>
+    <published>2026-09-03T07:00:00Z</published>
+    <updated>2026-09-03T08:30:00Z</updated></entry>
+</feed>"""
+
+
+def test_an_entry_dated_only_by_updated_is_not_an_exact_publication_date():
+    """<updated> is when the record last changed. Taken as the publication
+    date it filed a 2024 post edited today as published today, exact, at the
+    top of the window. The date is kept — it is the best the feed offers — and
+    marked inexact, which is what the `~` on the line is for."""
+    by_url = {e.url: e for e in parse_feed(ATOM_UPDATED_ONLY)}
+    edited = by_url["https://e.com/old-post"]
+    assert edited.published.isoformat().startswith("2026-09-03T08:00")
+    assert edited.date_exact is False, "an edit time is not a publication time"
+    proper = by_url["https://e.com/new-post"]
+    assert proper.published.isoformat().startswith("2026-09-03T07:00"), "published wins"
+    assert proper.date_exact is True
