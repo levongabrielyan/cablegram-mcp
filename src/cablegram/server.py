@@ -366,6 +366,13 @@ def build(rows_from=None) -> MCPServer:
         # are the ones a model reads first, and with nothing kept between runs
         # this cache is the only thing that resolves an id at all.
         for row in reversed(rows):
+            # Reassigning a key keeps its old position, so an id cached by an
+            # earlier call stayed at the front and was the first evicted —
+            # even when this reply had just printed it. Measured: a 25-row
+            # call followed by a 4,500-row one left the second reply's first
+            # three ids UNKNOWN. Pop and reinsert, so "most recently printed"
+            # is what the order means.
+            seen.pop(row["id"], None)
             seen[row["id"]] = row
         while len(seen) > SEEN_LIMIT:
             seen.pop(next(iter(seen)))

@@ -713,3 +713,36 @@ async def test_reading_an_item_dates_it_by_its_publisher_not_by_who_carried_it_f
         "the publisher's own exact date is not borrowed")
     assert "What OpenAI wrote" in out and "Submitted to HN" not in out, (
         "and the headline is the publisher's, for the same reason")
+
+
+@pytest.mark.anyio
+async def test_the_cache_keeps_what_the_latest_reply_printed_even_if_it_was_cached_before():
+    """Reassigning a dict key keeps its old position, so an id cached by an
+    earlier call stayed at the front of the eviction order — and was the first
+    evicted, even when the reply just printed it at the top. Measured: a
+    25-row call followed by a 4,500-row one left the second reply's first
+    three ids UNKNOWN. "Most recently printed" is what the order has to mean.
+    """
+    import cablegram.server as server_mod
+
+    urls = [f"https://qbitai.example/{i}" for i in range(4)]
+
+    def rows():
+        db = connect()
+        store_entries(db, by_id("qbitai"),
+                      [Entry(f"story {i}", u, NOW - timedelta(minutes=i), None, None)
+                       for i, u in enumerate(urls)],
+                      fetched_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        return db
+
+    server = build(rows)
+    server_mod.SEEN_LIMIT, saved = 3, server_mod.SEEN_LIMIT
+    try:
+        await call(server, "wire_latest", hours=24, limit_per_source=2)
+        listing = await call(server, "wire_latest", hours=24, limit_per_source=4)
+        first = re.findall(r"^(\w{12}) \d{2}:\d{2} ", listing, re.M)[0]
+        out = await call(server, "wire_read", ids=[first])
+        assert "UNKNOWN" not in out, (
+            f"{first} is the first line of the reply that just produced it")
+    finally:
+        server_mod.SEEN_LIMIT = saved
