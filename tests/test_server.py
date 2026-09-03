@@ -686,12 +686,16 @@ async def test_reading_an_item_dates_it_by_its_publisher_not_by_who_carried_it_f
 
     def rows():
         db = connect()
-        store_entries(db, by_id("openai"),
-                      [Entry("What OpenAI wrote", url, published, "the post",
-                             "description")], fetched_at=stamp)
+        # hn FIRST. poll stores in catalogue order and Hacker News is source
+        # three, ahead of every publisher it links to; the fixture that stored
+        # openai first tested the one order the bug cannot occur in, and passed
+        # while wire_read printed a submitter's title under OpenAI's name.
         store_entries(db, by_id("hn"),
                       [Entry("Submitted to HN", url, submitted, None, None)],
                       fetched_at=stamp)
+        store_entries(db, by_id("openai"),
+                      [Entry("What OpenAI wrote", url, published, "the post",
+                             "description")], fetched_at=stamp)
         return db
 
     server = build(rows)

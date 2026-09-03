@@ -202,12 +202,23 @@ def _store_one(
         # is false; it is not who published it, which is what the position
         # reads as. The list of carriers beside it is unaffected: both still
         # appear there, in the order they were seen.
+        #
+        # The headline too. This set first_source and lang and left title as
+        # whoever arrived first wrote it, and poll stores in catalogue order, so
+        # Hacker News — source three — arrives before every publisher it links
+        # to. Measured live on 50e05f9b472e: OpenAI titled its post "Healthcare
+        # organizations can now connect EHR and additional industry data to
+        # ChatGPT"; wire_read printed, under `openai en` with OpenAI's date and
+        # body, "ChatGPT for Healthcare" — the title a submitter typed into
+        # Hacker News. Systematic, not intermittent. Both fixtures that were
+        # meant to catch it stored openai first, the one order it cannot occur
+        # in.
         if not source.aggregator and _AGGREGATORS:
             marks = ",".join("?" * len(_AGGREGATORS))
             db.execute(
-                f"UPDATE item SET first_source = ?, lang = ?"
+                f"UPDATE item SET first_source = ?, lang = ?, title = ?"
                 f" WHERE id = ? AND first_source IN ({marks})",
-                (source.id, source.lang, iid, *_AGGREGATORS),
+                (source.id, source.lang, title, iid, *_AGGREGATORS),
             )
 
         db.execute(
