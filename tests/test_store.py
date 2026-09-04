@@ -281,10 +281,12 @@ def test_the_item_keeps_the_earliest_exact_date_it_was_given(db):
     """
     later = datetime(2026, 8, 31, 13, 7, tzinfo=timezone.utc)
     earlier = datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc)
+    # Fetched after both dates: a date after the fetch is filed at the fetch.
+    fetched = "2026-09-01T00:00:00Z"
 
-    store_entries(db, by_id("hn"), [entry(published=later)], fetched_at=NOW)
+    store_entries(db, by_id("hn"), [entry(published=later)], fetched_at=fetched)
     assert rows(db)[0]["published"] == "2026-08-31T13:07:00Z"
-    store_entries(db, by_id("openai"), [entry(published=earlier)], fetched_at=NOW)
+    store_entries(db, by_id("openai"), [entry(published=earlier)], fetched_at=fetched)
     assert rows(db)[0]["published"] == "2026-08-31T04:00:00Z", \
         "the earlier exact date is the one closer to publication"
 
@@ -705,3 +707,38 @@ def test_a_quoted_short_term_finds_what_the_bare_term_finds(db):
         for spelled in (f'"{term}"', f"'{term}'", f"{term}*", f' "{term}" '):
             rows, engine = search_items(db, spelled, since=since)
             assert [r["id"] for r in rows] == [r["id"] for r in bare], (spelled, engine)
+
+
+def test_a_date_after_the_fetch_is_filed_at_the_fetch_and_marked(db):
+    """A publisher's clock an hour ahead, or local time stamped as UTC. The
+    window's upper bound excluded such a post silently: a source whose only
+    post of the day carried it read SILENT, "published nothing in this
+    window", and wire_sources went on saying `newest 2030-01-01` about an
+    item no tool could show. The source cannot know a time after now; the
+    capture time is what is known, and the mark says it is not the hour."""
+    from cablegram.store import source_health
+    ahead = datetime(2026, 8, 30, 13, 0, tzinfo=timezone.utc)  # NOW + 1h
+    assert ahead > datetime.fromisoformat(NOW.replace("Z", "+00:00"))
+    record_attempt(db, Fetched("qbitai", ok=True, body=b"x", status=200, fetched_at=NOW))
+    store_entries(db, by_id("qbitai"),
+                  [Entry("Scheduled an hour ahead", "https://qbitai.example/ahead",
+                         ahead, None, None),
+                   Entry("Stamped 2030", "https://qbitai.example/2030",
+                         datetime(2030, 1, 1, tzinfo=timezone.utc), None, None)],
+                  fetched_at=NOW)
+    for table in ("item", "sighting"):
+        rows = db.execute(f"SELECT published, date_exact FROM {table}").fetchall()
+        assert len(rows) == 2, table
+        for row in rows:
+            assert row["published"] == NOW, (table, dict(row))
+            assert row["date_exact"] == 0, (table, dict(row))
+    assert source_health(db)["qbitai"]["newest"] == NOW
+
+    # And a date at or before the fetch is left alone, exact and its own.
+    store_entries(db, by_id("qbitai"),
+                  [Entry("On time", "https://qbitai.example/ontime", PUB, None, None)],
+                  fetched_at=NOW)
+    row = db.execute("SELECT published, date_exact FROM item"
+                     " WHERE url = 'https://qbitai.example/ontime'").fetchone()
+    assert row["published"] == "2026-08-30T07:12:00Z" and row["date_exact"] == 1
+

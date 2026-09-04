@@ -345,11 +345,13 @@ def test_each_block_shows_when_its_own_source_carried_the_story(db):
     submitted = NOW.replace(hour=13, minute=7)
     published = NOW.replace(hour=4, minute=0)
 
+    # Fetched after both stamps: a date after the fetch is filed at the fetch.
+    fetched = iso(NOW + timedelta(hours=2))
     store_entries(db, by_id("hn"), [Entry("A milestone", url, submitted, None, None)],
-                  fetched_at=iso(NOW))
+                  fetched_at=fetched)
     store_entries(db, by_id("openai"),
                   [Entry("A milestone in expanding access to AI", url, published,
-                         "body", "description")], fetched_at=iso(NOW))
+                         "body", "description")], fetched_at=fetched)
 
     when = {r["source"]: r["published"] for r
             in latest_items(db, since=iso(NOW - timedelta(days=1)))
@@ -362,19 +364,38 @@ def test_a_date_after_the_window_ends_is_outside_it(db):
     """The window had one end. A post stamped an hour ahead sat at the top of
     every listing under a header that ended an hour earlier; one stamped 2030
     led a 48-hour window and wire_sources reported the source OK with
-    `newest 2030-01-01`. Nothing said the date was impossible. The header
-    prints both ends; the query now honours both."""
+    `newest 2030-01-01`. Nothing said the date was impossible.
+
+    Two things closed it. The store files a date after the fetch at the fetch,
+    marked — so "written tomorrow" is inside this window, at the top, under a
+    ~, rather than silently absent and its source reported SILENT. And the
+    query honours an upper bound as a parameter, which is still what keeps a
+    real date past `until` out when a caller asks for a window that ended
+    earlier."""
     ahead = "https://qbitai.example/from-the-future"
     store_entries(db, by_id("qbitai"),
                   [Entry("Written tomorrow", ahead, NOW + timedelta(days=2),
                          None, None)], fetched_at=iso(NOW))
     since, until = iso(NOW - timedelta(days=7)), iso(NOW)
-    assert item_id(ahead) not in {r["id"] for r in latest_items(db, since=since, until=until)}
-    assert not search_items(db, "tomorrow", since=since, until=until), (
+    rows = {r["id"]: r for r in latest_items(db, since=since, until=until)}
+    assert item_id(ahead) in rows, "filed at the fetch, it is inside the window"
+    assert rows[item_id(ahead)]["published"] == iso(NOW)
+    assert rows[item_id(ahead)]["date_exact"] == 0, "and marked as not the hour"
+    hits = search_items(db, "tomorrow", since=since, until=until)
+    assert [r["id"] for r in hits] == [item_id(ahead)], "search sees the same row"
+
+    # The bound itself: a real date, before the fetch, after the window's end.
+    late = "https://qbitai.example/after-the-window"
+    store_entries(db, by_id("qbitai"),
+                  [Entry("Written after the window closed", late,
+                         NOW - timedelta(hours=1), None, None)], fetched_at=iso(NOW))
+    until = iso(NOW - timedelta(hours=2))
+    assert item_id(late) not in {r["id"] for r in latest_items(db, since=since, until=until)}
+    assert not search_items(db, "closed", since=since, until=until), (
         "search has the same two ends")
     # And without an upper bound it is still there: the bound is a parameter,
     # not a filter applied behind the caller's back.
-    assert item_id(ahead) in {r["id"] for r in latest_items(db, since=since)}
+    assert item_id(late) in {r["id"] for r in latest_items(db, since=since)}
 
 
 def test_a_stored_year_under_1000_sorts_where_it_belongs():

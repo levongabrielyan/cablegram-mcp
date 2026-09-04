@@ -134,6 +134,15 @@ def _store_one(
     # that convenience from becoming a claim.
     published = _utc_iso(entry.published) if entry.published else fetched_at
     date_exact = 1 if entry.published and entry.date_exact else 0
+    # A date after the moment of fetching is one the source cannot know: a
+    # publisher's clock a few minutes ahead, or local time stamped as UTC,
+    # eight hours ahead for a day. Excluded by the window's upper bound, the
+    # post was silently absent — and a source whose only post of the day
+    # carried it was reported SILENT, "published nothing in this window",
+    # while wire_sources still said `newest 2030-01-01`. Filed at the capture
+    # time and marked, it sits at the top with a ~, which is what is known.
+    if published > fetched_at:
+        published, date_exact = fetched_at, 0
 
     # Only for sources that link elsewhere. On qbitai the host is always qbitai:
     # printing it would cost tokens on every line and say nothing.
