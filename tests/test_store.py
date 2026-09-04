@@ -681,3 +681,27 @@ def test_a_quoted_phrase_finds_what_the_bare_phrase_finds(db):
     for spelled in ('"Claude Code"', "'Claude Code'", "Claude Code*", "  Claude Code  "):
         rows, _ = search_items(db, spelled, since=since)
         assert [r["id"] for r in rows] == [r["id"] for r in bare], spelled
+
+
+def test_a_quoted_short_term_finds_what_the_bare_term_finds(db):
+    """The fix above was measured on an eleven-character phrase, the one
+    length where it holds either way. The engine is chosen by length before
+    the quotes come off: «"ИИ"» measures four, went to the trigram index as a
+    two-character phrase, and a phrase under three characters matches nothing
+    there by construction. Live on 2026-09-04: «"ИИ"» on habr found nothing
+    under eleven headlines carrying it, «"智谱"» on cls nothing over the one
+    naming it. ИИ is the Russian abbreviation for AI; 智谱, 阿里 and 字节 are
+    the two-character company names the substring fallback exists for."""
+    store_entries(db, by_id("habr"),
+                  [Entry("ИИ везде, кроме отчетов", "https://habr.example/ii",
+                         PUB, None, None)], fetched_at=NOW)
+    store_entries(db, by_id("cls"),
+                  [Entry("天猫上线Token充值中心 首批接入阿里云、智谱、Kimi", "https://cls.example/1",
+                         PUB, None, None)], fetched_at=NOW)
+    since = "2026-08-01T00:00:00Z"
+    for term in ("ИИ", "智谱", "Ki"):
+        bare, engine = search_items(db, term, since=since)
+        assert engine == "substring" and len(bare) == 1, (term, engine, bare)
+        for spelled in (f'"{term}"', f"'{term}'", f"{term}*", f' "{term}" '):
+            rows, engine = search_items(db, spelled, since=since)
+            assert [r["id"] for r in rows] == [r["id"] for r in bare], (spelled, engine)

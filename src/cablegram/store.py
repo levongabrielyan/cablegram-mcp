@@ -598,6 +598,29 @@ def items_by_ids(db: sqlite3.Connection, ids: list[str]) -> list[dict]:
     return [found[i] for i in ids if i in found]
 
 
+def _bare(query: str) -> str:
+    """The words a caller means, without the quoting they wrapped them in.
+
+    A caller who quotes a phrase means the phrase. Doubling the quotes made
+    "Claude Code" search for the four characters «"Claude Code"» and return
+    nothing, under a line saying nothing matched — while the same words
+    unquoted found ten. One matching pair of surrounding quotes comes off,
+    and so does a trailing star, which reads as "prefix" everywhere else and
+    as a literal here.
+
+    Done once, before the engine is chosen, because the choice is by length:
+    «"ИИ"» measures four and went to the trigram index as a two-character
+    phrase, which cannot match anything, while bare ИИ measured two and fell
+    to the substring scan that finds it. Measured live on 2026-09-04: «"ИИ"»
+    on habr found nothing under eleven headlines carrying it; «"智谱"» on cls
+    found nothing over the one that named it.
+    """
+    query = query.strip()
+    if len(query) >= 2 and query[0] == query[-1] and query[0] in ("\"", "'"):
+        query = query[1:-1].strip()
+    return query.rstrip("*").strip()
+
+
 def _fts_query(query: str) -> str:
     """Wrap a user's words as one FTS5 phrase, escaping the quotes.
 
@@ -606,16 +629,6 @@ def _fts_query(query: str) -> str:
     something a person could plausibly type. Doubling the quotes inside one
     quoted phrase makes every character literal.
     """
-    query = query.strip()
-    # A caller who quotes a phrase means the phrase. Doubling the quotes made
-    # "Claude Code" search for the four characters «"Claude Code"» and return
-    # nothing, under a line saying nothing matched — while the same words
-    # unquoted found ten. One matching pair of surrounding quotes comes off,
-    # and so does a trailing star, which reads as "prefix" everywhere else and
-    # as a literal here.
-    if len(query) >= 2 and query[0] == query[-1] and query[0] in ("\"", "'"):
-        query = query[1:-1].strip()
-    query = query.rstrip("*").strip()
     return '"' + query.replace('"', '""') + '"'
 
 
@@ -643,7 +656,7 @@ def search_items(
     阿里, 字节 — are exactly two. Without the LIKE fallback those return nothing,
     with no error, and the answer reads as "nobody is talking about them".
     """
-    query = query.strip()
+    query = _bare(query)
     if not query:
         return [], "none"
 
