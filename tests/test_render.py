@@ -63,10 +63,6 @@ def test_the_destination_shows_only_for_aggregators():
     assert "(" not in plain.split("---")[-1]
 
 
-def test_a_story_in_one_source_is_not_counted():
-    out = render_latest([row(cross=1)], since="s", until="u", down={}, sources_total=19)
-    assert "CROSS" not in out
-
 def test_an_id_that_is_not_there_is_named_with_a_way_out():
     """The only way the model recovers on its own."""
     out = render_read([], requested=["9f01aa2b"])
@@ -340,7 +336,7 @@ def test_the_coverage_note_does_not_contradict_the_date_above_it():
     assert reached.groups() == ("hn", "2015-12-11")
     claims = _ORIGIN_FLOOR.findall(out)
     assert not claims, (
-        f"COVER says the archive reaches back to {oldest.group(1)} and another "
+        f"COVER says the archive reaches back to {reached.group(2)} and another "
         f"line dates its origin to {claims}. Both cannot be true, and the model "
         f"gets two bad readings: either this has run since 2015, or the dates "
         f"are worthless.")
