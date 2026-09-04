@@ -565,3 +565,32 @@ async def test_hacker_news_at_its_cap_says_ceiling(live):
     out = await call(live, "wire_latest", hours=48, sources=["hn"], limit_per_source=3)
     assert re.search(r"^CEILING .*\bhn\b", out, re.M), out.splitlines()[:5]
     assert "CUT   hn=3/" in out
+
+
+@pytest.mark.anyio
+async def test_a_search_states_its_ceiling_keeps_the_newest_and_fits_its_budget(live):
+    """Three things wire_search asserts that a model cannot check: that the
+    window was covered, that what is printed is the newest, and that the
+    reply fits what was asked for. Each was guarded somewhere else — the
+    ceiling in wire_latest, the cut order in the renderer over rows already
+    sorted, the budget by a test whose `or` let any size through once the
+    BUDGET label was on — and a mutant on each survived the suite while the
+    served reply said the opposite. Measured through the server: with the
+    budget loop stopping after its first pass, max_tokens=500 came back as
+    2,328 tokens; with the SQL rank ascending, "CUT hn=3/1000 (newest kept)"
+    sat over the three oldest stories."""
+    from cablegram.poll import HN_MAX
+    from cablegram.render import estimate_tokens
+
+    out = await call(live, "wire_search", query="HN story", sources=["hn"],
+                     days=7, limit_per_source=3)
+    assert re.search(r"^CEILING .*\bhn\b", out, re.M), out.splitlines()[:4]
+    assert f"hn=3/{HN_MAX}" in out, out.splitlines()[:6]
+    printed = re.findall(r"^\w{12} \d\d:\d\d (HN story \d+) \(hn\.example\)$", out, re.M)
+    assert printed == ["HN story 0", "HN story 1", "HN story 2"], printed
+
+    out = await call(live, "wire_search", query="HN story", sources=["hn"],
+                     days=7, limit_per_source=HN_MAX, max_tokens=500)
+    assert estimate_tokens(out) <= 500, (estimate_tokens(out), out.splitlines()[:3])
+    assert out.startswith("BUDGET"), out.splitlines()[:2]
+
