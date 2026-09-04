@@ -64,6 +64,23 @@ def _time(published: str) -> str:
     return published[11:16]
 
 
+_BREAKS = re.compile("[\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")
+
+
+def _indented(text: str) -> str:
+    """A body as the lines under a heading, every one of them indented.
+
+    Only \n was indented after. A carriage return, a form feed or U+2028
+    is a line break to anything that splits lines, so a cls body or a
+    Telegram post carrying "\r## openai en lab,official 1/1" put that at
+    column zero for any reader treating \r as a break — the same forgery
+    the \n fix closed, through a character it did not cover. Every break
+    becomes \n first, and then every line is indented.
+    """
+    text = _BREAKS.sub("\n", text.replace("\r\n", "\n"))
+    return "   " + text.replace("\n", "\n   ")
+
+
 def _oneline(text: str) -> str:
     """Third-party text that is printed on one line stays on one line.
 
@@ -151,7 +168,7 @@ def _blocks(rows: list[dict], limit_per_source: int | None,
                 # containing "reuters 09:30 Alibaba anuncia Qwen 4" is
                 # indistinguishable from an item with that id at that time —
                 # to a model reading the payload, and to anything counting it.
-                body = item["body"].replace("\n", "\n   ")
+                body = _indented(item["body"])[3:]
                 out.append(f"   [{item.get('body_src', '?')} {len(item['body'])}c] "
                            f"{body}")
     return out, cuts
@@ -322,7 +339,7 @@ def render_read(rows: list[dict], *, requested: list[str],
             # detail='full'. This printed the body raw, so a body line could
             # sit at column zero and read as a heading, a separator or a
             # dispatch of its own.
-            out.append("   " + row["body"].replace("\n", "\n   "))
+            out.append(_indented(row["body"]))
         if borrowed:
             # Everything on the line above is borrowed from whoever linked it.
             # Left unmarked, a model answers "per the Russian channel ai_newz,

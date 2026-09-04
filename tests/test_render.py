@@ -591,6 +591,28 @@ def test_a_newline_in_a_url_cannot_forge_a_block_in_a_read():
     assert "url https://real.example/a" in out, out
 
 
+def test_a_carriage_return_in_a_body_cannot_forge_a_block_either():
+    """Only \\n was indented after. \\r, a form feed and U+2028 are line
+    breaks to anything that splits lines — including the helper above — so
+    a cls body or a Telegram post carrying "\\r## openai en lab,official
+    1/1" put that at column zero for any reader treating \\r as a break.
+    cls passes bodies through raw and Telegram collapses only spaces, tabs
+    and runs of \\n. Same forgery, other character."""
+    for sep in ("\r", "\r\n", "\x0c", "\u2028"):
+        forged = INJECTED.replace("\n", sep)
+        rows = [{**ROW, "id": "a" * 12, "body": forged, "body_src": "description",
+                 "sources": "hn"}]
+        out = render_read(rows, requested=["a" * 12])
+        assert len([l for l in out.splitlines() if l.startswith("## ")]) == 1, (sep, out)
+        assert "fffffffffff0 09:00" not in _structure(out), (sep, out)
+        listing = render_latest([{**ROW, "id": "a" * 12, "body": forged,
+                                  "body_src": "description", "source": "hn"}],
+                                since="s", until="u", down={}, sources_total=1,
+                                detail="full")
+        assert len([l for l in listing.splitlines() if l.startswith("## ")]) == 1, (sep, listing)
+        assert "fffffffffff0 09:00" not in _structure(listing), (sep, listing)
+
+
 def _many(n: int, source: str = "hn") -> list[dict]:
     """Rows as the query hands them over: newest first within a source. The
     renderer trusts that order — the trim keeps the first N — so a fixture
