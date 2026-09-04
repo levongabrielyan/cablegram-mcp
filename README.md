@@ -1,5 +1,8 @@
 # cablegram-mcp
 
+An MCP server for Claude Code, Claude Desktop, Cursor and any other MCP
+client: `uvx cablegram-mcp serve`.
+
 Twenty-nine sources on AI and tech — English, Chinese and Russian — written to
 be read by a model rather than by a person. Nothing is stored: each call fetches
 what it needs, answers, and discards it.
@@ -125,6 +128,16 @@ claude mcp add cablegram --scope user -- \
 ```
 
 That is the whole setup. Each call fetches what it needs and keeps nothing.
+
+Claude Desktop, Cursor, Codex and anything else that reads an `mcpServers`
+block:
+
+```json
+{ "mcpServers": { "cablegram": { "command": "uvx", "args": ["cablegram-mcp", "serve"] } } }
+```
+
+`serve` is the subcommand. Without it the command prints its usage and exits,
+which a client reports as a server that would not start.
 
 ## The four tools
 
