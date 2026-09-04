@@ -11,7 +11,7 @@ jobs:
       matrix:
         # 3.12 is the floor the project declares; 3.14 is what a fresh install
         # gets. The identity of an archived item must not differ between them.
-        python-version: ["3.12", "3.14"]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
