@@ -38,7 +38,7 @@ for two weeks on its latest models"*. Both are stored against the same id, and
 either can be searched.
 
 ```
-CABLEGRAM v0.2.1 | 2026-09-03T00:43:54Z..2026-09-03T08:43:54Z
+CABLEGRAM v0.2.2 | 2026-09-03T00:43:54Z..2026-09-03T08:43:54Z
 CUT   cls=2/25  hn=2/241   (newest kept)
 COLS  id hh:mm title    times UTC | body: wire_read(ids=[...])
 ---
@@ -85,7 +85,7 @@ there was.
 
 ## Status
 
-v0.2.1 — the sources work; the tool API may still move. All twenty-nine have an
+v0.2.2 — the sources work; the tool API may still move. All twenty-nine have an
 adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
