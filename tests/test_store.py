@@ -742,3 +742,22 @@ def test_a_date_after_the_fetch_is_filed_at_the_fetch_and_marked(db):
                      " WHERE url = 'https://qbitai.example/ontime'").fetchone()
     assert row["published"] == "2026-08-30T07:12:00Z" and row["date_exact"] == 1
 
+
+def test_the_parsers_mark_travels_into_the_store(db):
+    """Atom entries with only <updated>, Anthropic's dateless stamps: the
+    parser sets date_exact=False and the renderer prints the ~. The line
+    carrying the flag from one to the other was read by no test — a mutant
+    storing `1 if entry.published else 0` passed all 488 and removed every
+    ~ from engineering, the featured cards and edited Atom entries at once."""
+    store_entries(db, by_id("habr"),
+                  [Entry("Edited today, written in 2024", "https://habr.example/edited",
+                         PUB, None, None, date_exact=False),
+                   Entry("Stamped to the minute", "https://habr.example/exact",
+                         PUB, None, None)],
+                  fetched_at=NOW)
+    for table in ("item", "sighting"):
+        flags = {row["title"]: row["date_exact"] for row in
+                 db.execute(f"SELECT title, date_exact FROM {table}")}
+        assert flags == {"Edited today, written in 2024": 0,
+                         "Stamped to the minute": 1}, (table, flags)
+
