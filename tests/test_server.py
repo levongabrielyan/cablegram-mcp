@@ -6,6 +6,7 @@ actually kept: a dead source appears, a window means what it says, an unknown id
 comes back named.
 """
 
+import sys
 import pathlib
 import re
 
@@ -528,6 +529,22 @@ async def test_every_place_that_states_a_version_states_the_same_one(server):
     assert status.startswith(f"v{__version__} "), (
         f"the Status section opens with {status[:12]!r}; the package is "
         f"{__version__}")
+
+    # The test count on the same line drifted the same way: "459 tests" was
+    # published in two releases running while the suite held 488, then 493.
+    # It is the one figure a reader can check without understanding the
+    # product, and the sdist ships tests/, so anyone can. Collected in a
+    # subprocess so the figure does not depend on how this run was invoked.
+    import subprocess
+    stated = re.search(r"(\d+) tests\b", status)
+    assert stated, f"the Status section states no test count: {status[:120]!r}"
+    collected = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+         str(Path(__file__).parent)], capture_output=True, text=True, timeout=120)
+    found = re.search(r"(\d+) tests? collected", collected.stdout)
+    assert found, collected.stdout[-300:] + collected.stderr[-300:]
+    assert int(stated.group(1)) == int(found.group(1)), (
+        f"the README says {stated.group(1)} tests; the suite collects {found.group(1)}")
 
 
 
