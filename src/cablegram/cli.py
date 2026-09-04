@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import sys
 
+from . import __version__
 from .poll import poll_once
 from .schema import connect
 from .sources import SOURCES, resolve
@@ -87,6 +88,10 @@ def main(argv: list[str] | None = None) -> int:
         prog="cablegram",
         description="Raw dispatches from tech, AI and Chinese/Russian sources.",
     )
+    # The version is in the MCP handshake and on the first line of every
+    # reply; the command line, which is what a person tries first, had no
+    # way to say it.
+    parser.add_argument("--version", action="version", version=f"cablegram {__version__}")
     sub = parser.add_subparsers(dest="command")
 
     check = sub.add_parser("check", help="fetch every source once and say what came "

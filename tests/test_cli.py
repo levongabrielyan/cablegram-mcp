@@ -91,3 +91,15 @@ def test_a_failed_source_says_why(reports, capsys, monkeypatch):
     monkeypatch.setattr("cablegram.cli.poll_once", fake_poll)
     main(["check"])
     assert "ConnectError" in capsys.readouterr().out
+
+
+def test_the_command_line_can_say_which_build_it_is(capsys):
+    """The version was in the MCP handshake and on the first line of every
+    reply, and `cablegram --version` answered `unrecognized arguments` on
+    the one surface a person tries first."""
+    import pytest
+    from cablegram import __version__
+    with pytest.raises(SystemExit) as exit_:
+        main(["--version"])
+    assert exit_.value.code == 0
+    assert capsys.readouterr().out.strip() == f"cablegram {__version__}"
