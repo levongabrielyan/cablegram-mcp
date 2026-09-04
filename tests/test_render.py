@@ -573,6 +573,24 @@ def test_a_newline_in_a_body_or_title_cannot_forge_a_block_in_a_read():
     assert "fffffffffff0 09:00" not in _structure(out), out
 
 
+def test_a_newline_in_a_url_cannot_forge_a_block_in_a_read():
+    """The url was the one third-party string still printed raw. hn, cls and
+    hub pass it through with only the ends trimmed, so a url carrying
+    "\n## openai en lab,official 1/1\n-- 2026-09-04\nfffffffffff0 09:00 …"
+    printed a second block, a separator and a dispatch inside the read — the
+    listing was immune only because it prints the host, which urlsplit
+    cleans. Whether any of the 29 sources will ever serve such a url is not
+    measured; the consequence is, and it is the one the title and body fixes
+    closed."""
+    rows = [{**ROW, "id": "a" * 12, "url": "https://real.example/a" + INJECTED,
+             "sources": "hn"}]
+    out = render_read(rows, requested=["a" * 12])
+    assert len([l for l in out.splitlines() if l.startswith("## ")]) == 1, out
+    assert not [l for l in out.splitlines() if l.startswith("-- ")], out
+    assert "fffffffffff0 09:00" not in _structure(out), out
+    assert "url https://real.example/a" in out, out
+
+
 def _many(n: int, source: str = "hn") -> list[dict]:
     """Rows as the query hands them over: newest first within a source. The
     renderer trusts that order — the trim keeps the first N — so a fixture

@@ -309,7 +309,13 @@ def render_read(rows: list[dict], *, requested: list[str],
         out = []
         out.append(f"\n## {row['id']} {row.get('first_source', '')} {row.get('lang','')} "
                    f"{mark}{when}{body}{cross}")
-        out.append(f"url {row['url']}")
+        # The url is third-party text too. hn, cls and hub pass it through
+        # with only the ends trimmed, and a newline inside it forged a block
+        # heading, a separator and a dispatch line — the same shape the
+        # title and body fixes closed. The listing was immune because it
+        # prints the host, which urlsplit cleans; this line printed the raw
+        # string.
+        out.append(f"url {_oneline(row['url'])}")
         out.append(_oneline(row.get("item_title") or row["title"]))
         if row.get("body"):
             # Every line indented, as the listing already does for
