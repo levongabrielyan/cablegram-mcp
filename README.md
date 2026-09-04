@@ -161,20 +161,26 @@ the feeds are serving today**, and the floor is lower than it sounds. Measured
 as the oldest item each feed actually served — the same quantity `wire_search`
 prints on its COVER line, one floor per source:
 
-    openai         2015      the whole back catalogue, in one fetch
-    anthropic      2021
-    huggingface    2020
-    producthunt    48 days
-    cls.cn         3 days    at its ceiling, and it cannot page backwards, so
-                             anything older is gone from everywhere
-    36Kr           3 days
-    qbitai         2 days
-    Habr           1 day
-    Hacker News    1 day     a thousand stories is the cap, so days=7 and
-                             days=30 return the same rows
+    openai                 2015      the whole back catalogue, in one fetch
+    huggingface            2020
+    anthropic              2021      news and research; engineering, 2024
+    hub                    2022
+    deepmind               2025-10
+    mcp                    2025-07
+    producthunt            4 months
+    testingcatalog         2 months
+    n8n                    3 weeks
+    Habr                   2 days
+    cls.cn                 1 day     at its ceiling, and it cannot page backwards, so
+                                     anything older is gone from everywhere
+    36Kr                   1 day
+    qbitai                 1 day
+    Hacker News            1 day     a thousand stories is the cap, so days=7 and
+                                     days=30 return the same rows
 
-Three archives reach back years; everything else reaches back days, and no
-parameter asks for more than the endpoint volunteers. That floor is a property
+One COVER line, measured 2026-09-04. Six reach back years; the Chinese wires,
+Habr and Hacker News reach back a day or two; and no parameter asks for more
+than the endpoint volunteers. That floor is a property
 of the feeds and never of the subject.
 
 Every reply carries its own rather than leaving it to be discovered: the COVER
