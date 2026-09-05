@@ -266,16 +266,24 @@ def _at_ceiling(health: dict, wanted: set[str], floors: dict[str, str],
     wider than its answer". It was not. The floor each source served is what
     decides: if the oldest row it returned is older than `since`, the window
     was covered, whatever the cap.
+
+    And the floor decides for every source, not only the ones with a cap the
+    poller can count. A feed serves what it serves, so it has always "served
+    all it can"; the question is only whether that reached the window's
+    start. Found using it, 2026-09-05: n8n over 30 days printed 15/15 under
+    a header stating the month, with no CUT and no CEILING — the feed holds
+    fifteen items and its oldest is 14 August, five of them from that one
+    day. A model read "n8n published fifteen posts in thirty days". What the
+    feed said was "fifteen, back to the 14th", and only wire_search's COVER
+    line carried that. So: rows served, oldest row younger than `since`,
+    CEILING — whatever kind of source it is. The poller's cap flag is still
+    what `cablegram check` prints; here it is redundant with the floor.
     """
     out = []
     for sid in sorted(wanted):
-        state = health.get(sid) or {}
-        if not (state.get("at_ceiling") and state["at_ceiling"] == state.get("last_write")):
-            continue
         floor = floors.get(sid)
-        if floor and floor <= since:
-            continue
-        out.append(sid)
+        if floor and floor > since:
+            out.append(sid)
     return out
 
 
