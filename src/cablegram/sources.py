@@ -43,9 +43,11 @@ SOURCES: tuple[Source, ...] = (
     ),
     Source(
         "alternativeto", "AlternativeTo", "rss",
-        "https://alternativeto.net/news/feed/", "en",
+        "https://alternativeto.net/feeds/news/", "en",
         ("launches",),
-        "Product launches and changes.",
+        "Product launches and changes. /news/feed/ now answers 301 to this path. "
+        "Behind Cloudflare: the same request drew HTTP 403 three times and a full "
+        "feed the fourth on 2026-09-05, so a DOWN here is the wall, not the site.",
     ),
     Source(
         "hn", "Hacker News", "hn",
