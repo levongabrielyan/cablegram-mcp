@@ -224,14 +224,25 @@ def _link(item: ET.Element) -> str:
     return _text(item.find("guid"))
 
 
-def parse_feed(raw: bytes) -> list[Entry]:
+def parse_feed(raw: bytes, *, dated_by_feed: bool = False) -> list[Entry]:
     """Return the entries of an RSS 2.0 or Atom document.
 
     Malformed XML raises; a malformed *entry* is skipped. One bad item in a feed
     of forty should cost that item, not the other thirty-nine.
+
+    `dated_by_feed`: the document is a day's front page and its own date is the
+    day. Product Hunt's feed is fifty posts featured today, reset at 00:01
+    Pacific; each entry's <published> is when its maker created the record,
+    weeks earlier. Read by entry, a day's listing showed one launch of fifty
+    (measured 2026-09-05). Read by feed, all fifty are dated the day they were
+    featured, marked, which is the fact the document states.
     """
     _reject_entity_bombs(raw)
     root = ET.fromstring(raw)
+    feed_stamp = ""
+    if dated_by_feed:
+        feed_stamp = _first(root, f"{_ATOM}updated", "channel/lastBuildDate",
+                            "channel/pubDate")
 
     # RSS 1.0 keeps <item> inside a namespace, so the plain search misses it and
     # returns nothing at all — a source could switch format and go mute for
@@ -258,7 +269,10 @@ def parse_feed(raw: bytes) -> list[Entry]:
         stamped = _first(item, "pubDate", f"{_DC}date", f"{_ATOM}published")
         updated = "" if stamped else _first(item, f"{_ATOM}updated")
         published = _parse_date(stamped or updated)
+        exact = not updated
+        if feed_stamp:
+            published, exact = _parse_date(feed_stamp) or published, False
         entries.append(Entry(title, url, published, body, body_src,
-                             date_exact=not updated))
+                             date_exact=exact))
 
     return entries

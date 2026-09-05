@@ -31,6 +31,11 @@ class Source:
     # Reverse-engineered rather than published, so it can break without notice.
     # Declared in the output before it happens rather than explained after.
     fragile: bool = False
+    # The feed is a day's front page, not a chronicle: every entry's own date
+    # is when its author created the record, weeks before it was featured, and
+    # the feed's own date is the day it was. Entries take the feed's date,
+    # marked, because that is the fact the source actually states.
+    dated_by_feed: bool = False
 
 
 SOURCES: tuple[Source, ...] = (
@@ -97,10 +102,16 @@ SOURCES: tuple[Source, ...] = (
         "https://www.producthunt.com/feed", "en",
         ("launches",),
         "What shipped and is being charged for, which no other source here "
-        "covers. Not AI-only: most of a day is not about this. Its headline is "
-        "the product's name and nothing else, so the listing is unreadable "
-        "without the bodies: `Happy Shrimp` is Alibaba's AI music generator "
-        "and `Murmell` is Google Docs for agents, both in 70 characters.",
+        "covers. Not AI-only: most of a day is not about this. The feed is the "
+        "day's front page — fifty posts, reset at 00:01 Pacific — and each "
+        "entry's own date is when its maker created the record, weeks earlier: "
+        "measured 2026-09-05, one of fifty inside the last 24 hours, so a day's "
+        "listing showed one launch. Entries carry the feed's date, marked, and "
+        "the source reaches back one day. Its headline is the product's name "
+        "and nothing else, so the listing is unreadable without the bodies: "
+        "`Happy Shrimp` is Alibaba's AI music generator and `Murmell` is Google "
+        "Docs for agents, both in 70 characters.",
+        dated_by_feed=True,
     ),
     Source(
         "anthropic", "Anthropic — news", "nextjs",

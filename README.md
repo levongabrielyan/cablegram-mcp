@@ -93,7 +93,7 @@ adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
 namespaces on it, and three sections of a lab that publishes no feed, read out
-of the data its own pages ship. 495 tests, on 3.12, 3.13 and 3.14.
+of the data its own pages ship. 496 tests, on 3.12, 3.13 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
 
@@ -180,7 +180,8 @@ prints on its COVER line, one floor per source:
     hub                    2022
     deepmind               2025-10
     mcp                    2025-07
-    producthunt            4 months
+    producthunt            1 day     the day's front page, fifty posts dated the day
+                                     they were featured; the feed has no yesterday
     testingcatalog         2 months
     n8n                    3 weeks
     Habr                   2 days

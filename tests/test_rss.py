@@ -476,3 +476,39 @@ def test_a_style_block_in_a_body_is_not_article_text():
     text = _strip_html(raw)
     assert text == "Explore the roadmap. Looking back, the previous roadmap came out in March.", text
 
+
+FRONT_PAGE = b"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Product Hunt</title>
+  <updated>2026-09-05T00:01:00-07:00</updated>
+  <entry>
+    <title>Hyperprobe</title>
+    <link rel="alternate" href="https://www.producthunt.com/posts/hyperprobe"/>
+    <published>2026-08-30T20:39:25-07:00</published>
+    <updated>2026-09-05T02:22:19-07:00</updated>
+  </entry>
+  <entry>
+    <title>dif.sh</title>
+    <link rel="alternate" href="https://www.producthunt.com/posts/dif-sh"/>
+    <published>2026-08-07T07:50:06-07:00</published>
+    <updated>2026-09-05T02:22:14-07:00</updated>
+  </entry>
+</feed>"""
+
+
+def test_a_front_page_feed_dates_its_entries_by_the_day_they_were_featured():
+    """Product Hunt's feed is the day's front page: fifty posts, reset at
+    00:01 Pacific, each with <published> set when its maker created the
+    record, weeks earlier. Read by entry — measured 2026-09-05 — a 24-hour
+    listing showed one launch of fifty, under no CUT and no CEILING. Read by
+    feed, all fifty are dated the day they were featured, marked, and the
+    source reaches back one day, which is what the document states."""
+    by_entry = parse_feed(FRONT_PAGE)
+    assert [e.published.isoformat()[:10] for e in by_entry] == ["2026-08-31", "2026-08-07"]  # 20:39 Pacific is the 31st in UTC
+    assert all(e.date_exact for e in by_entry), "an ordinary feed keeps its own dates"
+
+    by_feed = parse_feed(FRONT_PAGE, dated_by_feed=True)
+    assert [e.published.isoformat() for e in by_feed] == ["2026-09-05T07:01:00+00:00"] * 2, by_feed
+    assert not any(e.date_exact for e in by_feed), "the day is known, the hour is the reset"
+    assert [e.title for e in by_feed] == ["Hyperprobe", "dif.sh"]
+

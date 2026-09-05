@@ -212,7 +212,7 @@ async def poll_once(
                 entries = parse_channel(fetched.body.decode("utf-8", "replace"),
                                         channel=source.id)
             else:
-                entries = parse_feed(fetched.body)
+                entries = parse_feed(fetched.body, dated_by_feed=source.dated_by_feed)
         except Exception as exc:
             # Every exception, not the three that were foreseen. A float
             # `article_time` raises OverflowError, a null one TypeError, a hits
