@@ -460,3 +460,19 @@ def test_an_entry_dated_only_by_updated_is_not_an_exact_publication_date():
     proper = by_url["https://e.com/new-post"]
     assert proper.published.isoformat().startswith("2026-09-03T07:00"), "published wins"
     assert proper.date_exact is True
+
+
+def test_a_style_block_in_a_body_is_not_article_text():
+    """Stripping only the tags left a <style> element's text in the body.
+    Measured on the MCP blog's roadmap post: 600 of 2,838 characters were
+    ".mcp-button { display: inline-block; padding: 8px 16px; ... }", served
+    under body=content:encoded as if the article said it. Same for <script>."""
+    from cablegram.rss import _strip_html
+    raw = ('<p>Explore the roadmap.</p>'
+           '<style>.mcp-button { display: inline-block; padding: 8px 16px; }'
+           ' .dark .mcp-button:hover { color: #1a1a1a; }</style>'
+           '<script type="text/javascript">window.track("roadmap")</script>'
+           '<p>Looking back, the previous roadmap came out in March.</p>')
+    text = _strip_html(raw)
+    assert text == "Explore the roadmap. Looking back, the previous roadmap came out in March.", text
+

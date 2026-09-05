@@ -29,6 +29,11 @@ _CONTENT = "{http://purl.org/rss/1.0/modules/content/}"
 _DC = "{http://purl.org/dc/elements/1.1/}"
 
 _TAGS = re.compile(r"<[^>]+>")
+# A <style> or <script> element's text is not prose: stripping only the tags
+# left its contents in the body. Measured on the MCP blog's roadmap post,
+# 2026-09-05: 600 of 2,838 characters were a button's CSS, read by a model as
+# part of the article.
+_BLOCKS = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.S | re.I)
 _SPACES = re.compile(r"\s+")
 
 # No headline or summary is longer than this, and anything that claims to be is
@@ -84,7 +89,8 @@ def _prose(raw: str) -> str:
 
 def _strip_html(raw: str) -> str:
     """Unescape, strip tags, unescape again: feeds double-encode routinely."""
-    stripped = _SPACES.sub(" ", html.unescape(_TAGS.sub(" ", html.unescape(raw)))).strip()
+    raw = _BLOCKS.sub(" ", html.unescape(raw))
+    stripped = _SPACES.sub(" ", html.unescape(_TAGS.sub(" ", raw))).strip()
     return stripped[:MAX_FIELD]
 
 
