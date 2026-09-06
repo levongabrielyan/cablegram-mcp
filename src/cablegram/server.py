@@ -17,9 +17,7 @@ watching.
 from __future__ import annotations
 
 import asyncio
-import os
 import re
-import sqlite3
 from collections import Counter
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -34,7 +32,7 @@ from .schema import connect
 from .render import render_latest, render_read, render_search, render_sources
 from .poll import POLLABLE, poll_once
 from .sources import SOURCES, by_id, resolve
-from .store import (bare_query, is_down, items_by_ids, latest_items, search_items,
+from .store import (bare_query, is_down, latest_items, search_items,
                     source_health)
 
 __all__ = ["build", "serve", "main"]
@@ -467,7 +465,7 @@ def build(rows_from=None) -> MCPServer:
             "`launches` each mix blog posts with model-repo listings; `weights` is "
             "the six lab namespaces on their own. Ask for the narrowest thing that "
             "answers the question; wire_sources has the full catalogue but costs "
-            "about 1,500 tokens, and you should not need it to make a choice.\n"
+            "about 1,700 tokens, and you should not need it to make a choice.\n"
             "`since` (ISO-8601 UTC: 2026-08-30 or 2026-08-30T09:00:00Z) is the window's start and replaces `hours` when both are given. `max_tokens` (default 12000) bounds the reply. Over budget, the "
             "allowance per source drops rather than the tail being cut, and the "
             "BUDGET line says what it dropped to — so a small budget returns fewer "

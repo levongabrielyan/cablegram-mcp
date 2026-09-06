@@ -165,8 +165,8 @@ SOURCES: tuple[Source, ...] = (
     #
     # There is no firehose to rank away inside one organisation's namespace, so
     # nothing here is ranked at all and the deviation the `hub` note declares
-    # does not apply to these. Six requests, 2.6s together, and they run in
-    # parallel with everything that is not Telegram.
+    # does not apply to these. Six requests, and they run in parallel with
+    # everything that is not Telegram.
     #
     # lang is `en`: the headline is a repository name in ASCII. These are
     # Chinese labs and their releases are not translated because there is
