@@ -272,6 +272,11 @@ def parse_feed(raw: bytes, *, dated_by_feed: bool = False) -> list[Entry]:
         exact = not updated
         if feed_stamp:
             published, exact = _parse_date(feed_stamp) or published, False
+        elif dated_by_feed:
+            # The document is a front page and stopped saying which day: the
+            # entry's own date is its maker's, weeks off, and would go out
+            # exact. Marked instead, so the fall-back is visible.
+            exact = False
         entries.append(Entry(title, url, published, body, body_src,
                              date_exact=exact))
 

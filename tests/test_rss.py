@@ -512,3 +512,15 @@ def test_a_front_page_feed_dates_its_entries_by_the_day_they_were_featured():
     assert not any(e.date_exact for e in by_feed), "the day is known, the hour is the reset"
     assert [e.title for e in by_feed] == ["Hyperprobe", "dif.sh"]
 
+
+def test_a_front_page_feed_without_a_stamp_marks_its_entries_rather_than_trusting_them():
+    """If Product Hunt drops the feed-level <updated>, the entries fall back
+    to their makers' dates — weeks off — and went out exact, with no line
+    saying so. Measured by the 06/09 code review as the one silent path of
+    dated_by_feed. They now go out marked."""
+    unstamped = FRONT_PAGE.replace(b"  <updated>2026-09-05T00:01:00-07:00</updated>\n", b"", 1)
+    assert b"<updated>2026-09-05T00:01:00-07:00" not in unstamped
+    entries = parse_feed(unstamped, dated_by_feed=True)
+    assert [e.published.isoformat()[:10] for e in entries] == ["2026-08-31", "2026-08-07"]
+    assert not any(e.date_exact for e in entries), "a fallen-back date is not the day"
+

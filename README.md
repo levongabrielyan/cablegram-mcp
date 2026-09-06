@@ -95,7 +95,7 @@ adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
 namespaces on it, and three sections of a lab that publishes no feed, read out
-of the data its own pages ship. 515 tests, on 3.12, 3.13 and 3.14.
+of the data its own pages ship. 516 tests, on 3.12, 3.13 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
 
