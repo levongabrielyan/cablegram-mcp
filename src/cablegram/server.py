@@ -33,7 +33,7 @@ from . import __version__
 from .schema import connect
 from .render import render_latest, render_read, render_search, render_sources
 from .poll import POLLABLE, poll_once
-from .sources import SOURCES, resolve
+from .sources import SOURCES, by_id, resolve
 from .store import (is_down, items_by_ids, latest_items, search_items,
                     source_health)
 
@@ -283,13 +283,26 @@ def _at_ceiling(health: dict, wanted: set[str], floors: dict[str, str],
     feed said was "fifteen, back to the 14th", and only wire_search's COVER
     line carried that. So: rows served, oldest row younger than `since`,
     CEILING — whatever kind of source it is. The poller's cap flag is still
-    what `cablegram check` prints; here it is redundant with the floor.
+    what `cablegram check` prints; here it is redundant with the floor —
+
+    except for Hacker News, whose request is itself bounded by `since`
+    (numericFilters on created_at_i), so its floor can never fall before the
+    window and the floor says nothing. Measured 2026-09-06, the day after the
+    floor rule went in: hours=24 returned 763 of a 1,000-row cap under
+    "CEILING hn", in the default call of the most used source. For hn the
+    poller's cap is the only thing that knows whether the answer was cut.
     """
     out = []
     for sid in sorted(wanted):
         floor = floors.get(sid)
-        if floor and floor > since:
-            out.append(sid)
+        if not floor or floor <= since:
+            continue
+        source = by_id(sid)
+        if source is not None and source.kind == "hn":
+            state = health.get(sid) or {}
+            if not (state.get("at_ceiling") and state["at_ceiling"] == state.get("last_write")):
+                continue
+        out.append(sid)
     return out
 
 

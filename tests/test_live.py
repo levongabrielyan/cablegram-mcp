@@ -576,3 +576,43 @@ async def test_a_search_states_its_ceiling_keeps_the_newest_and_fits_its_budget(
     assert estimate_tokens(out) <= 500, (estimate_tokens(out), out.splitlines()[:3])
     assert out.startswith("BUDGET"), out.splitlines()[:2]
 
+
+@pytest.mark.anyio
+async def test_hacker_news_under_its_cap_is_not_at_a_ceiling(monkeypatch):
+    """The floor rule (every source whose oldest row is younger than `since`
+    is at its ceiling) is wrong for exactly one source. Hacker News is asked
+    with `since` in the request itself, so its floor can never fall before
+    the window, whether it returned 763 rows or the thousand of its cap.
+    Measured 2026-09-06, the day after the rule went in: hours=24 came back
+    "CEILING hn" over 763 of 1,000 — the default call of the most used
+    source, and the shape 3ebc254 had closed for cls. For hn only the
+    poller's cap knows whether the answer was cut; below it, the window was
+    covered."""
+    import json
+    import time
+    from cablegram.poll import HN_MAX
+
+    real = httpx2.AsyncClient
+    now = int(time.time())
+
+    def handler(request):
+        if "algolia" in str(request.url):
+            hits = [{"objectID": str(i), "title": f"HN story {i}",
+                     "url": f"https://hn.example/{i}", "created_at_i": now - 60 * i}
+                    for i in range(HN_MAX - 300)]
+            return httpx2.Response(200, content=json.dumps({"hits": hits}).encode())
+        return httpx2.Response(503)
+
+    def patched(*args, **kwargs):
+        kwargs.setdefault("transport", httpx2.MockTransport(handler))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(httpx2, "AsyncClient", patched)
+    server = build()
+    out = await call(server, "wire_latest", hours=24, sources=["hn"], limit_per_source=2)
+    assert "CEILING" not in out, out.splitlines()[:4]
+    assert f"hn=2/{HN_MAX - 300}" in out, out.splitlines()[:6]
+    out = await call(server, "wire_search", query="HN story", sources=["hn"],
+                     days=1, limit_per_source=2)
+    assert "CEILING" not in out, out.splitlines()[:4]
+
