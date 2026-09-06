@@ -233,7 +233,7 @@ def render_latest(
             head.append("        CUT count what they served rather than what the "
                         "window holds.")
         if unknown:
-            head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
+            head.append(f"UNKNOWN SELECTOR {' '.join(_oneline(u) for u in unknown)}  -> matched no source, "
                         f"tag or language. Call wire_sources for the catalogue.")
         cut = [f"{k}={s}/{t}" for k, (s, t) in sorted(cuts.items()) if s < t]
         if cut:
@@ -424,7 +424,10 @@ def render_search(
         # CUT line already says when a source held more than it showed. It had
         # also been wrong: 24 shown above thirteen stories, before the search
         # stopped serving a post and its link as two rows.
-        head = [f'CABLEGRAM {VERSION} search "{query}" | last {days}d']
+        # The caller's own text, echoed: a selector or a query carrying a
+        # newline put a heading, a separator and a dispatch line into the
+        # header. Measured through the server by the 06/09 review.
+        head = [f'CABLEGRAM {VERSION} search "{_oneline(query)}" | last {days}d']
         # Before CUT, because the warning has to be read before the number it
         # explains. And deliberately not the wording render_latest uses: there
         # the false conclusion is "nothing happened", here it is "no match", and
@@ -445,7 +448,7 @@ def render_search(
                         '"no match". Its total on CUT counts what it served, '
                         "not the window.")
         if unknown:
-            head.append(f"UNKNOWN SELECTOR {' '.join(unknown)}  -> matched no source, "
+            head.append(f"UNKNOWN SELECTOR {' '.join(_oneline(u) for u in unknown)}  -> matched no source, "
                         f"tag or language. NOTHING WAS SEARCHED for it. Call "
                         f"wire_sources for the catalogue.")
         if cut:

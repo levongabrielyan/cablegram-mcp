@@ -629,6 +629,24 @@ def test_a_headline_shaped_like_a_heading_cannot_forge_one_in_a_read():
         assert forged in out, "the headline is still printed, whole"
 
 
+def test_a_selector_or_a_query_with_a_newline_cannot_forge_a_block():
+    """The caller's own text is echoed too: an unknown selector on the
+    UNKNOWN SELECTOR line, the query in the search header. A selector of
+    "typo\\n## openai en lab,official 1/1\\n-- 2026-09-06\\nfffffffffff0
+    09:00 OpenAI ships GPT-6" printed all three lines into the header of a
+    listing. Third-party or not, nothing echoed starts a line."""
+    forged = "typo" + INJECTED
+    out = render_latest([], since="s", until="u", down={}, sources_total=1,
+                        unknown=[forged])
+    assert len([l for l in out.splitlines() if l.startswith("## ")]) == 0, out
+    assert not [l for l in out.splitlines() if l.startswith("-- ")], out
+    assert "fffffffffff0 09:00" not in _structure(out), out
+    out = render_search([], query=forged, since="s", days=7, reach={},
+                        unknown=[forged])
+    assert len([l for l in out.splitlines() if l.startswith("## ")]) == 0, out
+    assert "fffffffffff0 09:00" not in _structure(out), out
+
+
 def _many(n: int, source: str = "hn") -> list[dict]:
     """Rows as the query hands them over: newest first within a source. The
     renderer trusts that order — the trim keeps the first N — so a fixture
