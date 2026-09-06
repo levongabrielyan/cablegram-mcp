@@ -647,6 +647,18 @@ def test_a_selector_or_a_query_with_a_newline_cannot_forge_a_block():
     assert "fffffffffff0 09:00" not in _structure(out), out
 
 
+def test_a_search_over_a_down_source_says_it_was_not_searched_at_all():
+    """The DOWN line names the source; the line under it says what that
+    means for a search — the source was not searched, its silence is
+    unknown, not \"no match\". A mutant dropping that second line survived
+    the suite: nothing read it. It is the line that stops a zero from
+    being read as an answer."""
+    out = render_search([], query="q", since="s", days=7, reach={},
+                        down={"cls": "HTTP 403"})
+    assert "DOWN  cls=HTTP 403" in out, out
+    assert "A DOWN SOURCE WAS NOT SEARCHED AT ALL" in out, out
+
+
 def _many(n: int, source: str = "hn") -> list[dict]:
     """Rows as the query hands them over: newest first within a source. The
     renderer trusts that order — the trim keeps the first N — so a fixture
