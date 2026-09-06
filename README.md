@@ -74,12 +74,14 @@ block or a name above.*
 **What it costs.** A reply is priced by what the sources published, not by this
 code, so these are ranges from repeated measurement rather than figures:
 
-    24h, everything, defaults        ~5,900 tokens
-    6h,  everything, defaults        2,500-3,400
+    24h, everything, defaults        3,200-5,900 tokens
+    6h,  everything, defaults        1,000-3,400
     6h,  three busy sources          1,000-1,400
     6h,  three, limit_per_source=2   ~300
 
-The whole-catalogue numbers hold because they average over twenty-nine feeds.
+The whole-catalogue numbers move with the calendar, not the code: the low ends
+are a Saturday night with eighteen of twenty-nine feeds silent, the high ends a
+weekday.
 The narrow ones move by half again within an hour: two measurements of the same
 call, sixty minutes apart, gave 3,324 and 2,515 with no change to the code —
 Chinese wire services publish in bursts. Treat a narrow selection as costing
@@ -178,23 +180,37 @@ prints on its COVER line, one floor per source:
     huggingface            2020
     anthropic              2021      news and research; engineering, 2024
     hub                    2022
-    deepmind               2025-10
+    deepseek               2024-12   the six Chinese labs are read from their own
+    minimax                2025-01   namespaces: the newest fifty repos of each,
+    moonshot               2025-02   which reaches back as far as the lab is slow
+    zhipu                  2025-04
     mcp                    2025-07
-    producthunt            1 day     the day's front page, fifty posts dated the day
-                                     they were featured; the feed has no yesterday
+    deepmind               2025-10
+    qwen                   7 months
+    tencent                5 months
     testingcatalog         2 months
+    llm_under_hood         6 weeks   Telegram is one page of posts per channel,
+    techsparks             1 month   so each floor is how often that channel posts
     n8n                    3 weeks
-    Habr                   2 days
-    cls.cn                 1 day     at its ceiling, and it cannot page backwards, so
+    ai_newz                11 days
+    cls.cn                 1-3 days  at its ceiling, and it cannot page backwards, so
                                      anything older is gone from everywhere
-    36Kr                   1 day
-    qbitai                 1 day
+    data_secrets           3 days
+    denissexy              3 days
+    seeallochnaya          3 days
+    alternativeto          2 days
+    36Kr                   2 days
+    qbitai                 2 days
+    Habr                   2 days
     Hacker News            1 day     a thousand stories is the cap, so days=7 and
                                      days=30 return the same rows
+    producthunt            today     the day's front page, fifty posts dated the day
+                                     they were featured; the feed has no yesterday
 
-One COVER line, measured 2026-09-04. Six reach back years; the Chinese wires,
-Habr and Hacker News reach back a day or two; and no parameter asks for more
-than the endpoint volunteers. That floor is a property
+Two COVER lines, measured 2026-09-06, all twenty-nine sources. Eleven reach back
+a year or more, four of them the Chinese labs; the wires, the channels, Habr and
+Hacker News reach back days; and no parameter asks for more than the endpoint
+volunteers. That floor is a property
 of the feeds and never of the subject.
 
 Every reply carries its own rather than leaving it to be discovered: the COVER
@@ -207,7 +223,9 @@ years of coverage behind a miss.
 deciding whether the catalogue still works. It stores nothing either.
 
 Nothing is uploaded anywhere and no database ships with this repository: the
-server fetches on your behalf and does not redistribute anyone's content.
+server fetches on your behalf and keeps no copy. The only third-party bytes
+here are the small captured fixtures under `tests/samples/`, kept so the
+parsers can be tested offline.
 
 ## Not built yet
 

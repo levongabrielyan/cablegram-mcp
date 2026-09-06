@@ -17,7 +17,7 @@ Concretely, the output states:
 
 | Marking | Without it |
 | --- | --- |
-| `DOWN cls=HTTP403` | An absent source cannot be known to exist; its silence reads as "nothing happened there" |
+| `DOWN  cls=HTTP 403` | An absent source cannot be known to exist; its silence reads as "nothing happened there" |
 | `CUT hn=25/57` | An undeclared cut is indistinguishable from a source with little to say |
 | `~a3f9c2e1b7d2` | A capture time presented as a publication time files the item under the wrong day |
 | `PENDING` | A source with no adapter reported as broken buries the one that is actually broken |
@@ -137,7 +137,7 @@ XML and RFC-822 dates.
 
 * It does not translate. Each dispatch carries its language, and the model
   reading it has more context for that than any translation step would.
-* It does not rank, score or deduplicate across sources beyond counting.
+* It does not rank, score or deduplicate across sources.
 * It does not search the web. `wire_search` reads only what the sources are
   serving at the moment of the call, which for some of them is a few days.
 * It does not fetch article bodies. What a feed ships is what the reply carries.
