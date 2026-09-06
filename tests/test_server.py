@@ -549,6 +549,32 @@ async def test_every_place_that_states_a_version_states_the_same_one(server):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("query", ["Claude OR Gemini", "agents AND memory",
+                                   "NOT Claude", "NEAR(Claude Gemini)"])
+async def test_a_query_with_an_operator_is_refused_rather_than_searched_literally(server, query):
+    """Found using it: "Claude OR Gemini" came back as nothing matched, under
+    a line saying that means "not in what these feeds serve today". True of
+    the six-word phrase; read as true of Claude and of Gemini, on a day the
+    feeds carried both. The description says ONE exact phrase; a caller who
+    writes the operator has not read it, and refusing is the one reply that
+    cannot be misread."""
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError) as raised:
+        await call(server, "wire_search", query=query, days=7)
+    assert "ONE exact phrase" in str(raised.value) and "lowercase" in str(raised.value)
+
+
+@pytest.mark.anyio
+async def test_a_lowercase_or_is_a_word_and_is_searched(server):
+    """The refusal above is for syntax, not for English: "to be or not to be"
+    is a phrase, and matching ignores case, so the lowercase word is how a
+    caller searches the uppercase one too."""
+    out = await call(server, "wire_search", query="origin or destination", days=7)
+    assert out.startswith("CABLEGRAM "), out[:80]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("query", ["", "   ", "\t"])
 async def test_an_empty_query_is_refused_rather_than_answered(server, query):
     """`search_items` returns engine='none' for an empty query and searches

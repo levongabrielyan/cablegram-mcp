@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sqlite3
 from collections import Counter
 from contextlib import closing
@@ -113,6 +114,11 @@ def _iso(dt: datetime) -> str:
 # silently matching nothing.
 _SINCE_FORMATS = ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S",
                   "%Y-%m-%dT%H:%MZ", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
+
+
+# FTS5 syntax a caller writes from habit. Uppercase only, which is what the
+# index itself would have read as syntax; the lowercase word is a word.
+_OPERATORS = re.compile(r"(?:^|\s)(OR|AND|NOT)(?:\s|$)|\bNEAR\(")
 
 
 def _parse_since(raw: str) -> str:
@@ -449,7 +455,7 @@ def build(rows_from=None) -> MCPServer:
             "the six lab namespaces on their own. Ask for the narrowest thing that "
             "answers the question; wire_sources has the full catalogue but costs "
             "about 1,500 tokens, and you should not need it to make a choice.\n"
-            "`max_tokens` (default 12000) bounds the reply. Over budget, the "
+            "`since` (ISO-8601 UTC: 2026-08-30 or 2026-08-30T09:00:00Z) is the window's start and replaces `hours` when both are given. `max_tokens` (default 12000) bounds the reply. Over budget, the "
             "allowance per source drops rather than the tail being cut, and the "
             "BUDGET line says what it dropped to — so a small budget returns fewer "
             "rows from every source instead of the last sources vanishing.\n"
@@ -656,6 +662,20 @@ def build(rows_from=None) -> MCPServer:
                 "`query` is empty, so nothing would be searched — and the reply "
                 "would come back as an empty search, which reads as an answer. Pass a "
                 "term, or use wire_latest if what you want is a whole window."
+            )
+        if found := _OPERATORS.search(query):
+            # Found using it: "Claude OR Gemini" came back as nothing matched,
+            # under a line saying that means "not in what these feeds serve
+            # today". True of the six-word phrase; read as true of Claude and
+            # of Gemini, on a day Hacker News carried both. The description
+            # says ONE exact phrase, and a caller who writes the operator has
+            # not read it — refusing is the only reply that cannot be misread.
+            raise ToolError(
+                f"`query` carries {found.group(0).strip()!r}, and this search has no "
+                f"operators: the whole query is ONE exact phrase, so the reply would "
+                f"be a search for those literal words, and its zero would read as "
+                f"nothing about either term. Run one wire_search per term. To find "
+                f"the word itself, write it in lowercase — matching ignores case."
             )
         start = _ago(_now(), "days", days)
         _positive("limit_per_source", limit_per_source, "items per source")
