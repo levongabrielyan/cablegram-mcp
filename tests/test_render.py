@@ -659,6 +659,17 @@ def test_a_search_over_a_down_source_says_it_was_not_searched_at_all():
     assert "A DOWN SOURCE WAS NOT SEARCHED AT ALL" in out, out
 
 
+def test_an_unknown_id_with_a_newline_cannot_forge_a_block_in_a_read():
+    """The third place the caller's own text is echoed: an id that did not
+    resolve, on the UNKNOWN line of a read. Same rule as the selector and
+    the query — nothing echoed starts a line."""
+    out = render_read([], requested=["9f01aa2b" + INJECTED])
+    assert not [l for l in out.splitlines() if l.startswith("## ")], out
+    assert not [l for l in out.splitlines() if l.startswith("-- ")], out
+    assert "fffffffffff0 09:00" not in _structure(out), out
+    assert "UNKNOWN 9f01aa2b" in out
+
+
 def _many(n: int, source: str = "hn") -> list[dict]:
     """Rows as the query hands them over: newest first within a source. The
     renderer trusts that order — the trim keeps the first N — so a fixture

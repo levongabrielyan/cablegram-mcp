@@ -289,7 +289,7 @@ def render_read(rows: list[dict], *, requested: list[str],
         # in this project does — there is no retention window and no DELETE
         # outside one trigger; and in live mode it blamed a reinstall while
         # naming an archive that the build is not reading at all.
-        header.append(f"UNKNOWN {' '.join(missing)} -> not fetched in this session. "
+        header.append(f"UNKNOWN {' '.join(_oneline(i) for i in missing)} -> not fetched in this session. "
                       f"Nothing is kept between runs: an id resolves only while it "
                       f"is still in this process's cache, which holds the last few "
                       f"thousand items and starts empty.")
