@@ -616,6 +616,9 @@ def build(rows_from=None) -> MCPServer:
         # Nothing is kept between runs, so an id resolves only against what this
         # process has already fetched. Anything else is named on the UNKNOWN
         # line, which tells the model how to get a current one.
+        # The same id three times resolved three times and printed three
+        # blocks, under "3 requested | 3 resolved". Asked once is asked.
+        ids = list(dict.fromkeys(ids))
         return render_read([seen[i] for i in ids if i in seen], requested=ids,
                            max_tokens=max_tokens)
 

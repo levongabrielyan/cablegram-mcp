@@ -645,3 +645,15 @@ async def test_an_undated_post_fetched_as_the_second_ticks_over_is_not_silence(l
     assert "SILENT" not in out, out
     assert re.search(r"^~\w{12} \d\d:\d\d Undated post$", out, re.M), out
 
+
+@pytest.mark.anyio
+async def test_an_id_asked_for_three_times_is_read_once(live):
+    """ids=[x, x, x] resolved three times and printed three identical
+    blocks under "3 requested | 3 resolved". True, and useless: asked
+    once is asked. Flagged by three reviews running."""
+    listing = await call(live, "wire_latest", hours=48, sources=["qbitai"])
+    first = re.search(r"^(\w{12}) \d\d:\d\d ", listing, re.M).group(1)
+    out = await call(live, "wire_read", ids=[first, first, first])
+    assert "1 requested | 1 resolved | 0 unknown" in out, out.splitlines()[0]
+    assert len([l for l in out.splitlines() if l.startswith("## ")]) == 1, out
+
