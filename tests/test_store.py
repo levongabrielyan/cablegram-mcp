@@ -761,3 +761,26 @@ def test_the_parsers_mark_travels_into_the_store(db):
         assert flags == {"Edited today, written in 2024": 0,
                          "Stamped to the minute": 1}, (table, flags)
 
+
+def test_a_question_mark_at_the_end_of_a_query_is_not_part_of_the_term(db):
+    """Found using it: "Astra?" matched nothing on a day Hacker News carried
+    seventeen headlines with Astra in them, under a line saying nothing
+    matched. The question mark is how a question is written. Only the ends
+    come off — "C++" keeps its pluses and "Node.js" its dot."""
+    store_entries(db, by_id("hn"),
+                  [Entry("GPT-6 Astra is now available in Perplexity", "https://hn.example/astra",
+                         PUB, None, None),
+                   Entry("The CINT C/C++ Interpreter", "https://hn.example/cpp", PUB, None, None),
+                   Entry("Node.js 30 released", "https://hn.example/node", PUB, None, None)],
+                  fetched_at=NOW)
+    since = "2026-08-01T00:00:00Z"
+    bare, _ = search_items(db, "Astra", since=since)
+    assert len(bare) == 1
+    for spelled in ("Astra?", "Astra.", "Astra!", "¿Astra?", '"Astra?"', "Astra?*"):
+        rows, _ = search_items(db, spelled, since=since)
+        assert [r["id"] for r in rows] == [r["id"] for r in bare], spelled
+    cpp, _ = search_items(db, "C++", since=since)
+    assert [r["title"] for r in cpp] == ["The CINT C/C++ Interpreter"]
+    node, _ = search_items(db, "Node.js", since=since)
+    assert [r["title"] for r in node] == ["Node.js 30 released"]
+

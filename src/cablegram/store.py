@@ -627,7 +627,11 @@ def _bare(query: str) -> str:
     query = query.strip()
     if len(query) >= 2 and query[0] == query[-1] and query[0] in ("\"", "'"):
         query = query[1:-1].strip()
-    return query.rstrip("*").strip()
+    # Sentence punctuation at the ends is how a question is written, not part
+    # of the term. Found using it, 2026-09-06: "Astra?" matched nothing on a
+    # day Hacker News carried seventeen headlines with Astra in them, under a
+    # line saying nothing matched. Only the ends: "C++" and "Node.js" stay.
+    return query.rstrip("*").strip().rstrip("?!.,;:").lstrip("¿¡").strip()
 
 
 def _fts_query(query: str) -> str:
