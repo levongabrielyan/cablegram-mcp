@@ -240,8 +240,11 @@ SOURCES: tuple[Source, ...] = (
     # ── Russian ──────────────────────────────────────────────────────────────
     Source(
         "habr", "Habr — AI hub", "rss",
-        "https://habr.com/ru/rss/hub/artificial_intelligence/all/", "ru",
+        "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/all/", "ru",
         ("community", "technical"),
+        "The path the old /hub/…/all/ address now redirects to, twice. Followed "
+        "silently until 2026-09-06; the day the redirect stops, the old address "
+        "stops answering.",
     ),
 
     # ── Telegram: public HTML, no account, no API ─────────────────────────────
