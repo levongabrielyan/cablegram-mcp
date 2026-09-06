@@ -575,7 +575,7 @@ async def test_a_lowercase_or_is_a_word_and_is_searched(server):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("query", ["", "   ", "\t"])
+@pytest.mark.parametrize("query", ["", "   ", "\t", "?", "...", '""', "*", "!?", "¿?"])
 async def test_an_empty_query_is_refused_rather_than_answered(server, query):
     """`search_items` returns engine='none' for an empty query and searches
     nothing. The engine line has two branches and 'none' fell through the else:

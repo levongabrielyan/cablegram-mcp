@@ -27,7 +27,7 @@ from .rss import Entry
 from .sources import SOURCES, Source, resolve
 from .urls import item_id, normalise
 
-__all__ = ["StoreReport", "CollisionError", "store_entries", "record_attempt",
+__all__ = ["bare_query", "StoreReport", "CollisionError", "store_entries", "record_attempt",
            "items_of_source", "record_write", "source_health",
            "latest_items", "items_by_ids", "search_items"]
 
@@ -607,7 +607,7 @@ def items_by_ids(db: sqlite3.Connection, ids: list[str]) -> list[dict]:
     return [found[i] for i in ids if i in found]
 
 
-def _bare(query: str) -> str:
+def bare_query(query: str) -> str:
     """The words a caller means, without the quoting they wrapped them in.
 
     A caller who quotes a phrase means the phrase. Doubling the quotes made
@@ -669,7 +669,7 @@ def search_items(
     阿里, 字节 — are exactly two. Without the LIKE fallback those return nothing,
     with no error, and the answer reads as "nobody is talking about them".
     """
-    query = _bare(query)
+    query = bare_query(query)
     if not query:
         return [], "none"
 

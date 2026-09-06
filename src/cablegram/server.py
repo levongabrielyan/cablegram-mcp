@@ -34,7 +34,7 @@ from .schema import connect
 from .render import render_latest, render_read, render_search, render_sources
 from .poll import POLLABLE, poll_once
 from .sources import SOURCES, by_id, resolve
-from .store import (is_down, items_by_ids, latest_items, search_items,
+from .store import (bare_query, is_down, items_by_ids, latest_items, search_items,
                     source_health)
 
 __all__ = ["build", "serve", "main"]
@@ -665,7 +665,11 @@ def build(rows_from=None) -> MCPServer:
         limit_per_source: int = 25,
         max_tokens: int = 8000,
     ) -> str:
-        if not query.strip():
+        if not bare_query(query):
+            # And through the same door the quotes and stars come off: "?",
+            # "...", '""' and "*" are empty once bared, searched nothing, and
+            # answered "Nothing matched" under a COVER line — a search that
+            # never ran, described as one that did. Measured 2026-09-06.
             # Every other impossible argument on this surface is refused —
             # hours=0, days=-7, limit_per_source=0, detail='Full', a malformed
             # `since`. The one that was not is the one most likely to arrive
