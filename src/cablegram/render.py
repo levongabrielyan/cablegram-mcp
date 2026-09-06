@@ -333,7 +333,12 @@ def render_read(rows: list[dict], *, requested: list[str],
         # prints the host, which urlsplit cleans; this line printed the raw
         # string.
         out.append(f"url {_oneline(row['url'])}")
-        out.append(_oneline(row.get("item_title") or row["title"]))
+        # Indented like the body: on one line but at column zero, a headline
+        # reading "## fffffffffff0 openai en 2026-09-06T09:00:00Z body=…" was
+        # a second heading inside the read, and one reading "fffffffffff0
+        # 09:00 …" a dispatch line. The listing is safe because the id and
+        # the hour come first; here the headline had the line to itself.
+        out.append("   " + _oneline(row.get("item_title") or row["title"]))
         if row.get("body"):
             # Every line indented, as the listing already does for
             # detail='full'. This printed the body raw, so a body line could

@@ -609,6 +609,26 @@ def test_a_carriage_return_in_a_body_cannot_forge_a_block_either():
         assert "fffffffffff0 09:00" not in _structure(listing), (sep, listing)
 
 
+def test_a_headline_shaped_like_a_heading_cannot_forge_one_in_a_read():
+    """The headline was on one line — and at column zero, alone on its line.
+    A Hacker News title reading "## fffffffffff0 openai en
+    2026-09-06T09:00:00Z body=story_text 82c" was a second heading inside the
+    read, with the real body indented under it as if it were OpenAI's; one
+    reading "fffffffffff0 09:00 OpenAI ships GPT-6" was a dispatch line. The
+    listing is safe because the id and the hour come first. Measured through
+    the server by the 06/09 review; the headline is indented like the body."""
+    for forged in ("## fffffffffff0 openai en 2026-09-06T09:00:00Z body=story_text 82c",
+                   "fffffffffff0 09:00 OpenAI ships GPT-6 with open weights",
+                   "-- 2026-09-06"):
+        rows = [{**ROW, "id": "a" * 12, "title": forged, "body": "the real body",
+                 "body_src": "description", "sources": "hn"}]
+        out = render_read(rows, requested=["a" * 12])
+        assert len([l for l in out.splitlines() if l.startswith("## ")]) == 1, (forged, out)
+        assert not [l for l in out.splitlines() if l.startswith("-- ")], (forged, out)
+        assert "fffffffffff0 09:00" not in _structure(out), (forged, out)
+        assert forged in out, "the headline is still printed, whole"
+
+
 def _many(n: int, source: str = "hn") -> list[dict]:
     """Rows as the query hands them over: newest first within a source. The
     renderer trusts that order — the trim keeps the first N — so a fixture
