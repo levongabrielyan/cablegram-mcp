@@ -547,9 +547,17 @@ def build(rows_from=None) -> MCPServer:
             _positive("limit_per_source", limit_per_source, "items per source")
 
         with closing(opened(sources, hours)) as db:
+            # The window's end is the moment the fetch finished, not the moment
+            # the call began. An undated post is filed at its fetch time, and
+            # with `until` taken before the fetch and the second ticking over
+            # in between, that post fell one second past the window: measured,
+            # a feed with one undated item came back SILENT, "published nothing
+            # in this window". The store already caps every date at its fetch
+            # time, so the query needs no upper bound; the header prints the
+            # end that the data actually has.
+            until = _now()
             rows = latest_items(db, since=start, sources=sources,
-                                limit_per_source=limit_per_source,
-                                until=_iso(until))
+                                limit_per_source=limit_per_source)
             health = source_health(db)
             floors = _reach(db)
         remember(rows, health)
@@ -696,8 +704,7 @@ def build(rows_from=None) -> MCPServer:
         _positive("limit_per_source", limit_per_source, "items per source")
         with closing(opened(sources, days * 24)) as db:
             rows, _engine = search_items(db, query, since=start, sources=sources,
-                                         until=_iso(_now()),
-                                        limit_per_source=limit_per_source)
+                                         limit_per_source=limit_per_source)
             reach = _reach(db)
             health = source_health(db)
             remember(rows, health)

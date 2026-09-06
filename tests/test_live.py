@@ -616,3 +616,32 @@ async def test_hacker_news_under_its_cap_is_not_at_a_ceiling(monkeypatch):
                      days=1, limit_per_source=2)
     assert "CEILING" not in out, out.splitlines()[:4]
 
+
+@pytest.mark.anyio
+async def test_an_undated_post_fetched_as_the_second_ticks_over_is_not_silence(live, monkeypatch):
+    """An undated post is filed at its fetch time. The window's end was taken
+    before the fetch, so when the second ticked over in between, the post
+    fell one second past the window and its feed came back SILENT,
+    \"published nothing in this window\". Measured through the server by the
+    06/09 code review with the clock two seconds behind; same here. The end
+    of the window is now the moment the fetch finished."""
+    import cablegram.server as server_mod
+    from datetime import timedelta
+    real_now = server_mod._now
+    monkeypatch.setattr(server_mod, "_now", lambda: real_now() - timedelta(seconds=2))
+    undated = (b'<rss version="2.0"><channel><item><title>Undated post</title>'
+               b'<link>https://qbitai.com/undated</link></item></channel></rss>')
+    real = httpx2.AsyncClient
+
+    def handler(request):
+        return httpx2.Response(200, content=undated)
+
+    def patched(*args, **kwargs):
+        kwargs["transport"] = httpx2.MockTransport(handler)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(httpx2, "AsyncClient", patched)
+    out = await call(live, "wire_latest", hours=24, sources=["qbitai"])
+    assert "SILENT" not in out, out
+    assert re.search(r"^~\w{12} \d\d:\d\d Undated post$", out, re.M), out
+
