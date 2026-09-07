@@ -95,7 +95,7 @@ adapter and were verified against the live endpoints: eleven RSS feeds, Hacker
 News through its search index, a signed Chinese financial API, six public
 Telegram channels, the Hugging Face model hub plus six labs read from their own
 namespaces on it, and three sections of a lab that publishes no feed, read out
-of the data its own pages ship. 518 tests, on 3.12, 3.13 and 3.14.
+of the data its own pages ship. 519 tests, on 3.12, 3.13 and 3.14.
 
 Three sources are worth knowing about before you rely on them:
 
@@ -140,6 +140,21 @@ block:
 
 `serve` is the subcommand. Without it the command prints its usage and exits,
 which a client reports as a server that would not start.
+
+## Two prompts
+
+The server also ships two prompts, which Claude Code lists as slash commands and
+any client with prompt support can call. They are the two calls a model should
+make unasked — and, measured over a week, never did — written down so a person
+can make them in one line:
+
+    /mcp__cablegram__briefing 24 lab,early     what changed in 24h across those sources,
+                                               dated, with a line on what was not covered
+    /mcp__cablegram__verify "n8n is dead"      a claim checked against the sources, and
+                                               only the sources
+
+Each names the tool to call, the lines to read before the blocks, and how to
+say what the sources did not reach.
 
 ## The four tools
 

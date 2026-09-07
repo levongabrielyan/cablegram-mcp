@@ -856,3 +856,35 @@ async def test_sources_reports_the_newest_item_a_source_holds():
     out = await call(server, "wire_sources")
     row = next(l for l in out.splitlines() if l.startswith("qbitai"))
     assert NOW.strftime("%Y-%m-%d") in row and old.strftime("%Y-%m-%d") not in row, row
+
+
+@pytest.mark.anyio
+async def test_the_server_offers_a_briefing_and_a_check_as_prompts(server):
+    """The tools are the instrument; a week of use showed nobody picks it up
+    unasked. Two prompts write down the two calls a model should make on its
+    own — what changed, and is this claim still true — so a client can list
+    them and a person can make them in one line. Each names the tool to
+    call, the lines to read first, and the coverage line to end with."""
+    names = {p.name for p in await server.list_prompts()}
+    assert {"briefing", "verify"} <= names, names
+
+    def text_of(got):
+        message = got.messages[0]
+        return message.content.text if hasattr(message, "content") else message["content"]["text"]
+
+    got = await server.get_prompt("briefing", {"hours": "6", "sources": "lab, early"})
+    text = text_of(got)
+    assert "wire_latest(hours=6, sources=['lab', 'early'])" in text, text
+    for word in ("DOWN", "SILENT", "CEILING", "CUT", "wire_read", "coverage"):
+        assert word in text, word
+
+    got = await server.get_prompt("briefing", {})
+    text = text_of(got)
+    assert "wire_latest(hours=24)" in text and "every source" in text, text
+
+    got = await server.get_prompt("verify", {"claim": "n8n is dead"})
+    text = text_of(got)
+    assert '"n8n is dead"' in text and "wire_search" in text, text
+    for word in ("DOWN", "CEILING", "COVER", "wire_read", "not reach"):
+        assert word in text, word
+

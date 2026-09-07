@@ -743,6 +743,67 @@ def build(rows_from=None) -> MCPServer:
         # from a source that failed, and render_sources says so.
         return render_sources(health=dict(session))
 
+    # Two prompts. The tools are the instrument; these are the two ways of
+    # holding it that a model should reach for unasked and, measured over a
+    # week, never did — a server nobody calls answers nothing. Claude Code
+    # lists them as slash commands, so a person can make the call in one
+    # line, and any client that supports prompts gets them for free.
+    def _selectors(sources: str) -> list[str]:
+        return [s.strip() for s in sources.split(",") if s.strip()]
+
+    @server.prompt(
+        name="briefing",
+        title="What changed",
+        description=(
+            "A dated briefing of what these sources published in a window: one "
+            "listing, the few bodies that matter, and a line on what was not "
+            "covered. Arguments: hours (default 24), sources (ids, tags or "
+            "languages, comma-separated; default all)."
+        ),
+    )
+    def briefing(hours: str = "24", sources: str = "") -> str:
+        wanted = _selectors(sources)
+        call = f"wire_latest(hours={int(hours)}" + (f", sources={wanted!r}" if wanted else "") + ")"
+        scope = f" across {', '.join(wanted)}" if wanted else " across every source"
+        return (
+            f"Brief me on what changed in the last {int(hours)} hours{scope}.\n"
+            f"1. Call {call}. Do not call wire_sources first; the listing says what answered.\n"
+            "2. Read the DOWN, SILENT, CEILING and CUT lines before the blocks: they say what "
+            "was not covered, and the briefing has to say so too.\n"
+            "3. wire_read only the dispatches whose headline is not enough — eight at most. "
+            "The listing usually is enough.\n"
+            "4. Write the briefing grouped by what happened, not by source. Every item dated "
+            "as printed (day and UTC time) and attributed to its source; a headline in "
+            "Chinese or Russian translated, with the original in parentheses; nothing the "
+            "sources did not say. A story two sources carried is one story, and say which.\n"
+            "5. End with one line on coverage: the sources that were DOWN or SILENT, and "
+            "where a CEILING means the window was not fully covered."
+        )
+
+    @server.prompt(
+        name="verify",
+        title="Check a claim against the sources",
+        description=(
+            "A claim somebody made — 'n8n is dead', 'GPT-6 has open weights' — checked "
+            "against what the sources published, and only that. Argument: claim."
+        ),
+    )
+    def verify(claim: str) -> str:
+        return (
+            f"Check this claim against the sources, and only the sources: \"{claim}\"\n"
+            "1. Pick the two or three terms a headline or a body about it would carry, and "
+            "call wire_search once per term — one phrase per call, no operators. Search in "
+            "the language the claim lives in as well: a Chinese lab in Chinese (智谱, not "
+            "Zhipu), a Russian channel in Russian. Seven days first; widen if that is empty.\n"
+            "2. Read the DOWN, CEILING and COVER lines before the hits: a zero under a DOWN "
+            "source, or over a COVER that stops yesterday, is unknown, not false.\n"
+            "3. wire_read the hits that decide it — five at most.\n"
+            "4. Answer in three parts: what the sources say, dated and attributed; whether "
+            "that supports, contradicts or does not reach the claim; and what was not "
+            "covered — sources DOWN, windows not reached, languages not searched. Do not "
+            "fill a gap from memory: if the sources do not reach it, say that."
+        )
+
     return server
 
 
