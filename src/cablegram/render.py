@@ -109,7 +109,10 @@ def _item_line(row: dict, links_out: bool = False) -> str:
     """
     mark = "" if row.get("date_exact", 1) else "~"
     host = f" ({row['target_host']})" if links_out and row.get("target_host") else ""
-    return f"{mark}{row['id']} {_time(row['published'])} {_oneline(row['title'])}{host}"
+    # A search hit whose headline does not carry the phrase matched on the
+    # stored body; unmarked, the row reads as a headline that does not match.
+    where = "  (in body)" if row.get("in_body") else ""
+    return f"{mark}{row['id']} {_time(row['published'])} {_oneline(row['title'])}{host}{where}"
 
 
 def _by_source(rows: list[dict]) -> dict[str, list[dict]]:
@@ -488,7 +491,7 @@ def render_search(
                         'feeds serve today",')
             head.append("      which is not the same as nobody discussing it.")
         head += [
-            "COLS  id hh:mm title",
+            "COLS  id hh:mm title    (in body) = the phrase is in the stored text, not the headline",
             "---",
         ]
         return head

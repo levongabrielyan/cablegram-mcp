@@ -626,7 +626,7 @@ def build(rows_from=None) -> MCPServer:
         name="wire_search",
         title="Search the sources",
         description=(
-            "Search the headlines of every source that carried a story.\n"
+            "Search the headlines and the stored text of every source that carried a story.\n"
             "WHAT IS BEING SEARCHED: this call fetches the sources and searches what "
             "they serve right now, then throws it away. There is no archive and no "
             "history — coverage is whatever the feeds expose today, and it is wildly "
@@ -656,7 +656,9 @@ def build(rows_from=None) -> MCPServer:
             "Chinese and Russian sources are indexed in their own language: a company "
             "is 智谱 here and Zhipu on Hacker News. If a query comes back empty, retry "
             "it transliterated or translated before concluding anything.\n"
-            "The query is ONE exact phrase, matched as a substring of the headline. "
+            "The query is ONE exact phrase, matched as a substring of the headline or "
+            "of the stored body; a row whose headline does not carry it matched on "
+            "the body and is marked (in body). "
             "'Claude Code' finds headlines containing those two words in that order "
             "and nothing else: measured on what Hacker News serves (about 35 hours), "
             "'Claude Code' 10, "

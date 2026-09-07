@@ -407,3 +407,30 @@ def test_a_stored_year_under_1000_sorts_where_it_belongs():
     stamped = _utc_iso(datetime(999, 9, 3, tzinfo=timezone.utc))
     assert stamped.startswith("0999-"), stamped
     assert stamped < "2026-01-01T00:00:00Z", "and therefore it sorts as the past"
+
+
+def test_search_finds_a_phrase_that_is_only_in_the_body_and_says_so(db):
+    """Measured in use, 2026-09-05: "Anthropic" over the Russian channels found
+    nothing in a week in which four posts discussed Claude — the name was in
+    every body and in no first line. A Telegram post's headline is its first
+    line, so most of what a channel says never reached the index. The body
+    is indexed now, and a hit the headline does not explain is flagged, so
+    the row can say (in body) instead of reading as a headline that does not
+    match."""
+    store_entries(db, by_id("ai_newz"),
+                  [Entry("Встречайте Fable 5.1", "https://t.me/ai_newz/1", NOW - timedelta(hours=2),
+                         "Anthropic выпустила новую модель, и на тарифе Pro она уже доступна.",
+                         "message"),
+                   Entry("Anthropic и OpenAI договорились", "https://t.me/ai_newz/2", NOW - timedelta(hours=3),
+                         "Текст без имени компании.", "message"),
+                   Entry("Про погоду", "https://t.me/ai_newz/3", NOW - timedelta(hours=4),
+                         "智谱 выпустила GLM.", "message")],
+                  fetched_at=iso(NOW))
+    since = iso(NOW - timedelta(days=7))
+    rows = search_items(db, "Anthropic", since=since, sources=["ai_newz"])
+    where = {r["title"]: r["in_body"] for r in rows}
+    assert where == {"Встречайте Fable 5.1": True, "Anthropic и OpenAI договорились": False}, where
+    # The two-character path searches bodies too.
+    rows = search_items(db, "智谱", since=since, sources=["ai_newz"])
+    assert [(r["title"], r["in_body"]) for r in rows] == [("Про погоду", True)], rows
+

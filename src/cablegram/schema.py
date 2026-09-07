@@ -104,8 +104,12 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 -- item's title would write Hacker News's "Zhipu" down and never find it, for a
 -- story qbitai filed as 智谱 — the schema documenting a bridge it did not have.
 --
--- Bodies stay out. Indexing them costs five times the disk for little recall:
--- a product name lives in the headline.
+-- Bodies are indexed too, since 2026-09-07. They stayed out while the database
+-- was a file ("five times the disk for little recall"); it is memory for one
+-- call now, and the recall was measured in use: "Anthropic" over the Russian
+-- channels found nothing in a week in which four posts discussed Claude — the
+-- name was in every body and in no first line. A hit found only in the body
+-- is marked on its row, because the reader cannot see why it matched.
 --
 -- 'trigram' is not a preference. With the default tokenizer every Chinese query
 -- returns zero hits, silently: Chinese has no spaces, so a whole headline
@@ -131,6 +135,26 @@ CREATE TRIGGER IF NOT EXISTS sighting_au AFTER UPDATE ON sighting BEGIN
     INSERT INTO sighting_fts(sighting_fts, rowid, title)
     VALUES ('delete', old.rowid, old.title);
     INSERT INTO sighting_fts(rowid, title) VALUES (new.rowid, new.title);
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS item_fts USING fts5(
+    body,
+    content = 'item',
+    content_rowid = 'rowid',
+    tokenize = 'trigram'
+);
+
+CREATE TRIGGER IF NOT EXISTS item_ai AFTER INSERT ON item BEGIN
+    INSERT INTO item_fts(rowid, body) VALUES (new.rowid, new.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS item_ad AFTER DELETE ON item BEGIN
+    INSERT INTO item_fts(item_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS item_au AFTER UPDATE ON item BEGIN
+    INSERT INTO item_fts(item_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+    INSERT INTO item_fts(rowid, body) VALUES (new.rowid, new.body);
 END;
 
 -- Deleting an item must not leave its sightings, or the index keeps answering

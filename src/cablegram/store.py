@@ -685,16 +685,24 @@ def search_items(
         clause += f" AND s.source IN ({','.join('?' * len(wanted))})"
         params += wanted
 
+    # Headline or stored body. The body index went in on 2026-09-07 after a
+    # week's use: "Anthropic" over the Russian channels found nothing while
+    # four posts discussed Claude, the name in every body and in no first
+    # line. A hit found only in the body is flagged on the row (`in_body`),
+    # because the reader cannot see why a headline without the phrase
+    # matched.
     if len(query) >= 3:
         engine = "index"
-        matcher = ("s.rowid IN (SELECT rowid FROM sighting_fts"
-                   " WHERE sighting_fts MATCH ?)")
-        args = [_fts_query(query)] + params
+        matcher = ("(s.rowid IN (SELECT rowid FROM sighting_fts"
+                   " WHERE sighting_fts MATCH ?)"
+                   " OR i.rowid IN (SELECT rowid FROM item_fts"
+                   " WHERE item_fts MATCH ?))")
+        args = [_fts_query(query), _fts_query(query)] + params
     else:
         engine = "substring"
-        matcher = "s.title LIKE ? ESCAPE '\\'"
+        matcher = "(s.title LIKE ? ESCAPE '\\' OR i.body LIKE ? ESCAPE '\\')"
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        args = [f"%{escaped}%"] + params
+        args = [f"%{escaped}%", f"%{escaped}%"] + params
 
     rows = db.execute(
         f"SELECT {_ITEM_COLUMNS}, s.source, s.title, s.seen_at,"
@@ -719,4 +727,12 @@ def search_items(
         args,
     ).fetchall()
 
-    return [dict(r) for r in rows if r["rank_in_source"] <= limit_per_source], engine
+    needle = query.casefold()
+    out = []
+    for r in rows:
+        if r["rank_in_source"] > limit_per_source:
+            continue
+        row = dict(r)
+        row["in_body"] = needle not in (row["title"] or "").casefold()
+        out.append(row)
+    return out, engine

@@ -670,6 +670,23 @@ def test_an_unknown_id_with_a_newline_cannot_forge_a_block_in_a_read():
     assert "UNKNOWN 9f01aa2b" in out
 
 
+def test_a_search_hit_found_in_the_body_is_marked_on_its_row():
+    """A headline that does not carry the phrase, under a search for the
+    phrase, reads as a row that does not match. The mark says where the
+    match was; the COLS line says what the mark means."""
+    rows = [{"id": "a" * 12, "source": "ai_newz", "title": "Встречайте Fable 5.1",
+             "published": "2026-08-30T12:00:00Z", "lang": "ru", "tags": "telegram",
+             "source_total": 2, "date_exact": 1, "in_body": True},
+            {"id": "b" * 12, "source": "ai_newz", "title": "Anthropic и OpenAI",
+             "published": "2026-08-30T11:00:00Z", "lang": "ru", "tags": "telegram",
+             "source_total": 2, "date_exact": 1, "in_body": False}]
+    out = render_search(rows, query="Anthropic", since="s", days=7, reach={"ai_newz": "2026-08-26"})
+    lines = out.splitlines()
+    assert any(l.endswith("Встречайте Fable 5.1  (in body)") for l in lines), out
+    assert any(l.endswith(" Anthropic и OpenAI") for l in lines), out
+    assert "(in body) = the phrase is in the stored text" in out
+
+
 def _many(n: int, source: str = "hn") -> list[dict]:
     """Rows as the query hands them over: newest first within a source. The
     renderer trusts that order — the trim keeps the first N — so a fixture
